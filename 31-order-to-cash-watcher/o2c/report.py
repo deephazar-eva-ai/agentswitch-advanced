@@ -6,6 +6,7 @@ from datetime import date, datetime, timedelta, timezone
 
 IST = timezone(timedelta(hours=5, minutes=30))
 SUBMITTED = 1
+CANCELLED = 2
 NOT_INVOICED = ("unbilled", "partially_invoiced")
 FIXTURE_MARKERS = ("test", "harness", "fixture")
 
@@ -51,10 +52,14 @@ def orders_not_invoiced(orders, report_date, days):
 
 
 def payments_not_applied(payments, report_date):
-    """Submitted incoming payments with money not yet allocated to an invoice."""
+    """Incoming payments (draft or submitted, not cancelled) with money not yet allocated to an invoice.
+
+    Drafts are kept: the instructor counts all 40 Suryodaya receive payments as unallocated.
+    The status column shows which ones are drafts.
+    """
     out = []
     for p in payments:
-        if p.get("type") != "receive" or p.get("docstatus") != SUBMITTED:
+        if p.get("type") != "receive" or p.get("docstatus") == CANCELLED:
             continue
         unallocated = round(float(p.get("unallocated") or 0), 2)
         if unallocated <= 0:
@@ -95,10 +100,10 @@ def build(client, report_date=None, days=7, instance=None):
             "rows": [],
         }
 
-    payments = client.list_all("Payment", {"type": "receive", "docstatus": SUBMITTED})
+    payments = client.list_all("Payment", {"type": "receive"})
     sections["payments_not_applied"] = {
         "status": "ok",
-        "rule": "incoming (receive), submitted, unallocated > 0",
+        "rule": "incoming (receive), not cancelled, unallocated > 0",
         "rows": payments_not_applied(payments, report_date),
     }
 

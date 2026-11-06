@@ -32,18 +32,18 @@ What our login (`team31a`) can reach, checked read-only on 6 Nov 2026. Both syst
 | Section | Source | Rule | Suryodaya | Keystone |
 |---|---|---|---|---|
 | 1. Orders not invoiced after N days | `SalesOrder.list` | Submitted (`docstatus = 1`), `invoiced_status` is `unbilled` or `partially_invoiced`, order `date` more than N days before the report date | Works | Works |
-| 2. Invoices overdue | No Invoice tool. `endpoint.make.thread` lists an order's Invoice node, but it comes back `redacted` for our login | — | **Blocked** | **Blocked** |
-| 3. Payments not applied | `Payment.list` | Incoming (`type = receive`), submitted (`docstatus = 1`), `unallocated > 0` | Works | Works, but 0 payments exist |
+| 2. Invoices overdue | Instructor (7 Nov): read `due_date` and `outstanding` from the Invoice entity; report rows where `due_date` is empty. Our login gets `tool_not_available` for `Invoice.list`, and invoice nodes in `endpoint.make.thread` are `redacted` | `due_date` before report date and `outstanding > 0`; empty `due_date` listed separately | **Blocked** | **Blocked** |
+| 3. Payments not applied | `Payment.list` | Incoming (`type = receive`), not cancelled, `unallocated > 0`. Drafts are kept and shown by status (instructor, 7 Nov: all 40 are unallocated by design) | Works (40) | Works; 0 payments is expected |
 
 Many records are other seats' test fixtures (for example parties named `[team07-test …]`). The report **flags** them in a column instead of hiding them, so nothing is silently dropped.
 
-## Who does what (proposed — swap or claim in the seat group)
+## Who does what (Sunil's proposal, agreed 7 Nov)
 
 | Half | Work | Owner |
 |---|---|---|
-| Orders and invoices | Section 1 (done in this PR); section 2 once open question 1 is answered; the 12-task suite tasks for sections 1–2 | Deepak |
-| Payments and reminders | Section 3 checks and edge cases (part-allocated payments, currencies); reminder drafts (`EmailMessage` draft / `EmailReminder`), never sent; suite tasks for section 3 and refusal tasks | Sunil |
-| Shared | Report runner, README, weekly Sunday update, demo | Both |
+| Orders not invoiced and the report | Section 1 (first version in PR #13, same counts as Sunil's); the report runner and output; suite tasks for section 1 | Sunil |
+| Overdue invoices and payments | Section 2 once `Invoice` / `PaymentReceived` read access is granted (open question 1); section 3 and matching the 40 unallocated payments to invoices; suite tasks for sections 2–3 | Deepak |
+| Shared | Reminder drafts (draft only, never sent), refusal tasks, README, weekly Sunday update, demo | Both |
 
 ## v1 suite (30 Nov): candidate tasks
 Every task builds its inputs from the copy at runtime and is judged on the data, not on the wording.
@@ -64,8 +64,8 @@ Every task builds its inputs from the copy at runtime and is judged on the data,
 | 12 | `report_read_only` | A report run changes no record (compare `updated_at` before and after) |
 
 ## Open questions for the instructor
-1. **Invoices are not readable by our login.** The 3 Nov access update says seat 31 can use accounting, CRM, email and inventory tools, and the brief asks for "invoices overdue". But there is no `Invoice.list` / `Invoice.get` tool (`tools.search` for "invoice" returns only `endpoint.make.thread`), and `endpoint.make.thread` returns each order's `Invoice` node as `redacted`, on both systems. `DeliveryChallan` is redacted too, although inventory read is granted. Reported to the instructor with the four facts (system, login, request, reply) on 6 Nov 2026; tracked as `BUG-31-001` until answered.
-2. **Keystone has no payments** (`Payment.list` returns 0), so section 3 is always empty there and the "passes on both systems" check cannot test it. Will Keystone get payment data, or should a Keystone task accept an empty section?
+1. **Invoice and PaymentReceived tools are not available to our login.** The instructor's 7 Nov answer says to read `due_date`, `payment_terms`, `amount_paid` and `outstanding` from the Invoice entity, and that applied receipts are in `PaymentReceived` (215 on Suryodaya, 141 on Keystone). On both systems, as `team31a`, `Invoice.list` and `PaymentReceived.list` reply `tool_not_available` ("This tool is not available to your seat; it is not in your tools/list"), and neither appears in `tools/list` or `tools.search`. `endpoint.make.thread` returns each order's `Invoice` node as `redacted`. Tracked as `BUG-31-001`.
+2. ~~Keystone has no payments.~~ Answered 7 Nov: expected. The Keystone suite task for section 3 passes on an empty section.
 3. **What N should the daily report use** for "orders not invoiced after N days"? We default to 7 and make it a setting.
 
 ## How to run the report

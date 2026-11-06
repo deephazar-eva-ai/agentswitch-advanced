@@ -42,16 +42,17 @@ class OrdersNotInvoiced(unittest.TestCase):
 
 
 class PaymentsNotApplied(unittest.TestCase):
-    def test_only_submitted_incoming_with_money_left(self):
+    def test_incoming_not_cancelled_with_money_left(self):
         rows = report.payments_not_applied([
             payment("ok", "2026-11-01", 200.0),
             payment("applied", "2026-11-01", 0.0),
             payment("outgoing", "2026-11-01", 200.0, type_="pay"),
             payment("transfer", "2026-11-01", 200.0, type_="internal_transfer"),
             payment("draft", "2026-11-01", 200.0, docstatus=0),
+            payment("cancelled", "2026-11-01", 200.0, docstatus=2),
             payment("rounding", "2026-11-01", 0.001),
         ], D)
-        self.assertEqual([r["number"] for r in rows], ["ok"])
+        self.assertEqual([r["number"] for r in rows], ["draft", "ok"])
         self.assertEqual(rows[0]["age_days"], 14)
 
 
