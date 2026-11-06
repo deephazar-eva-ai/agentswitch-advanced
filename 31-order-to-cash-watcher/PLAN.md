@@ -64,7 +64,7 @@ Every task builds its inputs from the copy at runtime and is judged on the data,
 | 12 | `report_read_only` | A report run changes no record (compare `updated_at` before and after) |
 
 ## Open questions for the instructor
-1. **Invoices are not readable by our login.** There is no `Invoice.list` / `Invoice.get` tool, and `endpoint.make.thread` returns each order's Invoice node as `redacted`. The brief asks for "invoices overdue". Should seat 31 get invoice read access, or is it meant to be blocked? If it is a mistake we will file it as `BUG-31-001`.
+1. **Invoices are not readable by our login.** The 3 Nov access update says seat 31 can use accounting, CRM, email and inventory tools, and the brief asks for "invoices overdue". But there is no `Invoice.list` / `Invoice.get` tool (`tools.search` for "invoice" returns only `endpoint.make.thread`), and `endpoint.make.thread` returns each order's `Invoice` node as `redacted`, on both systems. `DeliveryChallan` is redacted too, although inventory read is granted. Reported to the instructor with the four facts (system, login, request, reply) on 6 Nov 2026; tracked as `BUG-31-001` until answered.
 2. **Keystone has no payments** (`Payment.list` returns 0), so section 3 is always empty there and the "passes on both systems" check cannot test it. Will Keystone get payment data, or should a Keystone task accept an empty section?
 3. **What N should the daily report use** for "orders not invoiced after N days"? We default to 7 and make it a setting.
 
