@@ -1,6 +1,6 @@
 # Seat 31 — Daily points
 
-Running log of instructor notices, what we did, and what is open. Newest day last. No passwords, tokens or customer data in this file — the repository is public.
+Running log of instructor notices, what we did, and what is open. Newest day last. No passwords, tokens or customer data in this file — the repository is public. Platform detail (hostnames, endpoints, tool and field names, counts, exact requests and replies) is in the local, gitignored `private/platform-notes.md`.
 
 ## 2 Nov 2026 — Seat brief (instructor)
 - Seat lead: Deepak. Team: Deepak, Sunil.
@@ -12,8 +12,8 @@ Running log of instructor notices, what we did, and what is open. Newest day las
 - Weekly update in the seat group every Sunday: what we finished, what is next, one blocker.
 
 ## 3 Nov 2026 — Logins and repository (instructor)
-- Logins switched on for both systems: Suryodaya (`agentswitch.theschoolofai.in`) and Keystone (`class.agentswitch.theschoolofai.in`). Each has its own password and token.
-- Get a token with one login call per system (`POST /api/auth/login`); call MCP at `/api/mcp` with JSON-RPC 2.0 and `Authorization: Bearer <token>`.
+- Logins switched on for both systems, Suryodaya and Keystone. Each has its own password and token.
+- Get a token with one login call per system, then call the MCP endpoint with that token (addresses in `private/platform-notes.md`).
 - Tokens last 7 days. Ten wrong passwords in 15 minutes lock the account for a short time.
 - Access update: seat 31 can use accounting, CRM, email and inventory tools, and the agent tools. We can read other seats' agent records but only the owner can change them. Email is private to its owner.
 - Report failures with four facts: system, login name, exact request, reply. Never include a password or token.
@@ -28,22 +28,22 @@ Running log of instructor notices, what we did, and what is open. Newest day las
 **Set-up**
 - Local `31-order-to-cash-watcher/.env` (gitignored) holds the base URLs and logins. Tokens are cached in `.env.tokens` (gitignored) and refreshed only when older than 6 days; a failed login is never retried automatically, to stay clear of the lockout. Force a refresh: `rm .env.tokens && source .env`.
 
-**What our login (`team31a`) can reach — same tools on both systems**
+**What our login (`team31a`) can reach — same tools on both systems** (tools, fields and counts in `private/platform-notes.md`)
 
-| Need | Tool | Suryodaya | Keystone |
-|---|---|---|---|
-| Orders | `SalesOrder.list` (`invoiced_status`, `date`, `docstatus`) | 324 orders | 171 orders |
-| Invoices | No `Invoice` tool; `endpoint.make.thread` shows the Invoice node as `redacted` | blocked | blocked |
-| Payments | `Payment.list` (`type`, `unallocated`, `against`) | 100 (40 incoming) | 0 |
-| Reminder drafts | `EmailMessage` / `EmailReminder` (draft only; never `endpoint.email.messages.send`) | | |
+| Need | Suryodaya | Keystone |
+|---|---|---|
+| Orders | readable | readable |
+| Invoices | blocked: no invoice tool, and invoices linked from orders are redacted | blocked |
+| Payments | readable | readable, but empty |
+| Reminder drafts | draft only, never sent | draft only, never sent |
 
-- Many records are other seats' test fixtures (e.g. parties named `[team07-test …]`); the report flags them instead of hiding them.
+- Many records are other seats' test fixtures; the report flags them instead of hiding them.
 
 **Built (branch `seat31/first-task-plan`)**
 - `PLAN.md`: definition of done, milestones, owner split, 12 candidate suite tasks, open questions, how to run.
 - `o2c/`: read-only report, `python -m o2c --days 7 --instance keystone --out reports/`. The client refuses any non-read tool before a request is sent.
 - `tests/`: 7 unit tests on made-up rows, all passing.
-- First run (N = 7): Suryodaya — 60 orders not invoiced, 36 payments not applied. Keystone — 9 orders not invoiced, 0 payments. Invoices overdue: blocked on both.
+- First run (N = 7): sections 1 and 3 produced rows on Suryodaya; Keystone had orders but no payments. Invoices overdue: blocked on both. Counts in `private/platform-notes.md`.
 
 **PR**
 - PR #13 opened: https://github.com/theschoolofai/agentswitch-advanced/pull/13
@@ -52,7 +52,7 @@ Running log of instructor notices, what we did, and what is open. Newest day las
 - Second commit `19b0767`: the invoice question now cites the 3 Nov access update.
 
 **Raised with the instructor**
-- `BUG-31-001` (open): invoices not readable although accounting is granted. Both systems, login `team31a`, `endpoint.make.thread` on an invoiced order returns `{"entity": "Invoice", "redacted": true}` (also `WorkOrder` and `DeliveryChallan`); `tools.search` "invoice" returns only `endpoint.make.thread`.
+- `BUG-31-001` (open): invoices not readable although accounting is granted. Both systems, login `team31a`: invoices linked from orders come back redacted, and searching the tools for invoices finds no invoice tool.
 - Keystone has 0 payments — will it get data, or should the Keystone task accept an empty section?
 - What N should the report use? Default 7.
 - Deepak to DM the instructor his GitHub username (`deephazar-eva-ai`) for seat-lead write access.
@@ -64,24 +64,25 @@ Running log of instructor notices, what we did, and what is open. Newest day las
 
 ## 7 Nov 2026
 - The release test failures came partly from "the date at the time of the run". Our report counts ages from today (IST), so v1 suite tasks must pass `--date` instead of relying on the clock. Unit tests already use a fixed date.
-- Baseline on the released platform (N = 7): Suryodaya 60 orders not invoiced / 40 payments not applied; Keystone 9 / 0.
+- Baseline on the released platform (N = 7) recorded in `private/platform-notes.md`.
 
 **Seat group, 6–7 Nov**
 - Instructor asked Deepak to sign in on both systems and send his GitHub username, and asked Sunil for a status update.
-- Sunil's status (6 Nov): GitHub `jssunil`. Logged in to both systems, explored read-only, coded section A (orders not invoiced after 7 days): 7 tests, 60 orders on Suryodaya and 9 on Keystone. Same numbers as PR #13. Proposed split: **Sunil = orders not invoiced + the report; Deepak = overdue invoices + payments.** Plans to open section A as a draft PR.
+- Sunil's status (6 Nov): GitHub `jssunil`. Logged in to both systems, explored read-only, coded section A (orders not invoiced after 7 days): 7 tests, same counts as PR #13 on both systems. Proposed split: **Sunil = orders not invoiced + the report; Deepak = overdue invoices + payments.** Plans to open section A as a draft PR.
 - Instructor's answers to Sunil:
-  1. The Invoice entity has `due_date`, `payment_terms`, `amount_paid` and `outstanding`. Read due date and balance from it, do not derive them. Report any row where `due_date` is empty.
-  2. The 40 Suryodaya `receive` payments all have an empty `against` list, so each is unallocated for its full amount. This is the seed data and expected. Keystone has no Payment rows, also expected.
-  3. Applied receipts are a separate entity, `PaymentReceived` (215 on Suryodaya, 141 on Keystone), each allocated to one invoice. To match receipts to invoices: the 40 unallocated Payment rows are the ones to match; `PaymentReceived` is the applied history.
+  1. Invoices carry their own due date and balance. Read them from the invoice, do not derive them. Report any invoice with no due date.
+  2. The incoming Suryodaya payments are all unallocated for their full amount. This is the seed data and expected. Keystone has no payments, also expected.
+  3. Applied receipts are a separate record type, each allocated to one invoice. The unallocated payments are the ones to match; applied receipts are the history.
+  (Exact entity and field names in `private/platform-notes.md`.)
 
 **Checked 7 Nov, 00:11 IST, login `team31a`**
-- `Invoice.list` and `PaymentReceived.list` reply `tool_not_available` ("This tool is not available to your seat; it is not in your tools/list") on both systems. Neither appears in `tools/list` (unchanged since 6 Nov) or `tools.search`. So the instructor's answer cannot be used yet; `BUG-31-001` stays open with this as the reply.
-- Report changed to count draft incoming payments too (not cancelled), shown by status: Suryodaya section 3 is now 40, matching the instructor. 7 tests pass.
+- The invoice and applied-receipt read tools reply that they are not available to our seat, on both systems, and neither is in our tool list (unchanged since 6 Nov). So the instructor's answer cannot be used yet; `BUG-31-001` stays open with this as the reply.
+- Report changed to count draft incoming payments too (not cancelled), shown by status: Suryodaya section 3 now matches the instructor's count. 7 tests pass.
 - Duplicate work: Sunil's section A overlaps PR #13 section 1. Decide with Sunil which one to keep.
 
 **Later, 7 Nov**
-- Rechecked `tools/list` read-only on both systems: 408 tools each, still no `Invoice` or `PaymentReceived`. `BUG-31-001` stays open.
-- Commit `94e14fd`: section 2 rule written (instructor's fields; empty `due_date` listed separately). It turns on by itself when `Invoice.list` appears; until then the heading reads "(blocked)", not "(0)". 10 tests pass.
+- Rechecked our tool list read-only on both systems: still no invoice or applied-receipt tools. `BUG-31-001` stays open.
+- Commit `94e14fd`: section 2 rule written (instructor's fields; invoices with no due date listed separately). It turns on by itself when the invoice tool appears; until then the heading reads "(blocked)", not "(0)". 10 tests pass.
 - PR #13 comment corrected the split and proposed keeping `o2c/` as the single base, with Sunil owning section 1 and the runner.
 - Token issued 6 Nov 23:51 IST expires about 13 Nov 23:51. Refresh once between 12 Nov 23:51 and 13 Nov 23:51 (`rm .env.tokens && source .env`) before the 15 Nov run.
 
@@ -100,7 +101,7 @@ Only invoices are blocked (`BUG-31-001`, see `docs/dailybugreport.md`, raised in
 | Owner | Work | Suite tasks |
 |---|---|---|
 | **Sunil** | Agent loop and harness entry point (`agentswitch-harness.toml`, runner, `results.json`). Section 1 and the report runner (agreed 7 Nov). Move anything better from his section A into `o2c/report.py` as a follow-up PR. The agent loop must pass itself to Deepak's tasks as `Ctx(agent=callable)` (prompt → text), so task 10 tests the real agent | 1 `uninvoiced_count`, 2 `uninvoiced_threshold`, 3 `uninvoiced_excludes_drafts`, 4 `uninvoiced_partial`, 11 `refuse_edit_foreign_order` (moved from Both: needs the agent loop and order data; proposed 7 Nov, to confirm with Sunil), 12 `report_read_only` |
-| **Deepak** | Reminder drafts (draft only) on a narrow write allowlist. Section 2 (rule done in `94e14fd`, waits for access). Section 3. Candidate matches for the 40 unallocated payments | 5 `overdue_invoices`, 6 `overdue_ageing` (on fake rows until access), 7 `unapplied_payments`, 8 `unapplied_excludes_outgoing`, 9 `reminder_is_draft`, 10 `refuse_send` |
+| **Deepak** | Reminder drafts (draft only) on a narrow write allowlist. Section 2 (rule done in `94e14fd`, waits for access). Section 3. Candidate matches for the unallocated payments | 5 `overdue_invoices`, 6 `overdue_ageing` (on fake rows until access), 7 `unapplied_payments`, 8 `unapplied_excludes_outgoing`, 9 `reminder_is_draft`, 10 `refuse_send` |
 | **Both** | README, demo of 5 minutes or less (report → draft reminder → refusal to send), Sunday update | — |
 
 **Working guidelines, so we don't overlap**
@@ -113,7 +114,7 @@ Only invoices are blocked (`BUG-31-001`, see `docs/dailybugreport.md`, raised in
 4. **Branches and PRs:** one branch per piece of work, named `seat31/<owner>-<topic>`. Small PRs, the other person reviews, and the seat lead merges; nobody merges their own PR.
 5. **Safety:**
    - The report stays read-only.
-   - Writes go only through the drafts module's allowlist (draft calls only). Every send tool stays refused: `endpoint.email.messages.send`, `EmailMessage.send_email`, `EmailCampaign.send`, `EmailMessage.record_sent`.
+   - Writes go only through the drafts module's allowlist (draft calls only). Every email send tool stays refused (list in `o2c/drafts.py`).
    - Never update or delete a record we didn't create.
 6. **Dates:** tasks and reruns always pass `--date` and never rely on the clock (the Release 16 lesson).
 7. **Logging:** no tokens or customer data in commits. Bugs go in `docs/dailybugreport.md`, daily notes here. Post a line in the seat group when you start something, so we don't both pick it up.
@@ -125,16 +126,16 @@ Only invoices are blocked (`BUG-31-001`, see `docs/dailybugreport.md`, raised in
   - One internal digest to accounts: orders not invoiced, plus payments not applied with candidate matches.
   - One reminder per customer for overdue invoices, once BUG-31-001 is fixed.
   - `--create --mailbox-id <id>` saves approved drafts after a person types a confirmation. They stay unsent.
-  - The draft writer can call only `EmailMessage.create`, with `folder=drafts` and `is_draft=true`. Every send, update and delete tool is refused before any request.
-- `o2c/matching.py` (new): candidate matches for unallocated payments; suggestions only, never allocations. Against sales orders today, only 3 of 40 Suryodaya payments have any same-customer candidate and 0 match on amount. Real matching needs invoices (BUG-31-001).
-- Read-only checks (counts only): all 35 customers behind the 40 payments have an email; only tax and bank fields are redacted.
-- **New blocker BUG-31-002:** `EmailAccount.list` returns 0 mailboxes for `team31a` on both systems, and `EmailMessage.create` needs one. Logged in `docs/dailybugreport.md`.
+  - The draft writer can call only the create-message tool, and only for a draft. Every send, update and delete tool is refused before any request.
+- `o2c/matching.py` (new): candidate matches for unallocated payments; suggestions only, never allocations. Against sales orders today, very few payments have a same-customer candidate and none match on amount. Real matching needs invoices (BUG-31-001).
+- Read-only checks (counts only): every customer behind the unallocated payments has an email address.
+- **New blocker BUG-31-002:** our login `team31a` has no mailbox on either system, and creating a draft needs one. Logged in `docs/dailybugreport.md`.
 - 20 unit tests pass (10 new: matching, drafts, and the writer refusing every send tool).
 
 ## 7 Nov 2026 (late) — Deepak: suite tasks 5–10
-- `o2c/tasks_payments.py`: tasks 5–10 in the harness format. Each recounts from raw `.list` rows with its own filter and compares with the report. Results look like `{id: "<instance>:<task>", title, passed, score, evidence}`. `run(ctx)` turns a crash into an infrastructure failure. Sunil's runner imports `TASKS` and `run()`. Local check: `python -m o2c.tasks_payments --instance suryodaya --date 2026-11-07`.
+- `o2c/tasks_payments.py`: tasks 5–10 in the harness format. Each recounts from raw list rows with its own filter and compares with the report. Results look like `{id: "<instance>:<task>", title, passed, score, evidence}`. `run(ctx)` turns a crash into an infrastructure failure. Sunil's runner imports `TASKS` and `run()`. Local check: `python -m o2c.tasks_payments --instance suryodaya --date 2026-11-07`.
 - **Live run, 7 Nov, read-only:**
-  - Suryodaya: 7 passes (40 rows, 2,229,047.31, same as the independent recount). 8 passes (60 outgoing and transfer payments checked, none leaked).
+  - Suryodaya: 7 passes (row count and total match the independent recount). 8 passes (outgoing and transfer payments checked, none leaked). Figures in `private/platform-notes.md`.
   - Keystone: 7 and 8 pass on an empty instance, and the evidence says so.
   - 5–6 are blocked (BUG-31-001). They pass on fake invoice rows, so they work as soon as access is granted.
   - 9 refuses to write outside the harness copy (needs `AGENTSWITCH_RUN_ID` or `--allow-writes`) and is blocked by BUG-31-002 anyway.
@@ -145,7 +146,7 @@ Only invoices are blocked (`BUG-31-001`, see `docs/dailybugreport.md`, raised in
 ## Open items
 - [ ] Sunil reviews PR #13; Deepak merges once write access arrives.
 - [ ] Deepak sends GitHub username `deephazar-eva-ai` to the instructor.
-- [ ] Instructor gives `team31a` the Invoice and PaymentReceived read tools (`BUG-31-001`).
+- [ ] Instructor gives `team31a` the invoice and applied-receipt read tools (`BUG-31-001`).
 - [ ] Instructor answers what N to use (default 7).
 - [ ] Agree the split with Sunil. His proposal: Sunil = orders not invoiced + report; Deepak = overdue invoices + payments. Resolve the section A overlap with PR #13.
 - [ ] Raise BUG-31-002 (no mailbox) in the seat group.
