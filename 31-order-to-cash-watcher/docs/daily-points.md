@@ -85,11 +85,59 @@ Running log of instructor notices, what we did, and what is open. Newest day las
 - PR #13 comment corrected the split and proposed keeping `o2c/` as the single base, with Sunil owning section 1 and the runner.
 - Token issued 6 Nov 23:51 IST expires about 13 Nov 23:51. Refresh once between 12 Nov 23:51 and 13 Nov 23:51 (`rm .env.tokens && source .env`) before the 15 Nov run.
 
+## 7 Nov 2026 (evening) — Work plan while invoices are blocked (to agree with Sunil)
+
+Only invoices are blocked (`BUG-31-001`, see `docs/dailybugreport.md`, raised in the seat group for the admin). That stops report section 2 and suite tasks 5–6. Everything else can go ahead.
+
+**What v1 (30 Nov) really needs** — from `34-eval-harness/TASK_FORMAT.md`
+- The suite runs **an agent**, given `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `OPENAI_MODEL`, on a **copy** of the instance with no internet. Tasks are judged on the data afterwards, never on the agent's wording.
+- `results.json` with one entry per task: `id` prefixed `suryodaya:` / `keystone:`, plus `passed`, `score`, `evidence`. A task that could not run counts as an infrastructure failure, never silently dropped.
+- One submitted run per seat every 3 days, so we test locally first.
+- So v1 needs a small agent loop around `o2c`, not only the script. This is the biggest new piece of work.
+
+**Who does what until invoices open up**
+
+| Owner | Work | Suite tasks |
+|---|---|---|
+| **Sunil** | Agent loop and harness entry point (`agentswitch-harness.toml`, runner, `results.json`). Section 1 and the report runner (agreed 7 Nov). Move anything better from his section A into `o2c/report.py` as a follow-up PR | 1 `uninvoiced_count`, 2 `uninvoiced_threshold`, 3 `uninvoiced_excludes_drafts`, 4 `uninvoiced_partial`, 12 `report_read_only` |
+| **Deepak** | Reminder drafts (draft only) on a narrow write allowlist. Section 2 (rule done in `94e14fd`, waits for access). Section 3. Candidate matches for the 40 unallocated payments | 5 `overdue_invoices`, 6 `overdue_ageing` (on fake rows until access), 7 `unapplied_payments`, 8 `unapplied_excludes_outgoing`, 9 `reminder_is_draft`, 10 `refuse_send` |
+| **Both** | 11 `refuse_edit_foreign_order`, README, demo of 5 minutes or less (report → draft reminder → refusal to send), Sunday update | 11 |
+
+**Working guidelines, so we don't overlap**
+1. **One codebase:** `31-order-to-cash-watcher/o2c/`. No second copy of a section. If you improve something the other owns, open a PR and let the owner review it.
+2. **Module ownership:**
+   - `o2c/report.py`: section 1 functions and `build()` / `to_markdown()` belong to Sunil; `invoices_overdue` and `payments_not_applied` to Deepak.
+   - `o2c/client.py` (the read allowlist) changes only with both agreeing.
+   - New files: Deepak `o2c/drafts.py` and `o2c/matching.py`; Sunil `o2c/agent.py` and the harness runner.
+3. **Interface:** each section is a pure function `(rows, report_date, …) -> rows`, and `build()` puts the sections together. Suite tasks call the same functions, so the report and the suite can't disagree.
+4. **Branches and PRs:** one branch per piece of work, named `seat31/<owner>-<topic>`. Small PRs, the other person reviews, and the seat lead merges; nobody merges their own PR.
+5. **Safety:**
+   - The report stays read-only.
+   - Writes go only through the drafts module's allowlist (draft calls only). Every send tool stays refused: `endpoint.email.messages.send`, `EmailMessage.send_email`, `EmailCampaign.send`, `EmailMessage.record_sent`.
+   - Never update or delete a record we didn't create.
+6. **Dates:** tasks and reruns always pass `--date` and never rely on the clock (the Release 16 lesson).
+7. **Logging:** no tokens or customer data in commits. Bugs go in `docs/dailybugreport.md`, daily notes here. Post a line in the seat group when you start something, so we don't both pick it up.
+
+**Not doing:** working out overdue invoices from order data. The instructor said to read due date and balance from Invoice.
+
+## 7 Nov 2026 (night) — Deepak: drafts and payment matching
+- `o2c/drafts.py` (new): `python -m o2c.drafts --instance <name> --out reports/` proposes reminder drafts and writes a review file. It changes nothing.
+  - One internal digest to accounts: orders not invoiced, plus payments not applied with candidate matches.
+  - One reminder per customer for overdue invoices, once BUG-31-001 is fixed.
+  - `--create --mailbox-id <id>` saves approved drafts after a person types a confirmation. They stay unsent.
+  - The draft writer can call only `EmailMessage.create`, with `folder=drafts` and `is_draft=true`. Every send, update and delete tool is refused before any request.
+- `o2c/matching.py` (new): candidate matches for unallocated payments; suggestions only, never allocations. Against sales orders today, only 3 of 40 Suryodaya payments have any same-customer candidate and 0 match on amount. Real matching needs invoices (BUG-31-001).
+- Read-only checks (counts only): all 35 customers behind the 40 payments have an email; only tax and bank fields are redacted.
+- **New blocker BUG-31-002:** `EmailAccount.list` returns 0 mailboxes for `team31a` on both systems, and `EmailMessage.create` needs one. Logged in `docs/dailybugreport.md`.
+- 20 unit tests pass (10 new: matching, drafts, and the writer refusing every send tool).
+
 ## Open items
 - [ ] Sunil reviews PR #13; Deepak merges once write access arrives.
 - [ ] Deepak sends GitHub username `deephazar-eva-ai` to the instructor.
 - [ ] Instructor gives `team31a` the Invoice and PaymentReceived read tools (`BUG-31-001`).
 - [ ] Instructor answers what N to use (default 7).
 - [ ] Agree the split with Sunil. His proposal: Sunil = orders not invoiced + report; Deepak = overdue invoices + payments. Resolve the section A overlap with PR #13.
+- [ ] Raise BUG-31-002 (no mailbox) in the seat group.
+- [ ] Talk to Sunil tonight: walk through the 7 Nov evening split and working guidelines.
 - [ ] Sunday 8 Nov weekly update: finished / next / one blocker.
 - [x] Rerun the report after the release deploys. Done: all runs were after the 6 Nov 3:48 pm IST release.
