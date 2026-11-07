@@ -79,6 +79,43 @@ def payments_not_applied(payments, report_date):
     return sorted(out, key=lambda r: (-(r["age_days"] or 0), r["number"] or ""))
 
 
+def invoices_overdue(invoices, report_date):
+    """Submitted invoices past their due date with a balance left, plus invoices with no due date.
+
+    Due date and balance are read from the Invoice entity (`due_date`, `outstanding`), not
+    derived (instructor, 7 Nov). Any submitted invoice with an empty `due_date` is reported
+    separately, whatever its balance. Field names are from the instructor's answer; check them
+    against Invoice.list once our login can call it (BUG-31-001).
+    Returns (overdue, no_due_date).
+    """
+    overdue, no_due = [], []
+    for inv in invoices:
+        if inv.get("docstatus") != SUBMITTED:
+            continue
+        outstanding = round(float(inv.get("outstanding") or 0), 2)
+        due = _as_date(inv.get("due_date"))
+        row = {
+            "number": inv.get("number"),
+            "id": inv.get("id"),
+            "customer": inv.get("_party_id_display"),
+            "due_date": due.isoformat() if due else None,
+            "days_overdue": (report_date - due).days if due else None,
+            "payment_terms": inv.get("payment_terms"),
+            "grand_total": inv.get("grand_total"),
+            "amount_paid": inv.get("amount_paid"),
+            "outstanding": outstanding,
+            "currency": inv.get("currency_code"),
+            "fixture": looks_like_fixture(inv),
+        }
+        if due is None:
+            no_due.append(row)
+        elif due < report_date and outstanding > 0:
+            overdue.append(row)
+    overdue.sort(key=lambda r: (-r["days_overdue"], r["number"] or ""))
+    no_due.sort(key=lambda r: r["number"] or "")
+    return overdue, no_due
+
+
 def build(client, report_date=None, days=7, instance=None):
     report_date = report_date or today_ist()
     sections = {}
@@ -92,11 +129,18 @@ def build(client, report_date=None, days=7, instance=None):
 
     names = client.tool_names()
     if "Invoice.list" in names:
-        sections["invoices_overdue"] = {"status": "todo", "reason": "Invoice.list is now available; rule not written yet", "rows": []}
+        overdue, no_due = invoices_overdue(client.list_all("Invoice", {"docstatus": SUBMITTED}), report_date)
+        sections["invoices_overdue"] = {
+            "status": "ok",
+            "rule": "submitted, due_date before the report date, outstanding > 0",
+            "rows": overdue,
+            "no_due_date": no_due,
+        }
     else:
         sections["invoices_overdue"] = {
             "status": "blocked",
-            "reason": "this login has no invoice read tool (no Invoice.list; invoice nodes in endpoint.make.thread are redacted)",
+            "reason": "this login has no invoice read tool (no Invoice.list; invoice nodes in "
+                      "endpoint.make.thread are redacted). Tracked as BUG-31-001",
             "rows": [],
         }
 
@@ -127,6 +171,24 @@ def _money(v):
     return f"{v:,.2f}" if isinstance(v, (int, float)) else ""
 
 
+def _invoice_rows(rows):
+    out = ["| Invoice | Customer | Due | Days overdue | Terms | Total | Paid | Outstanding | |",
+           "|---|---|---|---:|---|---:|---:|---:|---|"]
+    for r in rows:
+        out.append(f"| {r['number']} | {r['customer'] or ''} | {r['due_date'] or ''} | "
+                   f"{r['days_overdue'] if r['days_overdue'] is not None else ''} | {r['payment_terms'] or ''} | "
+                   f"{_money(r['grand_total'])} | {_money(r['amount_paid'])} | {_money(r['outstanding'])} {r['currency'] or ''} | "
+                   f"{'fixture' if r['fixture'] else ''} |")
+    return out
+
+
+def _invoice_tables(rows, no_due):
+    lines = (_invoice_rows(rows) if rows else ["None."]) + [""]
+    lines += [f"### Invoices with no due date ({len(no_due)})", ""]
+    lines += (_invoice_rows(no_due) if no_due else ["None."]) + [""]
+    return lines
+
+
 def to_markdown(report):
     lines = [
         f"# Order-to-cash exceptions — {report.get('instance') or ''} {report['report_date']}",
@@ -138,12 +200,15 @@ def to_markdown(report):
     for key, title in TITLES.items():
         sec = report["sections"][key]
         rows = sec["rows"]
-        lines.append(f"## {title} ({len(rows)})")
+        lines.append(f"## {title} ({len(rows) if sec['status'] == 'ok' else sec['status']})")
         lines.append("")
         if sec["status"] != "ok":
             lines += [f"**{sec['status'].upper()}:** {sec['reason']}", ""]
             continue
         lines += [f"Rule: {sec['rule']}.", ""]
+        if key == "invoices_overdue":
+            lines += _invoice_tables(rows, sec.get("no_due_date", []))
+            continue
         if not rows:
             lines += ["None.", ""]
             continue

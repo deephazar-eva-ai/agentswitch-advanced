@@ -56,6 +56,46 @@ class PaymentsNotApplied(unittest.TestCase):
         self.assertEqual(rows[0]["age_days"], 14)
 
 
+def invoice(number, due, outstanding, docstatus=1, party="Acme"):
+    return {"number": number, "id": number, "due_date": due, "outstanding": outstanding, "docstatus": docstatus,
+            "grand_total": 1000.0, "amount_paid": 1000.0 - outstanding, "payment_terms": "Net 30",
+            "_party_id_display": party}
+
+
+class InvoicesOverdue(unittest.TestCase):
+    def test_past_due_with_balance_only(self):
+        overdue, _ = report.invoices_overdue([
+            invoice("due_today", "2026-11-15", 100.0),
+            invoice("late", "2026-11-14", 100.0),
+            invoice("paid", "2026-10-01", 0.0),
+            invoice("rounding", "2026-10-01", 0.001),
+            invoice("draft", "2026-10-01", 100.0, docstatus=0),
+            invoice("cancelled", "2026-10-01", 100.0, docstatus=2),
+            invoice("future", "2026-12-01", 100.0),
+        ], D)
+        self.assertEqual([r["number"] for r in overdue], ["late"])  # due today is not yet overdue
+        self.assertEqual(overdue[0]["days_overdue"], 1)
+
+    def test_empty_due_date_listed_separately(self):
+        overdue, no_due = report.invoices_overdue([
+            invoice("none", None, 100.0), invoice("blank", "", 0.0), invoice("older", "2026-09-15", 50.0),
+            invoice("newer", "2026-11-01", 50.0),
+        ], D)
+        self.assertEqual([r["number"] for r in overdue], ["older", "newer"])  # most overdue first
+        self.assertEqual([r["number"] for r in no_due], ["blank", "none"])  # reported whatever the balance
+
+    def test_markdown_shows_both_tables(self):
+        overdue, no_due = report.invoices_overdue([invoice("late", "2026-11-01", 10.0), invoice("x", None, 5.0)], D)
+        rep = {"instance": "t", "report_date": "2026-11-15", "days": 7, "generated_at": "x",
+               "sections": {"orders_not_invoiced": {"status": "ok", "rule": "r", "rows": []},
+                            "invoices_overdue": {"status": "ok", "rule": "r", "rows": overdue, "no_due_date": no_due},
+                            "payments_not_applied": {"status": "ok", "rule": "r", "rows": []}}}
+        md = report.to_markdown(rep)
+        self.assertIn("## Invoices overdue (1)", md)
+        self.assertIn("### Invoices with no due date (1)", md)
+        self.assertIn("| late |", md)
+
+
 class ReadOnlyClient(unittest.TestCase):
     def test_allowlist(self):
         for name in ("SalesOrder.list", "Payment.get", "endpoint.make.thread", "tools.search"):
@@ -78,6 +118,7 @@ class Markdown(unittest.TestCase):
                             "payments_not_applied": {"status": "ok", "rule": "r", "rows": []}}}
         md = report.to_markdown(rep)
         self.assertIn("**BLOCKED:** no access", md)
+        self.assertIn("## Invoices overdue (blocked)", md)  # never "(0)", which would read as "none overdue"
         self.assertIn("## Orders not invoiced (0)", md)
 
 
