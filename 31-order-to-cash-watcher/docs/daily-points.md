@@ -149,7 +149,8 @@ Only invoices are blocked (`BUG-31-001`, see `findings/BUG-31-001.md`, raised in
 - [ ] Instructor gives `team31a` the invoice and applied-receipt read tools (`BUG-31-001`).
 - [ ] Instructor answers what N to use (default 7).
 - [ ] Agree the split with Sunil. His proposal: Sunil = orders not invoiced + report; Deepak = overdue invoices + payments. Resolve the section A overlap with PR #13.
-- [ ] Raise BUG-31-002 (no mailbox) in the seat group.
+- [ ] Send BUG-31-001 and BUG-31-002 to the course team as text (the format names the course team; the seat group post may not reach them). Text versions are in the gitignored `private/` folder. Then update each report's Status and the bug list in `PLAN.md`.
+- [ ] Daily read-only recheck on both systems: tool list for invoice and applied-receipt tools (BUG-31-001), mailbox list (BUG-31-002). Add a line to each report's Log; close the bug when access appears.
 - [ ] Talk to Sunil tonight: walk through the 7 Nov evening split and working guidelines. Confirm he takes task 11 and wires `Ctx(agent=...)` for task 10.
 - [ ] Sunday 8 Nov weekly update: finished / next / one blocker.
 - [x] Rerun the report after the release deploys. Done: all runs were after the 6 Nov 3:48 pm IST release.

@@ -186,7 +186,8 @@ def to_markdown(prop):
         f"# Reminder drafts for review: {prop.get('instance') or ''} {prop['report_date']}",
         "",
         "Proposed only. Nothing has been created or sent. A person reviews each draft; "
-        "`--create` saves approved drafts in their mailbox as drafts, still unsent.",
+        "`--create` saves approved drafts in their mailbox as drafts, still unsent. "
+        "Until the login has a mailbox (BUG-31-002), this file is where the drafts are reviewed.",
         "",
         f"Overdue-invoice reminders: {prop['overdue_reminders']}.",
         "",
