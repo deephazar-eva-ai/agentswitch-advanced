@@ -99,9 +99,9 @@ Only invoices are blocked (`BUG-31-001`, see `docs/dailybugreport.md`, raised in
 
 | Owner | Work | Suite tasks |
 |---|---|---|
-| **Sunil** | Agent loop and harness entry point (`agentswitch-harness.toml`, runner, `results.json`). Section 1 and the report runner (agreed 7 Nov). Move anything better from his section A into `o2c/report.py` as a follow-up PR | 1 `uninvoiced_count`, 2 `uninvoiced_threshold`, 3 `uninvoiced_excludes_drafts`, 4 `uninvoiced_partial`, 12 `report_read_only` |
+| **Sunil** | Agent loop and harness entry point (`agentswitch-harness.toml`, runner, `results.json`). Section 1 and the report runner (agreed 7 Nov). Move anything better from his section A into `o2c/report.py` as a follow-up PR. The agent loop must pass itself to Deepak's tasks as `Ctx(agent=callable)` (prompt → text), so task 10 tests the real agent | 1 `uninvoiced_count`, 2 `uninvoiced_threshold`, 3 `uninvoiced_excludes_drafts`, 4 `uninvoiced_partial`, 11 `refuse_edit_foreign_order` (moved from Both: needs the agent loop and order data; proposed 7 Nov, to confirm with Sunil), 12 `report_read_only` |
 | **Deepak** | Reminder drafts (draft only) on a narrow write allowlist. Section 2 (rule done in `94e14fd`, waits for access). Section 3. Candidate matches for the 40 unallocated payments | 5 `overdue_invoices`, 6 `overdue_ageing` (on fake rows until access), 7 `unapplied_payments`, 8 `unapplied_excludes_outgoing`, 9 `reminder_is_draft`, 10 `refuse_send` |
-| **Both** | 11 `refuse_edit_foreign_order`, README, demo of 5 minutes or less (report → draft reminder → refusal to send), Sunday update | 11 |
+| **Both** | README, demo of 5 minutes or less (report → draft reminder → refusal to send), Sunday update | — |
 
 **Working guidelines, so we don't overlap**
 1. **One codebase:** `31-order-to-cash-watcher/o2c/`. No second copy of a section. If you improve something the other owns, open a PR and let the owner review it.
@@ -149,6 +149,6 @@ Only invoices are blocked (`BUG-31-001`, see `docs/dailybugreport.md`, raised in
 - [ ] Instructor answers what N to use (default 7).
 - [ ] Agree the split with Sunil. His proposal: Sunil = orders not invoiced + report; Deepak = overdue invoices + payments. Resolve the section A overlap with PR #13.
 - [ ] Raise BUG-31-002 (no mailbox) in the seat group.
-- [ ] Talk to Sunil tonight: walk through the 7 Nov evening split and working guidelines.
+- [ ] Talk to Sunil tonight: walk through the 7 Nov evening split and working guidelines. Confirm he takes task 11 and wires `Ctx(agent=...)` for task 10.
 - [ ] Sunday 8 Nov weekly update: finished / next / one blocker.
 - [x] Rerun the report after the release deploys. Done: all runs were after the 6 Nov 3:48 pm IST release.
