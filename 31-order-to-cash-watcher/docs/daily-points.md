@@ -79,6 +79,12 @@ Running log of instructor notices, what we did, and what is open. Newest day las
 - Report changed to count draft incoming payments too (not cancelled), shown by status: Suryodaya section 3 is now 40, matching the instructor. 7 tests pass.
 - Duplicate work: Sunil's section A overlaps PR #13 section 1. Decide with Sunil which one to keep.
 
+**Later, 7 Nov**
+- Rechecked `tools/list` read-only on both systems: 408 tools each, still no `Invoice` or `PaymentReceived`. `BUG-31-001` stays open.
+- Commit `94e14fd`: section 2 rule written (instructor's fields; empty `due_date` listed separately). It turns on by itself when `Invoice.list` appears; until then the heading reads "(blocked)", not "(0)". 10 tests pass.
+- PR #13 comment corrected the split and proposed keeping `o2c/` as the single base, with Sunil owning section 1 and the runner.
+- Token issued 6 Nov 23:51 IST expires about 13 Nov 23:51. Refresh once between 12 Nov 23:51 and 13 Nov 23:51 (`rm .env.tokens && source .env`) before the 15 Nov run.
+
 ## Open items
 - [ ] Sunil reviews PR #13; Deepak merges once write access arrives.
 - [ ] Deepak sends GitHub username `deephazar-eva-ai` to the instructor.
