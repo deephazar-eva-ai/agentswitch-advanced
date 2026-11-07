@@ -47,6 +47,25 @@ Many records are other seats' test fixtures. The report **flags** them in a colu
 | Overdue invoices and payments | Section 2 once invoice and applied-receipt read access is granted (open question 1); section 3 and matching the unallocated payments to invoices; suite tasks for sections 2–3 | Deepak |
 | Shared | Reminder drafts (draft only, never sent), refusal tasks, README, weekly Sunday update, demo | Both |
 
+## How we work in git
+Admin rule (7 Nov): the repository `github.com/theschoolofai/agentswitch-advanced` is private, and everyone sends their GitHub username to the admin in a DM for read access. Each person works in their own fork and opens a pull request; the seat lead merges after one review. No passwords, tokens or keys in the repository or in any group.
+
+- **People:** Deepak (`deephazar-eva-ai`) is the seat lead and the only one who merges. Sunil (`jssunil`) reviews Deepak's PRs.
+- **Forks and branches:** each person works in their own fork (`origin`), with `upstream` set to the course repository. One branch per topic, named `seat31/<owner>-<topic>`. PRs always go to `upstream/main`.
+- **Keep current:** before opening a PR and before asking for a review, run `git fetch upstream && git rebase upstream/main`, then push with `--force-with-lease`.
+- **No stacked branches:** do not start a branch on top of another open PR. Wait for the merge, or keep the topics in separate files.
+- **Review and merge:**
+
+  | PR author | Reviewer | Merges |
+  |---|---|---|
+  | Sunil | Deepak | Deepak |
+  | Deepak | Sunil | Deepak, after Sunil approves |
+
+  No merge without one approval from the other person.
+- **Small PRs, one owner per file:** follow the module ownership in `docs/daily-points.md` (working guidelines). Post a line in the seat group before starting something.
+- **Never committed:** passwords, tokens, keys, `.env*`, customer data, and the platform detail in `private/` (all gitignored). Check `git diff --cached` before every commit. Our forks are public, so treat every push as public.
+- **Bugs:** one file per finding in `findings/`, committed without platform detail; the exact text goes to the course team.
+
 ## v1 suite (30 Nov): candidate tasks
 Every task builds its inputs from the copy at runtime and is judged on the data, not on the wording.
 

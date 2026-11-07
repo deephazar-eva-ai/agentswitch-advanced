@@ -111,7 +111,7 @@ Only invoices are blocked (`BUG-31-001`, see `findings/BUG-31-001.md`, raised in
    - `o2c/client.py` (the read allowlist) changes only with both agreeing.
    - New files: Deepak `o2c/drafts.py` and `o2c/matching.py`; Sunil `o2c/agent.py` and the harness runner.
 3. **Interface:** each section is a pure function `(rows, report_date, …) -> rows`, and `build()` puts the sections together. Suite tasks call the same functions, so the report and the suite can't disagree.
-4. **Branches and PRs:** one branch per piece of work, named `seat31/<owner>-<topic>`. Small PRs, the other person reviews, and the seat lead merges; nobody merges their own PR.
+4. **Branches and PRs:** one branch per piece of work, named `seat31/<owner>-<topic>`. Small PRs; the other person reviews, and the seat lead merges after one approval (Deepak's own PRs too, once Sunil approves). Full strategy in `PLAN.md` (How we work in git).
 5. **Safety:**
    - The report stays read-only.
    - Writes go only through the drafts module's allowlist (draft calls only). Every email send tool stays refused (list in `o2c/drafts.py`).
@@ -142,10 +142,14 @@ Only invoices are blocked (`BUG-31-001`, see `findings/BUG-31-001.md`, raised in
   - 10 scores 0.5 in guardrail-only mode: 8 of 8 send calls refused, no message changed. It becomes a real pass or fail once the agent loop passes `ctx.agent`.
 - **For Sunil's agent loop:** `Ctx(agent=callable)` takes `prompt -> text`. Task 10 sends the agent a "send it now" prompt and checks that no message moved to sent, outbox or scheduled.
 - 34 unit tests pass (14 new, on a fake platform).
+- **Admin notice (repository access):** the repository is now private (the 3 Nov note said public). Everyone, not only seat leads, sends their GitHub username to the admin in a DM for read access. Each person works in their own fork and opens a PR; the seat lead merges after one review. Seat 31 git strategy written up in `PLAN.md` (How we work in git).
+- PR #17 is built on PR #13 (6 shared commits), and each has its own version of the "move platform detail to private notes" commit. Plan: merge #13 first, then rebase #17 onto `upstream/main` and keep the #17 version.
 
 ## Open items
 - [ ] Sunil reviews PR #13; Deepak merges once write access arrives.
 - [ ] Deepak sends GitHub username `deephazar-eva-ai` to the instructor.
+- [ ] Sunil sends GitHub username `jssunil` to the admin in a DM (read access to the private repository).
+- [ ] After #13 merges: rebase `seat31/deepak-drafts` (PR #17) onto `upstream/main`, push with `--force-with-lease`, Sunil reviews.
 - [ ] Instructor gives `team31a` the invoice and applied-receipt read tools (`BUG-31-001`).
 - [ ] Instructor answers what N to use (default 7).
 - [ ] Agree the split with Sunil. His proposal: Sunil = orders not invoiced + report; Deepak = overdue invoices + payments. Resolve the section A overlap with PR #13.
