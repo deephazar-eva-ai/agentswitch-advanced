@@ -88,7 +88,7 @@ Running log of instructor notices, what we did, and what is open. Newest day las
 
 ## 7 Nov 2026 (evening) — Work plan while invoices are blocked (to agree with Sunil)
 
-Only invoices are blocked (`BUG-31-001`, see `docs/dailybugreport.md`, raised in the seat group for the admin). That stops report section 2 and suite tasks 5–6. Everything else can go ahead.
+Only invoices are blocked (`BUG-31-001`, see `findings/BUG-31-001.md`, raised in the seat group for the admin). That stops report section 2 and suite tasks 5–6. Everything else can go ahead.
 
 **What v1 (30 Nov) really needs** — from `34-eval-harness/TASK_FORMAT.md`
 - The suite runs **an agent**, given `OPENAI_BASE_URL` / `OPENAI_API_KEY` / `OPENAI_MODEL`, on a **copy** of the instance with no internet. Tasks are judged on the data afterwards, never on the agent's wording.
@@ -117,7 +117,7 @@ Only invoices are blocked (`BUG-31-001`, see `docs/dailybugreport.md`, raised in
    - Writes go only through the drafts module's allowlist (draft calls only). Every email send tool stays refused (list in `o2c/drafts.py`).
    - Never update or delete a record we didn't create.
 6. **Dates:** tasks and reruns always pass `--date` and never rely on the clock (the Release 16 lesson).
-7. **Logging:** no tokens or customer data in commits. Bugs go in `docs/dailybugreport.md`, daily notes here. Post a line in the seat group when you start something, so we don't both pick it up.
+7. **Logging:** no tokens or customer data in commits. Bugs go in `findings/BUG-31-NNN.md`, one file per finding, and in the bug list in `PLAN.md`; daily notes here. Post a line in the seat group when you start something, so we don't both pick it up.
 
 **Not doing:** working out overdue invoices from order data. The instructor said to read due date and balance from Invoice.
 
@@ -129,7 +129,7 @@ Only invoices are blocked (`BUG-31-001`, see `docs/dailybugreport.md`, raised in
   - The draft writer can call only the create-message tool, and only for a draft. Every send, update and delete tool is refused before any request.
 - `o2c/matching.py` (new): candidate matches for unallocated payments; suggestions only, never allocations. Against sales orders today, very few payments have a same-customer candidate and none match on amount. Real matching needs invoices (BUG-31-001).
 - Read-only checks (counts only): every customer behind the unallocated payments has an email address.
-- **New blocker BUG-31-002:** our login `team31a` has no mailbox on either system, and creating a draft needs one. Logged in `docs/dailybugreport.md`.
+- **New blocker BUG-31-002:** our login `team31a` has no mailbox on either system, and creating a draft needs one. Logged in `findings/BUG-31-002.md`.
 - 20 unit tests pass (10 new: matching, drafts, and the writer refusing every send tool).
 
 ## 7 Nov 2026 (late) — Deepak: suite tasks 5–10

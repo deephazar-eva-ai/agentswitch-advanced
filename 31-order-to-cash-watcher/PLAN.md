@@ -15,7 +15,7 @@ From the instructor's Seat 31 brief in the seat group chat:
 ## Safety rules we build in
 - The report is **read-only**. The client in `o2c/client.py` refuses any tool that is not on a read allowlist, so a coding mistake cannot change a record.
 - Reminders are **drafts only**. The agent may create a draft for a person to review. It never calls a send tool; every email send tool is blocked in the client.
-- We never update or delete a record we did not create. Problems go in `BUG_REPORT_FORMAT.md` with IDs `BUG-31-NNN`.
+- We never update or delete a record we did not create. Problems are reported in the `BUG_REPORT_FORMAT.md` format, one file per finding in `findings/BUG-31-NNN.md` (see the bug list below).
 - No tokens, passwords or `.env` in commits. Local credentials live in `31-order-to-cash-watcher/.env`, which is gitignored.
 
 ## Milestones → deliverables
@@ -69,6 +69,14 @@ Every task builds its inputs from the copy at runtime and is judged on the data,
 1. **Our login cannot read invoices or applied receipts.** The instructor's 7 Nov answer says to read due date and balance from invoices, and that applied receipts are a separate record type. On both systems our login is told those read tools are not available to the seat, they are not in its tool list, and invoices linked from orders come back redacted. Tracked as `BUG-31-001`.
 2. ~~Keystone has no payments.~~ Answered 7 Nov: expected. The Keystone suite task for section 3 passes on an empty section.
 3. **What N should the daily report use** for "orders not invoiced after N days"? We default to 7 and make it a setting.
+
+## Bug list
+One file per finding in `findings/`, in the course format (`BUG_REPORT_FORMAT.md`). Exact requests and replies go to the course team as text, never in the repo. A bug is closed only with a final status and a resolution note.
+
+| ID | Title | System | Severity | Status | Resolution |
+|---|---|---|---|---|---|
+| [BUG-31-001](findings/BUG-31-001.md) | Invoice and applied-receipt read tools are not available to seat 31 | Both | Medium | Open | |
+| [BUG-31-002](findings/BUG-31-002.md) | Login `team31a` has no mailbox, so reminder drafts cannot be saved | Both | Medium | Open | |
 
 ## How to run the report
 Python 3.10+ standard library only; no installs.
