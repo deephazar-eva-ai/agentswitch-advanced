@@ -6,7 +6,9 @@
 - **Plan and milestones:** [docs/processed/project/plan.md](docs/processed/project/plan.md). **Task board:** [board.md](docs/processed/project/board.md)
 - **Wiki** (platform, access, evaluation design, decisions): [docs/processed/README.md](docs/processed/README.md)
 
-Set up: `uv sync`. Re-read the platform after a release (read-only, needs `.env`): `uv run python scripts/platform_sync.py`.
+**Run it:** `uv sync`, fill in `.env` (see `.env.example`), then
+`uv run python scripts/run_local.py --instance both -- --suite suites/example --out runs/results.json`.
+Runbook: [docs/processed/evaluation/how-to-run.md](docs/processed/evaluation/how-to-run.md). For other seats: [agent contract](docs/processed/evaluation/agent-contract.md).
 
 *The sections below are the course brief, kept as given. Our checked view of access is kept in local platform notes; see [docs/processed/platform/README.md](docs/processed/platform/README.md).*
 

@@ -17,14 +17,29 @@
 | **Party** | Any person or company the business deals with: a customer, a supplier, a contact. |
 | **Knowledge base (KB)** | The platform's library of company notes: policies, playbooks, procedures, and guides for agents. |
 | **Eval** | Short for evaluation: a test of how well an agent does its job. |
-| **Eval harness** | The machinery that runs evals: it starts the agent, records what happened, checks the result and adds up the scores. This is what seat 34 builds. |
+| **Eval harness** | The machinery that runs evals: it starts the agent, records what happened, checks the result and adds up the scores. This is what seat 34 builds (`eval_harness/`). |
+| **Agent harness** | The agent's own machinery: the loop that lets a model use tools. Not what we build; we test it. |
+| **Agent under test** | The agent being evaluated. It runs as a separate program (`agents_under_test/`, or another seat's folder). |
+| **Agent contract** | What an agent must accept and print so we can test it: the environment variables in, an optional `AGENT_RESULT` line out. See [evaluation/agent-contract.md](evaluation/agent-contract.md). |
 | **Task** | One test: a request for the agent, plus a rule for deciding if it succeeded. |
 | **Golden task** | A task whose correct result has been decided and checked by a person in advance. |
 | **Suite** | A set of tasks. Every seat must have a 12-task suite for version 1 (30 Nov). Our first task is one 12-task suite split across two seats: 6 tasks for seat 31 and 6 for seat 35. |
 | **Trial** | One attempt at one task. Agents can give different results each time, so a task may be run several times. |
-| **Verifier** | The code that decides whether a trial passed. It reads the platform's data, never the agent's answer. (Also called a grader or predicate.) |
+| **Grader** | Code that checks one aspect of the outcome and gives approve, revise or unevaluated. It reads the platform's data, never the agent's answer. (The course also says "verifier" or "predicate".) |
+| **Outcome** | The state of the platform after a trial. This is what graders judge. |
+| **Scorer** | Turns grader results and trial facts into separate scores (outcome, integrity, honesty, cost) and one `results.json` row. |
+| **Integrity** | Whether the run's login wrote anything it should not have. |
+| **Honesty** | Whether what the agent *said* it did matches what really happened (an honest refusal, a false success…). It is reported, but never decides a pass. |
 | **Snapshot** | A saved copy of the relevant records taken before a trial, so we can see exactly what changed afterwards. |
-| **Run record** | A file with everything about one trial (what was asked, what happened, timings, errors), saved **before** scoring. |
+| **Trial record** | A file with everything about one trial (manifest, snapshots, the agent's exit code and output, errors), saved **before** scoring. Also called a run record. |
+| **Manifest** | Everything that can change a score, recorded with it: git commit, task and grader versions, model, agent command, time limit. |
+| **Transcript** | The record of what happened in a trial. Ours is the trial record plus the agent's printed output. |
+| **Audit trail** | The platform's log book of changes: one line each time someone creates, edits or deletes a record, saying who, when, which record and what changed. Our login cannot read it yet. |
+| **Driver** | The part of the eval harness that starts or calls the agent under test for one trial, and waits for it to finish. Today it starts a program on the same machine. |
+| **Expected change** | A kind of check: the agent was asked to make something, and the check confirms it really exists on the platform and is right. |
+| **Proposal, not action** | A kind of check: the agent was asked to suggest something for a person to approve. The check confirms a proposal exists and that the records it is about are unchanged. |
+| **Launcher** | `scripts/run_local.py`: sets the same variables the course runner sets, then starts the eval harness on your computer. |
+| **Token cache** | A local, git-ignored file per system holding your current login token, so the password is used only when the token expires. |
 | **Verdict** | A verifier's decision: **approve** (it checked and the work is right), **revise** (it checked and the work is wrong), or **unevaluated** (nothing could be checked). Unevaluated is never a pass. |
 | **Infrastructure failure** | The test could not run fairly: a timeout, a bad login, a blocked tool. It is reported as a failure marked "infrastructure", never as the agent's fault and never as a pass. |
 | **results.json** | The file a harness run must write, in the course's format: one row per task with `passed`, `score` and `evidence`. |

@@ -19,7 +19,9 @@ Seat 34 is the **Eval Harness** seat. We build the tests that check whether the 
 | Platform | [platform/README.md](platform/README.md) | Why the platform notes are kept on your own computer, and how to get or regenerate them |
 | Bugs | [../bugs/README.md](../bugs/README.md) | How we find, check and file platform bugs, and the bug index |
 | Evaluation | [evaluation/principles.md](evaluation/principles.md) | How to judge an agent fairly |
-| Evaluation | [evaluation/harness-design.md](evaluation/harness-design.md) | What we are building, part by part |
+| Evaluation | [evaluation/harness-design.md](evaluation/harness-design.md) | What we are building, part by part, and why |
+| Evaluation | [evaluation/how-to-run.md](evaluation/how-to-run.md) | Runbook: set-up, run locally, rescore, troubleshoot, add a task |
+| Evaluation | [evaluation/agent-contract.md](evaluation/agent-contract.md) | What an agent needs so we can test it (for other seats) |
 | Evaluation | [evaluation/ideas.md](evaluation/ideas.md) | Rough ideas for test tasks (people rewrite them by hand) |
 | Project | [project/plan.md](project/plan.md) | Goal, milestones, definition of done |
 | Project | [project/board.md](project/board.md) | Task board |

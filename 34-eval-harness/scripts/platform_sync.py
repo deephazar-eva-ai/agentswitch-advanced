@@ -18,6 +18,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import probe_access
+from local_auth import SEAT_DIR, load_local_settings
 from platform_diff import Snapshot, compare_systems, diff_snapshots, load_snapshot
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -56,7 +57,7 @@ def build_report(out_dir: Path, systems: tuple[str, ...]) -> tuple[str, int]:
 
 
 def main() -> int:
-    settings = probe_access.load_settings()
+    settings = load_local_settings()
     if settings is None:
         return 2
     results, failures = asyncio.run(probe_access.probe_all(settings))
@@ -67,7 +68,7 @@ def main() -> int:
     report, changes = build_report(probe_access.OUT_DIR, read_now)
     path = probe_access.OUT_DIR / f"changes-{datetime.now(IST):%Y-%m-%d-%H%M}.md"
     path.write_text(report)
-    print(f"{changes} change(s) found; report: {path.relative_to(probe_access.SEAT_DIR)}")
+    print(f"{changes} change(s) found; report: {path.relative_to(SEAT_DIR)}")
     return 1 if failures else 0
 
 

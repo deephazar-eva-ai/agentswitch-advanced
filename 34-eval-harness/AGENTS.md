@@ -73,12 +73,25 @@ uv sync                      # install (Python 3.11, from uv.lock; the course ru
 uv run ruff format           # format (in CI or review: ruff format --check)
 uv run ruff check            # lint
 uv run mypy                  # type check (folders are listed in pyproject.toml [tool.mypy] files)
-uv run pytest                # tests (no live calls; once a tests/ folder exists)
-uv run python scripts/platform_sync.py  # live, read-only: re-read the platform and report what changed; needs .env
-```
-`ruff format --check`, `ruff check`, `mypy` and `pytest` must all pass before you ask for review. The platform helper scripts (`scripts/probe_access.py`, `scripts/platform_sync.py`, `scripts/platform_diff.py`) have no tests, by the seat lead's choice; check them by running them. When you add a new code folder, add it to `[tool.mypy] files` in `pyproject.toml`.
+uv run lint-imports          # boundary check: eval_harness and agents_under_test never import each other
+uv run pytest                # tests of the harness machinery (no live calls)
 
-`.env` needs these names (see `.env.example`): `AS_EMAIL`, `AS_SURYODAYA_PASSWORD`, `AS_KEYSTONE_PASSWORD`, `AS_SURYODAYA_URL`, `AS_KEYSTONE_URL`. Each person creates their own `.env`; never share or commit it.
+# run the eval harness locally, exactly as the course runner would (read-only on live data)
+uv run python scripts/run_local.py --instance both -- --suite suites/example --out runs/results.json
+# re-score saved trial records: zero model calls, zero platform calls
+uv run python -m eval_harness.rescore runs/<run_id> --suite suites/example --out runs/<run_id>/rescored.json
+uv run python scripts/platform_sync.py  # live, read-only: re-read the platform and report what changed
+```
+`ruff format --check`, `ruff check`, `mypy`, `lint-imports` and `pytest` must all pass before you ask for review. Full runbook: [docs/processed/evaluation/how-to-run.md](docs/processed/evaluation/how-to-run.md). The platform helper scripts (`scripts/probe_access.py`, `scripts/platform_sync.py`, `scripts/platform_diff.py`) have no tests, by the seat lead's choice; check them by running them. When you add a new code folder, add it to `[tool.mypy] files` in `pyproject.toml`.
+
+`.env` (see `.env.example`; each person has their own; never share or commit it):
+- local login: `AS_EMAIL`, `AS_SURYODAYA_PASSWORD`, `AS_KEYSTONE_PASSWORD`, `AS_SURYODAYA_URL`, `AS_KEYSTONE_URL`, `TOKEN_CACHE_DIR`;
+- model (any OpenAI-compatible provider): `OPENAI_BASE_URL`, `OPENAI_API_KEY`, `OPENAI_MODEL` (one model or a comma-separated list tried in order), `OPENAI_PROJECT_ID`, `OPENAI_EXTRA_BODY` (optional one-line JSON);
+- `AGENTSWITCH_*`: leave empty. The course runner and `scripts/run_local.py` set them.
+
+**How it fits together:**
+- **No local mode.** The eval harness and agents read only process environment variables; they never read `.env` and never log in.
+- **The launcher.** `scripts/run_local.py` gets a token through the cache in `scripts/local_auth.py` (in `TOKEN_CACHE_DIR`, git-ignored, never committed). It then starts the harness as the course runner would.
 
 Run the sync after every platform release notice. Review `data/platform/changes-<date>.md`: new gaps become instructor questions or bug drafts, and changed access updates the local platform notes.
 
@@ -86,6 +99,8 @@ Run the sync after every platform release notice. Review `data/platform/changes-
 - **Cards.** Every piece of work is a card on [board.md](docs/processed/project/board.md) (`S34-NN | title | owner | milestone`).
   - Each card has a user story: "As a … I want … so that …".
   - Each card has acceptance criteria in Given/When/Then form, written before the code.
+- **Found something missing?** Add a Backlog card to board.md straight away, with the next free number, even if nobody builds it now.
+- **Never delete a card.** Every number stays on the board for traceability. Move it to Done or Dropped, with a one-line note saying why and which card took it over.
 - **Done.** A card is done only when it meets the **definition of done** in [plan.md](docs/processed/project/plan.md).
 - **Limits.**
   - At most one card in Doing per person.
@@ -100,23 +115,31 @@ Run the sync after every platform release notice. Review `data/platform/changes-
 - One review from a teammate; the seat lead merges. Nobody merges their own pull request.
 - Put the card number in the pull request title. A new card or bug gets the next free number (`S34-NN`, `BUG-34-NNN`), claimed in that pull request's title. Never reuse a number.
 
-## 9. Bugs
+## 9. Eval harness boundaries
+- **No shared code.** `eval_harness/` (our product) and `agents_under_test/` (what we test) never import each other. `lint-imports` enforces this. An agent is a separate program behind the [agent contract](docs/processed/evaluation/agent-contract.md).
+- **Graders read only the saved trial record**, never the agent's output or claims. If a grader needs new data, the trial captures it first, so that rescoring still works offline.
+- **Graded tasks are written by people** (see `how-to-run.md` §7). `suites/example/` is agent-written plumbing, marked `graded = false`.
+- **Keep failed and odd runs** in `runs/`, labelled. Never delete them to tidy up.
+
+## 10. Bugs
 The platform is still being developed, so expect bugs. The workflow is in [docs/bugs/README.md](docs/bugs/README.md).
 - **Agents may draft only.** An agent may draft a report from [TEMPLATE.md](docs/bugs/TEMPLATE.md) in `docs/bugs/reports/` (git-ignored), with status **draft**.
 - **People verify and file.** Only a person re-runs the steps, marks a bug **verified**, files it with the platform, and marks it **filed**.
 - **Agents never file.** Agents never call the platform's bug-report tool or endpoint.
 - **Before drafting,** check it is not by design (a seat-boundary refusal) and not already known.
 
-## 10. Docs
+## 11. Docs
 - **Folders.**
   - `docs/raw/` holds pasted and fetched material. It is **local only** (git-ignored).
   - `docs/processed/` is the wiki: organised, checked, and committed. Its `platform/` pages are the exception and stay local.
   - `docs/bugs/` holds the bug workflow, template and index. Full reports in `docs/bugs/reports/` are local.
   - `data/` holds platform data. The live dumps in `data/platform/` are git-ignored; see [data/README.md](data/README.md).
+- **Readers.** People and coding agents both read and update these pages. Write short, clear instructions that anyone can follow.
 - **Language.** Plain English that anyone can follow. Explain a special word the first time it appears, and add it to [glossary.md](docs/processed/glossary.md).
 - **Size.** Keep pages short. Add only what someone will need. Update or delete facts that go stale, rather than piling up new pages.
+- **Keep sections current.** Change a page by updating the section in place, not by adding dated notes at the bottom. Link the decision record that explains a change. Old versions stay in git history. (`status.md` is a log, so it is the exception.)
 
-## 11. End of every session
+## 12. End of every session
 1. Leave the code runnable, with checks passing. Or say clearly in the handoff what is broken.
 2. Add an entry at the top of [status.md](docs/processed/project/status.md): what changed, what's next, blockers.
 3. Move your card on [board.md](docs/processed/project/board.md).

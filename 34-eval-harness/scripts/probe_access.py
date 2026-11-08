@@ -4,7 +4,7 @@ Why: docs and chat disagree about our access (knowledge base, invoices, parties,
 We check live instead of trusting what is written.
 
 What it does, per system (both systems run at the same time):
-  1. Logs in once. A refused login stops that system at once (no retry: ten wrong tries lock the account).
+  1. Gets a token from scripts/local_auth.py: the cached one, or one login (never retried).
   2. Reads a few REST pages: who we are, the locale, entity schemas, the agent tools.
   3. Opens one MCP session, lists our tools, and makes 1-row reads of the entities other seats use.
   4. Moves the last snapshot to data/platform/<system>/previous/ (so scripts/platform_sync.py can
@@ -26,17 +26,16 @@ from pathlib import Path
 from typing import Any, Literal
 
 import httpx2
+from local_auth import SEAT_DIR, SYSTEMS, LocalSettings, get_token, load_local_settings
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.exceptions import MCPError
 from mcp.types import Tool
-from pydantic import BaseModel, SecretStr, ValidationError
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import BaseModel
 
-SEAT_DIR = Path(__file__).resolve().parent.parent
 OUT_DIR = SEAT_DIR / "data" / "platform"
 
-INSTANCES = ("suryodaya", "keystone")  # web addresses come from .env (AS_<SYSTEM>_URL)
+INSTANCES = SYSTEMS  # web addresses come from .env (AS_<SYSTEM>_URL)
 VERSION_PAGES = ("/openapi.json", "/api/version")
 CALL_TIMEOUT_S = 90
 REST_PAGES = {
@@ -72,27 +71,6 @@ OTHER_READS: dict[str, dict[str, Any]] = {
 KB_WORDS = ("knowledge", "kb", "vault", "note", "article", "wiki")
 READ_SUFFIXES = (".list", ".get", ".get_mine", ".list_mine")
 META_READS = {"tools.search", "tools.describe", "events.catalog"}
-
-
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=SEAT_DIR / ".env", env_prefix="AS_", extra="ignore")
-    email: str
-    suryodaya_password: SecretStr
-    keystone_password: SecretStr
-    suryodaya_url: str
-    keystone_url: str
-
-    def url(self, instance: str) -> str:
-        base: str = getattr(self, f"{instance}_url")
-        return base.rstrip("/")
-
-    def password(self, instance: str) -> str:
-        secret: SecretStr = getattr(self, f"{instance}_password")
-        return secret.get_secret_value()
-
-
-class LoginFailed(Exception):
-    """The platform refused our login. We never retry, to avoid the lockout."""
 
 
 class RefusedWrite(Exception):
@@ -141,18 +119,6 @@ def shape_of(payload: Any) -> tuple[int | None, list[str]]:
         first = payload[0] if payload and isinstance(payload[0], dict) else {}
         return len(payload), sorted(first)
     return None, []
-
-
-async def login(http: httpx2.AsyncClient, base: str, settings: Settings, instance: str) -> str:
-    reply = await http.post(
-        f"{base}/api/auth/login", json={"email": settings.email, "password": settings.password(instance)}
-    )
-    if reply.status_code != 200:
-        raise LoginFailed(f"{instance}: login refused with HTTP {reply.status_code}: {reply.text[:200]}")
-    token = reply.json().get("token")
-    if not isinstance(token, str) or not token:
-        raise LoginFailed(f"{instance}: login reply had no token")
-    return token
 
 
 async def read_rest(http: httpx2.AsyncClient, base: str, name: str, path: str, raw_dir: Path) -> Check:
@@ -311,11 +277,10 @@ async def read_version(http: httpx2.AsyncClient, base: str) -> dict[str, Any]:
     return {"source": None, "version": "unknown"}
 
 
-async def probe_instance(instance: str, settings: Settings) -> dict[str, Any]:
+async def probe_instance(instance: str, settings: LocalSettings) -> dict[str, Any]:
     base = settings.url(instance)
     raw_dir = OUT_DIR / instance
-    async with httpx2.AsyncClient(timeout=httpx2.Timeout(60, read=120)) as anon:
-        token = await login(anon, base, settings, instance)
+    token = await get_token(settings, instance)  # cached token, or one login (scripts/local_auth.py)
     rotate_snapshot(raw_dir)  # only after a good login, so a failed run keeps the last snapshot in place
     raw_dir.mkdir(parents=True, exist_ok=True)
     checks: list[Check] = []
@@ -374,17 +339,7 @@ def summary_markdown(results: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def load_settings() -> Settings | None:
-    """Read .env. On a problem, name the missing variables only: never echo values (they hold passwords)."""
-    try:
-        return Settings()  # values come from .env
-    except ValidationError as e:
-        names = sorted({"AS_" + "_".join(str(part) for part in err["loc"]).upper() for err in e.errors()})
-        print(f"Missing or invalid in .env: {', '.join(names)} (see .env.example)", file=sys.stderr)
-        return None
-
-
-async def probe_all(settings: Settings) -> tuple[list[dict[str, Any]], list[BaseException]]:
+async def probe_all(settings: LocalSettings) -> tuple[list[dict[str, Any]], list[BaseException]]:
     """Probe both systems at once. Returns the systems that were read and the failures."""
     outcomes = await asyncio.gather(*(probe_instance(i, settings) for i in INSTANCES), return_exceptions=True)
     results = [o for o in outcomes if isinstance(o, dict)]
@@ -403,7 +358,7 @@ async def probe_all(settings: Settings) -> tuple[list[dict[str, Any]], list[Base
 
 
 async def main() -> int:
-    settings = load_settings()
+    settings = load_local_settings()
     if settings is None:
         return 2
     _, failures = await probe_all(settings)

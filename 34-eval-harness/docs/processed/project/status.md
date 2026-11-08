@@ -6,7 +6,57 @@ Entry format: date · who · what changed · what's next · blockers. Keep entri
 
 ---
 
-## 2026-11-07 · seat lead (with Claude Code)
+## 2026-11-08 · Krishna
+**What changed**
+- **Checked live again on both systems:**
+  - the plumbing task still passes end to end (`outcome=approve`, `integrity=clean`);
+  - rescoring gives identical rows;
+  - no secrets appear in the run files.
+- **Abhinav's access findings confirmed.** Our login still cannot read the sales, accounting and audit-trail data that seats 31 and 35 work on. [risks.md](risks.md) rows 1 and 5 and questions Q2 and Q3 are updated, and bug draft BUG-34-003 is written.
+- **The instructor's answer on logins (7 Nov):** a run gives our harness seat 34's token. Still open: how our harness should start the seats' own agents (Q2).
+- **New backlog cards S34-20 to S34-30** on the [board](board.md), for parts found missing. S34-20 to S34-26: two kinds of check, a driver for agents that work under their own login, a "no writes" check that also watches the agent's login, a cost count on our side, task ordering, and the demo recording. S34-27 to S34-30: the dry run and first official run, the final README, the integration run, and closing the bug list.
+- **Board rule: never delete a card.** S34-04, S34-05, S34-06 and S34-09 are back on the board, under Review, marked as built inside S34-19. Every number from S34-01 to S34-30 now appears exactly once.
+- **[harness-design.md](../evaluation/harness-design.md)** sections brought up to date, with the three kinds of check and the known gaps. `AGENTS.md` has two new rules: add a backlog card when something is missing, and keep doc sections current.
+- **Wording:** status entries now name people by first name.
+
+**What's next**
+1. Krishna: commit the scaffold and these docs on branch `seat34/eval-harness-scaffold`, and open the pull request. Ask Ranjani or Abhinav to review it.
+2. Krishna: post the message about how a harness run works (Q2, Q3) in the seat group. Verify BUG-34-003 and file it if the course team wants it filed.
+3. The team: agree owners for S34-07, S34-08 and S34-20 to S34-30.
+
+**Blockers:** risks 1 and 5 (read access; how to start another seat's agent), and Q1 for official runs.
+
+---
+
+## 2026-11-07 (evening) · Krishna
+**What changed**
+- **The eval-harness scaffold (S34-19):**
+  - `eval_harness/` (settings, a REST reader, suite, trial, graders, scorer, results, rescore);
+  - `agents_under_test/sample/` (an openai SDK + MCP stand-in agent, read-only);
+  - `suites/example/` (one plumbing task, `graded = false`);
+  - `agentswitch-harness.toml`.
+- **Local runs.** `scripts/run_local.py` is the launcher, and `scripts/local_auth.py` holds the token cache. The probe and sync scripts use the same cache now.
+- **Checked live on both systems:**
+  - the plumbing task passes (`outcome=approve`, `integrity=clean`, `honesty=honest_refusal`);
+  - a bad model and a dead token each give a clear `infrastructure:` row;
+  - rescoring reproduces the rows with zero model calls;
+  - no secrets appear in any run file.
+- **Docs:**
+  - [harness-design.md](../evaluation/harness-design.md) rewritten;
+  - new [agent-contract.md](../evaluation/agent-contract.md) and [how-to-run.md](../evaluation/how-to-run.md);
+  - decisions 0007–0010;
+  - glossary terms.
+
+**What's next**
+1. Krishna: commit the scaffold on its own branch (see the handover), open the pull request, and ask a teammate to review it.
+2. Open M0 items: instructor questions Q1–Q6; seats 31 and 35 (where results land, plus the [agent contract](../evaluation/agent-contract.md)); team meeting; checking the bug drafts.
+3. People write the first real tasks for seats 31 and 35 (S34-07, S34-08).
+
+**Blockers:** unchanged (risks 1 and 2; Q1 blocks official runs).
+
+---
+
+## 2026-11-07 · Krishna
 **What changed**
 - **Seat foundations:**
   - `.gitignore` keeps raw notes, platform data, local platform notes, full bug reports, run output, `.env` and personal files out of git;
@@ -24,10 +74,10 @@ Entry format: date · who · what changed · what's next · blockers. Keep entri
   - sales, accounting and item data are not readable by our login.
 
 **What's next**
-1. Seat lead: create `.env.example` and add the two address lines to `.env` (see `AGENTS.md`). Then commit on branch `seat34/foundations` in the fork, and open the pull request.
-2. Seat lead: post instructor questions Q1–Q6 from [risks.md](risks.md), and talk with seats 31 and 35 about where their results land (risk 2).
-3. Seat lead: verify the seed bug drafts and file the real ones (S34-17).
-4. Seat lead: share this plan with Ranjani and Abhinav, and meet to agree who looks after what. Every owner in the docs is a proposal until then.
+1. Krishna: create `.env.example` and add the two address lines to `.env` (see `AGENTS.md`). Then commit on branch `seat34/foundations` in the fork, and open the pull request.
+2. Krishna: post instructor questions Q1–Q6 from [risks.md](risks.md), and talk with seats 31 and 35 about where their results land (risk 2).
+3. Krishna: verify the seed bug drafts and file the real ones (S34-17).
+4. Krishna: share this plan with Ranjani and Abhinav, and meet to agree who looks after what. Every owner in the docs is a proposal until then.
 5. Then the M1 cards, S34-04 to S34-09, on the [board](board.md).
 
 **Blockers**

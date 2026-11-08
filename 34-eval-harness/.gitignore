@@ -21,7 +21,8 @@ reports/
 local/
 *.log
 
-# Secrets and personal settings.
+# Secrets and personal settings (the token cache lives in .cache/).
+.cache/
 .env
 .env.*
 !.env.example

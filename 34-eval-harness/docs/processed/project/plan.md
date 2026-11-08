@@ -37,6 +37,14 @@ Each milestone ends with something that runs end to end. We build a thin working
 ### M1 First task: 10–15 Nov (proposed: Krishna core; Abhinav seat 31; Ranjani seat 35)
 **Outcome:** a thin end-to-end slice. It has a platform client, a driver, run records, verifiers, a scorer, and `results.json` for 12 tasks for seats 31 and 35 on both systems. Blocked tasks report unevaluated or infrastructure honestly. One local dry run and one official run.
 
+**Step 1, done 7 Nov: the scaffold (S34-19).** The whole chain works end to end on both systems with one plumbing task (see [harness-design.md](../evaluation/harness-design.md)).
+- **Story:** As the seat lead, I want one task to run end to end locally exactly as on the platform, so that we trust the machinery before writing real suites.
+  - Given `.env` with a login and a model, when `scripts/run_local.py --instance both -- --suite suites/example` runs, then each system gets a trial record and a `results.json` row with `passed: true`, `outcome=approve` and `integrity=clean`. **Met, 7 Nov.**
+  - Given a model that does not exist, or a dead token, when the harness runs, then the row says `infrastructure: …` with the reason, and the exit code is 0. **Met, 7 Nov.**
+  - Given saved trial records, when `eval_harness.rescore` runs, then the rows are identical, with zero model calls. **Met, 7 Nov.**
+
+**Step 2, next: the real suites for seats 31 and 35 (S34-07, S34-08), written by people**, against the [agent contract](../evaluation/agent-contract.md). This depends on risks 1 and 2 (read access, and results landing on the platform).
+
 - **Story:** As the course runner, I want `results.json` in the course format, so that our suite can be scored.
   - Given a run, when it ends (even after a crash or timeout), then `results.json` has one row per task with `passed`, `score` and `evidence`, and infrastructure failures are marked as such.
 - **Story:** As a seat owner, I want my agent judged by platform changes, so that a confident but wrong answer cannot pass.
