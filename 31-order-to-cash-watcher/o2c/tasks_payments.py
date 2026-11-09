@@ -130,13 +130,22 @@ def unapplied_payments(ctx):
     raw = _payments(ctx)
     expected = {p["number"]: _money(p.get("unallocated")) for p in raw
                 if p.get("type") == "receive" and p.get("docstatus") != 2 and _money(p.get("unallocated")) > 0}
-    rows = ctx.report()["sections"]["payments_not_applied"]["rows"]
+    sec = ctx.report()["sections"]["payments_not_applied"]
+    rows = sec["rows"]
     got = {r["number"]: r["unallocated"] for r in rows}
     exp_total, got_total = round(sum(expected.values()), 2), round(sum(got.values()), 2)
-    passed = set(got) == set(expected) and abs(exp_total - got_total) < 0.01
+    # The summary tables must add up to the same figures as the recount.
+    summ = sec.get("summary") or {}
+    parts = {name: (sum(b["count"] for b in summ.get(name, [])), round(sum(b["unallocated"] for b in summ.get(name, [])), 2))
+             for name in ("by_age", "by_status", "by_customer")}
+    summary_ok = (summ.get("count") == len(expected) and abs((summ.get("unallocated") or 0) - exp_total) < 0.01
+                  and all(n == len(expected) and abs(t - exp_total) < 0.01 for n, t in parts.values()))
+    passed = set(got) == set(expected) and abs(exp_total - got_total) < 0.01 and summary_ok
     note = "; no incoming payments on this instance (expected, instructor 7 Nov)" if not raw else ""
     return _ok(passed, f"verifier=payment_recount; rows expected={len(expected)} got={len(got)}; "
-                       f"unallocated expected={exp_total:,.2f} got={got_total:,.2f}; {_diff(set(expected), set(got))}{note}")
+                       f"unallocated expected={exp_total:,.2f} got={got_total:,.2f}; "
+                       f"summary_adds_up={summary_ok} ({', '.join(f'{k}={n}/{t:,.2f}' for k, (n, t) in parts.items())}); "
+                       f"{_diff(set(expected), set(got))}{note}")
 
 
 def unapplied_excludes_outgoing(ctx):

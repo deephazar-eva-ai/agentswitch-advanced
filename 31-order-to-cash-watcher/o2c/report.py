@@ -4,6 +4,8 @@ The rules are pure functions over rows so they can be tested without the platfor
 """
 from datetime import date, datetime, timedelta, timezone
 
+from . import receipts as receipts_mod
+
 IST = timezone(timedelta(hours=5, minutes=30))
 SUBMITTED = 1
 CANCELLED = 2
@@ -11,6 +13,7 @@ NOT_INVOICED = ("unbilled", "partially_invoiced")
 RECEIVABLE = "receivable"
 PARTIALLY_PAID = "partially paid"
 FIXTURE_MARKERS = ("test", "harness", "fixture")
+AGE_BUCKETS = (("future", None, -1), ("0-30", 0, 30), ("31-60", 31, 60), ("61-90", 61, 90), ("90+", 91, None))
 
 
 def today_ist():
@@ -102,11 +105,22 @@ def orders_not_invoiced(orders, report_date, days):
     return sorted(out, key=lambda r: (-r["age_days"], r["number"] or ""))
 
 
+def age_bucket(age_days):
+    """Label for an age in days. A payment dated after the report date is 'future'; no date is 'unknown'."""
+    if age_days is None:
+        return "unknown"
+    for label, lo, hi in AGE_BUCKETS:
+        if (lo is None or age_days >= lo) and (hi is None or age_days <= hi):
+            return label
+    return "unknown"
+
+
 def payments_not_applied(payments, report_date):
     """Incoming payments (draft or submitted, not cancelled) with money not yet allocated to an invoice.
 
-    Drafts are kept: the instructor counts all 40 Suryodaya receive payments as unallocated.
-    The status column shows which ones are drafts.
+    These are Payment rows of type `receive`; applied receipts are a separate entity, PaymentReceived
+    (instructor, 7 Nov). Drafts are kept: the instructor counts all 40 Suryodaya receive payments as
+    unallocated. The status column shows which ones are drafts.
     """
     out = []
     for p in payments:
@@ -116,6 +130,11 @@ def payments_not_applied(payments, report_date):
         if unallocated <= 0:
             continue
         paid = _as_date(p.get("date"))
+        age = (report_date - paid).days if paid else None
+        amount = round(float(p.get("amount") or 0), 2)
+        notes = []
+        if p.get("status") == "reconciled" and abs(unallocated - amount) < 0.01:
+            notes.append("reconciled but nothing allocated")
         out.append({
             "number": p.get("number"),
             "id": p.get("id"),
@@ -124,13 +143,48 @@ def payments_not_applied(payments, report_date):
             "company_id": p.get("company_id"),
             "currency": None,   # Payment has no currency field; resolved from customer/company
             "payment_date": paid.isoformat() if paid else None,
-            "age_days": (report_date - paid).days if paid else None,
+            "age_days": age,
+            "age_bucket": age_bucket(age),
             "amount": p.get("amount"),
             "unallocated": unallocated,
             "status": p.get("status"),
+            "docstatus": p.get("docstatus"),
+            "notes": notes,
             "fixture": looks_like_fixture(p),
         })
     return sorted(out, key=lambda r: (-(r["age_days"] or 0), r["number"] or ""))
+
+
+def payments_summary(rows):
+    """Totals for section 3: overall, by age bucket, by status and by customer (largest first)."""
+    def add(table, key, row):
+        t = table.setdefault(key, {"count": 0, "unallocated": 0.0})
+        t["count"] += 1
+        t["unallocated"] = round(t["unallocated"] + row["unallocated"], 2)
+
+    buckets, statuses, customers = {}, {}, {}
+    for r in rows:
+        add(buckets, r["age_bucket"], r)
+        add(statuses, r["status"] or "unknown", r)
+        add(customers, r.get("party_id") or r.get("customer") or "unknown", r)
+        customers[r.get("party_id") or r.get("customer") or "unknown"]["customer"] = r.get("customer")
+    order = [b[0] for b in AGE_BUCKETS] + ["unknown"]
+    return {
+        "count": len(rows),
+        "unallocated": round(sum(r["unallocated"] for r in rows), 2),
+        "by_age": [{"bucket": b, **buckets[b]} for b in order if b in buckets],
+        "by_status": [{"status": k, **v} for k, v in sorted(statuses.items())],
+        "by_customer": sorted(({"party_id": k, **v} for k, v in customers.items()),
+                              key=lambda c: (-c["unallocated"], c.get("customer") or "")),
+    }
+
+
+def add_receipt_hints(rows, receipts):
+    """Attach each unapplied payment's customer receipt history (PaymentReceived) to its row."""
+    history = receipts_mod.history_by_customer(receipts)
+    for r in rows:
+        r.update(receipts_mod.hint_for(r, history))
+    return rows
 
 
 def invoices_overdue(invoices, report_date):
@@ -210,10 +264,20 @@ def build(client, report_date=None, days=7, instance=None, currencies=None):
         }
 
     payments = client.list_all("Payment", {"type": "receive"})
+    pay_rows = apply_currency(payments_not_applied(payments, report_date), currencies)
+    if "PaymentReceived.list" in names:
+        add_receipt_hints(pay_rows, client.list_all("PaymentReceived"))
+        history = {"status": "ok", "source": "PaymentReceived (applied receipts), joined on customer"}
+    else:
+        history = {"status": "blocked",
+                   "reason": "this login has no PaymentReceived read tool, so receipt history is not shown. Tracked as BUG-31-001"}
     sections["payments_not_applied"] = {
         "status": "ok",
         "rule": "incoming (receive), not cancelled, unallocated > 0",
-        "rows": apply_currency(payments_not_applied(payments, report_date), currencies),
+        "rows": pay_rows,
+        "summary": payments_summary(pay_rows),
+        "receipt_history": history,
+        "note": None if payments else "no incoming payments on this instance (expected, instructor 7 Nov)",
     }
 
     return {
@@ -284,6 +348,45 @@ def _invoice_tables(rows, no_due):
     return lines
 
 
+HINT_LABELS = {"same_amount": "**check: same amount**", "has_history": "has history", "no_history": "no history"}
+
+
+def _payment_tables(sec):
+    rows, hist = sec["rows"], sec.get("receipt_history") or {}
+    summ = sec.get("summary") or payments_summary(rows)
+    lines = [f"**{summ['count']} payments, {_money(summ['unallocated'])} unallocated.**", "",
+             "| Age (days) | Payments | Unallocated |", "|---|---:|---:|"]
+    lines += [f"| {b['bucket']} | {b['count']} | {_money(b['unallocated'])} |" for b in summ["by_age"]]
+    lines += ["", "| Status | Payments | Unallocated |", "|---|---:|---:|"]
+    lines += [f"| {b['status']} | {b['count']} | {_money(b['unallocated'])} |" for b in summ["by_status"]]
+    top = summ["by_customer"][:5]
+    lines += ["", f"Largest customers ({len(top)} of {len(summ['by_customer'])}):", "",
+              "| Customer | Payments | Unallocated |", "|---|---:|---:|"]
+    lines += [f"| {cell(c.get('customer'))} | {c['count']} | {_money(c['unallocated'])} |" for c in top]
+    lines.append("")
+    if hist.get("status") == "ok":
+        lines += [f"Receipt history: {hist['source']}.", ""]
+    else:
+        lines += [f"Receipt history: **{hist.get('status', 'blocked').upper()}**: {hist.get('reason', '')}", ""]
+    show_hist = hist.get("status") == "ok"
+    head = "| Payment | Customer | Date | Age (days) | Bucket | Amount | Unallocated | Status |"
+    rule = "|---|---|---|---:|---|---:|---:|---|"
+    if show_hist:
+        head += " Receipt history |"
+        rule += "---|"
+    lines += [head + " |", rule + "---|"]
+    for r in rows:
+        line = (f"| {cell(r['number'])} | {cell(r['customer'])} | {cell(r['payment_date'])} | "
+                f"{r['age_days'] if r['age_days'] is not None else ''} | {cell(r.get('age_bucket'))} | {_money(r['amount'])} | "
+                f"{_money(r['unallocated'])} {cell(_cur(r))} | {cell(r['status'])}"
+                f"{cell(' (' + '; '.join(r['notes']) + ')') if r.get('notes') else ''} |")
+        if show_hist:
+            same = f" {cell(', '.join(r['same_amount_receipts']))}" if r.get("same_amount_receipts") else ""
+            line += f" {HINT_LABELS.get(r.get('hint'), '')}{same} ({r.get('receipts_paid', 0)} paid) |"
+        lines.append(line + f" {'fixture' if r['fixture'] else ''} |")
+    return lines
+
+
 def to_markdown(report):
     lines = [
         f"# Order-to-cash exceptions — {report.get('instance') or ''} {report['report_date']}",
@@ -308,7 +411,7 @@ def to_markdown(report):
             lines += _invoice_tables(rows, sec.get("no_due_date", []))
             continue
         if not rows:
-            lines += ["None.", ""]
+            lines += [f"None{' (' + sec['note'] + ')' if sec.get('note') else ''}.", ""]
             continue
         if key == "orders_not_invoiced":
             lines += ["| Order | Customer | Date | Age (days) | Invoiced | Delivered | Total | |",
@@ -318,10 +421,6 @@ def to_markdown(report):
                              f"{cell(r['invoiced_status'])} | {cell(r['delivered_status'])} | {_money(r['grand_total'])} {cell(_cur(r))} | "
                              f"{'fixture' if r['fixture'] else ''} |")
         else:
-            lines += ["| Payment | Customer | Date | Age (days) | Amount | Unallocated | Status | |",
-                      "|---|---|---|---:|---:|---:|---|---|"]
-            for r in rows:
-                lines.append(f"| {cell(r['number'])} | {cell(r['customer'])} | {cell(r['payment_date'])} | {r['age_days'] if r['age_days'] is not None else ''} | "
-                             f"{_money(r['amount'])} | {_money(r['unallocated'])} {cell(_cur(r))} | {cell(r['status'])} | {'fixture' if r['fixture'] else ''} |")
+            lines += _payment_tables(sec)
         lines.append("")
     return "\n".join(lines)

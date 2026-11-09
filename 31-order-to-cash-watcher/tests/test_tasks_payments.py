@@ -96,6 +96,14 @@ class Payments(unittest.TestCase):
         self.assertTrue(r["unapplied_payments"]["passed"], r["unapplied_payments"]["evidence"])
         self.assertTrue(r["unapplied_excludes_outgoing"]["passed"])
         self.assertIn("outgoing_or_transfer_checked=2", r["unapplied_excludes_outgoing"]["evidence"])
+        self.assertIn("summary_adds_up=True", r["unapplied_payments"]["evidence"])
+
+    def test_summary_that_does_not_add_up_fails(self):
+        c = ctx()
+        c.report()["sections"]["payments_not_applied"]["summary"]["by_age"][0]["unallocated"] += 1.0
+        r = by_id(T.run(c, [t for t in T.TASKS if t[0] == "unapplied_payments"]))
+        self.assertFalse(r["unapplied_payments"]["passed"])
+        self.assertIn("summary_adds_up=False", r["unapplied_payments"]["evidence"])
 
     def test_recount_catches_a_report_that_drops_a_row(self):
         c = ctx()
