@@ -20,12 +20,30 @@ from typing import Any
 from pydantic import BaseModel
 
 from eval_harness.platform import Me, PlatformError, PlatformReader
-from eval_harness.settings import HarnessSettings
+from eval_harness.settings import MODEL_VARIABLES, OPTIONAL_MODEL_VARIABLES, HarnessSettings
 from eval_harness.suite import Suite, Task
 
 SEAT_DIR = Path(__file__).resolve().parent.parent
 OUTPUT_TAIL_CHARS = 4000
 RESULT_PREFIX = "AGENT_RESULT "
+# What a process needs to start and to reach the given endpoints (a proxy, if the runner uses one).
+SYSTEM_VARIABLES = (
+    "PATH",
+    "HOME",
+    "LANG",
+    "LC_ALL",
+    "TZ",
+    "TMPDIR",
+    "SYSTEMROOT",
+    "VIRTUAL_ENV",
+    "SSL_CERT_FILE",
+    "HTTP_PROXY",
+    "HTTPS_PROXY",
+    "NO_PROXY",
+    "http_proxy",
+    "https_proxy",
+    "no_proxy",
+)
 
 
 class AgentRun(BaseModel):
@@ -122,8 +140,12 @@ async def writes_by(
 
 
 def agent_environment(settings: HarnessSettings, run_id: str) -> dict[str, str]:
-    """The contract: the agent gets exactly what the course runner gives a harness (passed through)."""
-    env = dict(os.environ)
+    """The contract variables and a few operating-system basics, nothing else.
+
+    An allowlist, so no password, token or key that happens to be in our environment can reach the agent.
+    """
+    allowed = (*SYSTEM_VARIABLES, *MODEL_VARIABLES, *OPTIONAL_MODEL_VARIABLES)
+    env = {name: os.environ[name] for name in allowed if name in os.environ}
     env.update(
         {
             "AGENTSWITCH_BASE_URL": settings.base_url,

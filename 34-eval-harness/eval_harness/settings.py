@@ -11,6 +11,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Variables the agent under test needs; the harness checks they are present, then passes them on unchanged.
 MODEL_VARIABLES = ("OPENAI_BASE_URL", "OPENAI_API_KEY", "OPENAI_MODEL")
+# Optional model settings, passed on to the agent when present (agent-contract.md §2).
+OPTIONAL_MODEL_VARIABLES = ("OPENAI_PROJECT_ID", "OPENAI_EXTRA_BODY")
 
 
 class SettingsMissing(Exception):

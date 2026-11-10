@@ -34,13 +34,14 @@
 | **Trial record** | A file with everything about one trial (manifest, snapshots, the agent's exit code and output, errors), saved **before** scoring. Also called a run record. |
 | **Manifest** | Everything that can change a score, recorded with it: git commit, task and grader versions, model, agent command, time limit. |
 | **Transcript** | The record of what happened in a trial. Ours is the trial record plus the agent's printed output. |
-| **Audit trail** | The platform's log book of changes: one line each time someone creates, edits or deletes a record, saying who, when, which record and what changed. Our login cannot read it yet. |
+| **Audit trail** | The platform's log book of changes: one line each time someone creates, edits or deletes a record, saying who, when, which record and what changed. Our login cannot read it yet (checked 10 Nov). |
 | **Driver** | The part of the eval harness that starts or calls the agent under test for one trial, and waits for it to finish. Today it starts a program on the same machine. |
 | **Expected change** | A kind of check: the agent was asked to make something, and the check confirms it really exists on the platform and is right. |
 | **Proposal, not action** | A kind of check: the agent was asked to suggest something for a person to approve. The check confirms a proposal exists and that the records it is about are unchanged. |
 | **Launcher** | `scripts/run_local.py`: sets the same variables the course runner sets, then starts the eval harness on your computer. |
 | **Token cache** | A local, git-ignored file per system holding your current login token, so the password is used only when the token expires. |
 | **Verdict** | A verifier's decision: **approve** (it checked and the work is right), **revise** (it checked and the work is wrong), or **unevaluated** (nothing could be checked). Unevaluated is never a pass. |
+| **Harness mode** | A run started the way the course runner starts it: only environment variables in (the injected token and the given model endpoint), no password, no internet. `scripts/run_local.py` starts local runs the same way. See [harness-design.md](evaluation/harness-design.md). |
 | **Infrastructure failure** | The test could not run fairly: a timeout, a bad login, a blocked tool. It is reported as a failure marked "infrastructure", never as the agent's fault and never as a pass. |
 | **results.json** | The file a harness run must write, in the course's format: one row per task with `passed`, `score` and `evidence`. |
 | **Regression** | A task that used to pass and now fails. Finding these is what a regular "regression run" is for. |

@@ -40,7 +40,8 @@ def out_path(args: list[str], system: str, run_id: str, many: bool) -> list[str]
 
 
 def child_environment(token: str, base_url: str, system: str, run_id: str) -> dict[str, str]:
-    env = dict(os.environ)
+    # AS_* (email, passwords) are for logging in here only; the harness must never see them.
+    env = {k: v for k, v in os.environ.items() if not k.startswith("AS_")}
     for key, value in dotenv_values(SEAT_DIR / ".env").items():
         if key.startswith(PASS_THROUGH_PREFIX) and value and key not in env:
             env[key] = value

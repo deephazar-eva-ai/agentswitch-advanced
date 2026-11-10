@@ -6,6 +6,53 @@ Entry format: date · who · what changed · what's next · blockers. Keep entri
 
 ---
 
+## 2026-11-10 · Krishna
+**What changed**
+- **The instructor's review of PR #21 (S34-19), both points done:**
+  - **Harness mode uses only the given token and URLs.** The agent now gets an allowlist of environment variables (the contract variables plus a few operating-system basics), so no password or other key can reach it. The sample agent passes the given model endpoint explicitly and refuses to start without it. The local launcher no longer passes the login settings to the harness. A table in [harness-design.md](../evaluation/harness-design.md) ("Harness mode") lists what a run uses.
+  - **Run-path tests:** `tests/test_run_path.py` uses a small fake platform and a fake agent process. It covers:
+    - a passing run, with no secrets saved;
+    - the method, host and token of every request;
+    - no password reaching the agent;
+    - a dead token, an agent crash, a time-out, missing model settings and a failed read, each giving infrastructure rows;
+    - `results.json` written even when settings are missing;
+    - `.env` ignored.
+
+    A guard fails any test in which the harness opens a connection. The tests also found that the run summary line could crash (and wipe the finished rows) when runs are saved outside the seat folder. That is fixed.
+- **Read access re-checked live** (both systems, fresh login, read-only GETs). Sales orders, items, parties and payments are readable now. Quotations, invoices, received payments and the audit trail are still refused. Updated: [risks.md](risks.md) row 1 and Q3, the known gaps in harness-design.md, and bug draft BUG-34-003 (narrowed). The probe now also covers quotations and the audit trail.
+- **Checks:** ruff, mypy, lint-imports and pytest pass (21 tests). The plumbing task still passes live on both systems, with no secrets in the run files.
+
+**What's next**
+1. Krishna: commit and push, reply on #21, and re-request review. Ask Abhinav to submit his pending review comments.
+2. Abhinav (proposed): S34-07 (seat 31 suite), then S34-20 (expected-change grader), for 15 Nov.
+3. Krishna: post the follow-up to the instructor (Q1, Q2, quotations and the audit trail) if there's still no reply.
+
+**Blockers:** Q1 (harness file location) and Q2 (how to start seat agents) are unanswered. Invoices and received payments wait for the next platform deploy.
+
+---
+
+## 2026-11-08 (later) · Krishna
+**What changed**
+- **Reviewed Ranjani's early harness PR (#12)** against course session 18, Anthropic's eval guide and our rules. Decision: close it in favour of #21. Its main gaps:
+  - stubs reported as failures, not "unevaluated";
+  - no agent driver;
+  - no before/after snapshot and no saved trial record;
+  - a verifier that could write;
+  - tasks outside seats 31 and 35's scope.
+- **Kept from #12.** Its 12 task titles are now the starting point for S34-07 and S34-08, reshaped to each seat's first task.
+- **Checked our own harness against the same rules.** We found three gaps, now backlog cards:
+  - S34-31: a grading crash in one task loses the finished rows;
+  - S34-32: tasks not reached before the time limit are missing from `results.json`;
+  - S34-33: the evidence text doesn't match TASK_FORMAT or our principles page.
+
+**What's next**
+1. Krishna: post the review on #12 and close it, comment on #21, and message Ranjani.
+2. The team: agree owners for S34-31 to S34-33. S34-31 and S34-32 should land before the 12-task suites run (S34-27).
+
+**Blockers:** unchanged.
+
+---
+
 ## 2026-11-08 · Krishna
 **What changed**
 - **Checked live again on both systems:**

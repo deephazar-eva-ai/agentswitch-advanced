@@ -37,4 +37,4 @@
 |---|---|---|---|---|---|---|
 | BUG-34-001 | Some list replies do not match their own declared shape | Suryodaya | Medium | draft | | |
 | BUG-34-002 | Some knowledge-base endpoints that only read are labelled as writes | both | Low | draft | | |
-| BUG-34-003 | Our login cannot read the sales, accounting and audit data our checks need, although the seat brief lists read access across modules | both | Medium | draft | | |
+| BUG-34-003 | Our login cannot read quotations, invoices, received payments or the audit trail, which our checks need (sales orders, items and payments became readable on 10 Nov) | both | Medium | draft | | |

@@ -66,7 +66,7 @@ async def run_suite(suite: Suite, settings: HarnessSettings, out: Path) -> None:
             save_record(record, run_dir, secrets)  # saved BEFORE scoring
             writer.add(row_for(record, task, score_trial(record, task)))
     passed = sum(r.passed for r in writer.rows)
-    print(f"{instance}: {passed}/{len(writer.rows)} passed; trial records in {run_dir.relative_to(SEAT_DIR)}")
+    print(f"{instance}: {passed}/{len(writer.rows)} passed; trial records in {run_dir}")
 
 
 def main() -> int:

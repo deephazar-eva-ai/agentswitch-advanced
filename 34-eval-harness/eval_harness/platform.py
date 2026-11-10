@@ -36,9 +36,13 @@ class Me:
 class PlatformReader:
     """Use as `async with PlatformReader(base_url, token) as platform:`."""
 
-    def __init__(self, base_url: str, token: str) -> None:
+    def __init__(self, base_url: str, token: str, transport: httpx2.AsyncBaseTransport | None = None) -> None:
+        """`transport` is for tests only (a fake platform); runs always use the real network."""
         self._client = httpx2.AsyncClient(
-            base_url=base_url, headers={"Authorization": f"Bearer {token}"}, timeout=TIMEOUT
+            base_url=base_url,
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=TIMEOUT,
+            transport=transport,
         )
 
     async def __aenter__(self) -> Self:

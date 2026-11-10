@@ -4,7 +4,8 @@
 
 It reads only the contract (docs/processed/evaluation/agent-contract.md):
     AGENTSWITCH_BASE_URL, AGENTSWITCH_TOKEN                platform (MCP)
-    OPENAI_BASE_URL, OPENAI_API_KEY, OPENAI_PROJECT_ID     read by the openai SDK itself
+    OPENAI_BASE_URL, OPENAI_API_KEY                        the given model endpoint (required; no default)
+    OPENAI_PROJECT_ID                                      optional, read by the openai SDK itself
     OPENAI_MODEL                                           one model, or a comma-separated list tried in order
     OPENAI_EXTRA_BODY                                      optional JSON for provider quirks
 It prints its answer, then one line `AGENT_RESULT {"claim": ..., "steps": n, "tokens": n}`.
@@ -112,9 +113,10 @@ async def main() -> int:
     try:  # check every setting BEFORE connecting, so a mistake gives one clear line
         base_url, token = setting("AGENTSWITCH_BASE_URL"), setting("AGENTSWITCH_TOKEN")
         candidates, extra = models(), extra_body()
+        # The given endpoint, passed explicitly: never the SDK's default public address. Project id: from env.
         client = openai.AsyncOpenAI(
-            timeout=120, max_retries=1
-        )  # base URL, key, project: from the environment
+            base_url=setting("OPENAI_BASE_URL"), api_key=setting("OPENAI_API_KEY"), timeout=120, max_retries=1
+        )
     except (SettingError, openai.OpenAIError) as e:
         print(f"settings problem: {e}", file=sys.stderr)
         return 4

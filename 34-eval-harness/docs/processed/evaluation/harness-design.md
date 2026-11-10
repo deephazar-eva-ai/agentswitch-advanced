@@ -65,6 +65,17 @@ results.json  +  runs/<run_id>/<system>__<task>__t0.json
 - **Errors.** Any error becomes a row in `results.json`, so the file is always written. The exit code is always 0, because the course runner scores the file, not the exit code.
 - **Changing a grader later.** `python -m eval_harness.rescore runs/<run_id> --suite …` re-scores saved records, with no model calls and no platform calls.
 
+## Harness mode: what a run uses
+"Harness mode" means a run started by the course runner, or by `scripts/run_local.py` in the same way. Each line is checked by a test in `tests/test_run_path.py`, which needs no network.
+
+| What | What the run uses | How we know |
+|---|---|---|
+| Login | Only the injected `AGENTSWITCH_TOKEN`. The harness has no login code and no password setting, and it never reads `.env` | Every request carries the injected token; a `.env` file is ignored; a dead token stops with infrastructure rows, with no login attempt |
+| Platform | Only `GET` requests, only to `AGENTSWITCH_BASE_URL` | Every request is checked for method, host and token |
+| Model | The harness calls no model. The agent gets `OPENAI_BASE_URL`, `OPENAI_API_KEY` and `OPENAI_MODEL` as given, and the sample agent refuses to start without them | The agent sees the given URL; without it, the sample agent exits with code 4 |
+| What the agent receives | An allowlist: the contract variables plus a few operating-system basics (see [agent-contract.md](agent-contract.md)) | A password set in our environment never reaches the agent |
+| Network | Nothing besides those two URLs. Packages are installed before the run, and the run uses `uv run --frozen --no-sync` | A guard fails any test in which the harness opens a connection of its own |
+
 ## Graders and the scorer
 **Graders** read only the saved trial record. Each gives one of three verdicts:
 - **approve:** checked, and it holds;
@@ -141,7 +152,7 @@ Each gap has a card on the [board](../project/board.md) or a row in [risks](../p
 
 - **Two kinds of check are missing:** expected change (S34-20) and proposal, not action (S34-21). The real seat 31 and 35 tasks need them.
 - **How the agent is started.** Today the harness starts the agent on the same machine and lends it **our** login token. That is fine for the plumbing task. A real seat agent should work under **its own seat's login**, probably started or called through the platform. That needs a second way to start agents (S34-22), and the "no writes" check must then also watch the agent's login (S34-23). Waiting on the instructor (risks, Q2).
-- **Our login cannot read the data seats 31 and 35 work on** (sales, accounting, and the audit trail, which is the platform's log of every change). See risk 1 and bug draft BUG-34-003.
+- **Our login cannot yet read all the data seats 31 and 35 work on.** Since 10 Nov it reads sales orders, items, parties and payments. Quotations, invoices, received payments and the audit trail (the platform's log of every change) are still refused. See risk 1 and bug draft BUG-34-003.
 - **Seats 31 and 35 keep their results in local files**, so we cannot grade those results yet (risk 2).
 - **One trial per task.** Repeated trials (pass^k) and a flag for flaky tasks come in M2 (S34-11).
 - **Score history and regression report** (S34-10). The plan: each run adds one line per task to a committed `history/<seat>.jsonl` (date, run id, system, task id and version, verdict, score, a short reason, no customer data). A report lists tasks that went from pass to fail.

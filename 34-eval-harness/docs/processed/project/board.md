@@ -4,7 +4,7 @@
 
 **Owners marked "(proposed)" are only suggestions.** Nothing has been agreed yet. The team will settle them together at the first meeting, and then the "(proposed)" labels come off.
 
-Card format: `S34-NN | title | owner | milestone`. A card on this board already has its number. A new card takes the next free number (**S34-31** at the moment), claimed in the title of the pull request that adds it. Never reuse a number.
+Card format: `S34-NN | title | owner | milestone`. A card on this board already has its number. A new card takes the next free number (**S34-34** at the moment), claimed in the title of the pull request that adds it. Never reuse a number.
 
 **Never delete a card, for traceability.** Every number from S34-01 up to the last one claimed stays on this board, exactly once. A card only moves between sections. A finished card goes to Done. A card merged into another, or no longer needed, goes to Done or Dropped with a one-line note saying why and which card took it over. To change a card, update its line in place; git history keeps the old wording.
 
@@ -27,11 +27,14 @@ Card format: `S34-NN | title | owner | milestone`. A card on this board already 
 - S34-28 | Final README (a course "finished" item) | to agree together | M5
 - S34-29 | Integration run of all 8 seats (20 Dec): run it, record the results and share them | to agree together | M4
 - S34-30 | Close the bug list: every bug fixed, won't fix, or closed with a reason (a course "finished" item) | to agree together | M5
+- S34-31 | One task's crash while grading or saving its record becomes that task's infrastructure row; rows already finished always survive; a broken suite file still writes `results.json`; run-level tests for each case (found in the PR #12 review, 8 Nov) | to agree together | M1
+- S34-32 | Every task always appears in `results.json`: list all tasks as "not reached" at the start, and check when the suite loads that it fits `timeout_minutes` (TASK_FORMAT: never silently dropped) | to agree together | M1
+- S34-33 | Evidence text matches TASK_FORMAT and [principles.md](../evaluation/principles.md) (`verifier=`, `ended=`, `reason=`; a cut marked `…`); a setup failure uses the real system name, not a placeholder | to agree together | M1
 
 ## Ready
-- S34-17 | Verify the bug drafts in `docs/bugs/reports/` (BUG-34-001 to BUG-34-003), then file the real ones | Krishna | M0
-- S34-07 | Seat 31 suite: 6 tasks, written by hand (needs S34-20/21 to grade them) | Abhinav (proposed) | M1
-- S34-08 | Seat 35 suite: 6 tasks, written by hand (needs S34-20/21 to grade them) | Ranjani (proposed) | M1
+- S34-17 | Verify the bug drafts in `docs/bugs/reports/` (BUG-34-001 to BUG-34-003), then file the real ones (BUG-34-003 narrowed on 10 Nov to what is still refused; a seat-group question may replace it) | Krishna | M0
+- S34-07 | Seat 31 suite: 6 tasks, written by hand (needs S34-20/21 to grade them; start from the seat 31 titles in closed PR #12, reshaped to seat 31's first task, the exception report) | Abhinav (proposed) | M1
+- S34-08 | Seat 35 suite: 6 tasks, written by hand (needs S34-20/21 to grade them; start from the seat 35 titles in closed PR #12, reshaped to seat 35's first task, the duplicate report with merge proposals) | Ranjani (proposed) | M1
 
 ## Doing
 - S34-01 | Seat foundations: `.gitignore`, uv project, wiki, plan, `AGENTS.md` (written; in PR #18, waiting for review) | Krishna | M0
@@ -40,7 +43,7 @@ Card format: `S34-NN | title | owner | milestone`. A card on this board already 
 - S34-03 | Send instructor questions Q1–Q6; agree with seats 31 and 35 where their results land on the platform | Krishna | M0
 
 ## Review
-- S34-19 | Eval-harness scaffold + plumbing task, run end to end on both systems (covers S34-04/05/06/09) | Krishna | M1
+- S34-19 | Eval-harness scaffold + plumbing task, run end to end on both systems (covers S34-04/05/06/09). In PR #21; the instructor's 10 Nov review changes are done (harness mode uses only the given token and URLs; run-path tests), waiting for re-review | Krishna | M1
 - S34-04 | Platform client: read-only guard, login check, time limits, secret scrubbing (mcp SDK + httpx2) (built inside S34-19, as a GET-only REST reader; see decision 0009) | Krishna | M1
 - S34-05 | Run record and scorer writing `results.json` (atomic, infrastructure rows) (built inside S34-19) | Krishna | M1
 - S34-06 | Driver: start the agent under test with env and a timeout (built inside S34-19 for a local agent; agents under their own login are S34-22) | Krishna | M1

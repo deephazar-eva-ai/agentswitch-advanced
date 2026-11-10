@@ -48,6 +48,7 @@ REST_PAGES = {
 # Entities seats 31 and 35 read, plus agent records and the bug list.
 ENTITIES = [
     "SalesOrder",
+    "Quotation",
     "Invoice",
     "PaymentReceived",
     "Party",
@@ -61,6 +62,7 @@ ENTITIES = [
     "AgentToolPolicy",
     "BugReport",
     "Note",
+    "AuditEvent",
 ]
 OTHER_READS: dict[str, dict[str, Any]] = {
     "TeamHarness.get_mine": {},

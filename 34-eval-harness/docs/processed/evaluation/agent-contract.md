@@ -10,7 +10,7 @@ python -m agents_under_test.sample --tools Party.list,Party.get --max-steps 8 --
 Any options of your own (tools, step limit) go inside the command; we only add `--prompt`.
 
 ## 2. The environment variables you get
-These are exactly what the course runner gives a harness, and we pass them on to you unchanged:
+These are exactly what the course runner gives a harness, and we pass them on to you unchanged. **You get these and nothing else**, apart from a few operating-system basics (`PATH`, `HOME`, locale, temp folder, certificates, proxy). Nothing else from our environment reaches you, so no password, token or key can leak to you by accident.
 
 | Variable | What it is |
 |---|---|
@@ -18,7 +18,7 @@ These are exactly what the course runner gives a harness, and we pass them on to
 | `AGENTSWITCH_TOKEN` | the login token to use. **Do not log in yourself** |
 | `AGENTSWITCH_INSTANCE` | `suryodaya` or `keystone` |
 | `AGENTSWITCH_RUN_ID` | the id of this run |
-| `OPENAI_BASE_URL`, `OPENAI_API_KEY` | the model endpoint. The `openai` SDK reads these by itself |
+| `OPENAI_BASE_URL`, `OPENAI_API_KEY` | the model endpoint you must use. Pass them to your client explicitly, and stop with an error if either is missing. Never rely on an SDK default address: the run has no internet |
 | `OPENAI_MODEL` | the model. One name, or a comma-separated list to try in order |
 | `OPENAI_PROJECT_ID` | optional; the SDK reads it by itself |
 | `OPENAI_EXTRA_BODY` | optional JSON object to send with every model request (provider quirks, such as turning "thinking" off) |
