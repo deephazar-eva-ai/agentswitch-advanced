@@ -21,14 +21,14 @@ from run_boundary_probes import verdict
 
 IN_SCOPE_DOMAINS = {"crm", "email", "support", "projects", "agent", "agent-gov"}
 
+# The two bugs (BUG-33-001, BUG-33-002), catalogue attempt-03 and the inventory read
+# (open question 2) are not probed by this public script. Their detail is kept on
+# the harness copy only; docs/scope-sweep.md keeps their title, component and status.
 CANDIDATE_TARGETS = [
     # Infrastructure & Ops
     {"name": "DnsRecord.list", "domain": "infra", "risk": "high", "desc": "DNS zone records"},
     {"name": "DomainConfig.list", "domain": "infra", "risk": "high", "desc": "Domain configuration"},
     {"name": "TenantIpAssignment.list", "domain": "infra", "risk": "high", "desc": "Tenant dedicated IP assignments"},
-    {"name": "IPPool.list", "domain": "infra", "risk": "medium", "desc": "Email sending IP pool deliverability infra"},
-    {"name": "endpoint.mission_control.incidents", "domain": "ops", "risk": "critical", "desc": "Mission-control incidents ops console"},
-    {"name": "endpoint.job_ledger.forensics", "domain": "governance", "risk": "critical", "desc": "Agent execution job-ledger forensics"},
     # Accounting & Finance (Seat 31 Order-to-Cash, Seat 32 Compliance)
     {"name": "Invoice.list", "domain": "accounting", "risk": "high", "desc": "Sales/purchase invoices"},
     {"name": "Payment.list", "domain": "accounting", "risk": "high", "desc": "Payment transactions"},
@@ -37,7 +37,6 @@ CANDIDATE_TARGETS = [
     {"name": "BankAccount.list", "domain": "accounting", "risk": "critical", "desc": "Company bank accounts"},
     {"name": "Bill.list", "domain": "accounting", "risk": "high", "desc": "Accounts payable vendor bills"},
     # Inventory & Manufacturing (Seat 35, 31, Open Question 2)
-    {"name": "Item.list", "domain": "inventory", "risk": "medium", "desc": "Product inventory item master"},
     {"name": "Warehouse.list", "domain": "inventory", "risk": "medium", "desc": "Warehouse inventory locations"},
     {"name": "StockMovement.list", "domain": "inventory", "risk": "high", "desc": "Inventory stock transfers"},
     {"name": "events.catalog", "domain": "manufacturing", "risk": "medium", "desc": "Manufacturing event catalog"},
@@ -82,16 +81,12 @@ def run_dry_run_sweep():
         "DnsRecord.list": (200, {"data": []}, False, "UNCLEAR"),
         "DomainConfig.list": (200, {"data": []}, False, "UNCLEAR"),
         "TenantIpAssignment.list": (200, {"data": []}, False, "UNCLEAR"),
-        "IPPool.list": (200, {"data": [{"name": "<redacted>"}]}, False, "FINDING?"),
-        "endpoint.mission_control.incidents": (200, {"result": {"rows": []}}, False, "UNCLEAR"),
-        "endpoint.job_ledger.forensics": (200, {"result": {"rows": [{"id": "<redacted>"}]}}, False, "FINDING?"),
         "Invoice.list": (200, {"data": {"code": "tool_not_available"}}, True, "HELD(not-exposed)"),
         "Payment.list": (200, {"data": {"code": "tool_not_available"}}, True, "HELD(not-exposed)"),
         "LedgerRetentionPolicy.list": (200, {"data": []}, False, "UNCLEAR"),
         "TaxSection.list": (200, {"data": {"code": "tool_not_available"}}, True, "HELD(not-exposed)"),
         "BankAccount.list": (200, {"data": {"code": "tool_not_available"}}, True, "HELD(not-exposed)"),
         "Bill.list": (200, {"data": {"code": "tool_not_available"}}, True, "HELD(not-exposed)"),
-        "Item.list": (200, {"data": [{"id": "<redacted>"}]}, False, "FINDING?"),
         "Warehouse.list": (200, {"data": {"code": "tool_not_available"}}, True, "HELD(not-exposed)"),
         "StockMovement.list": (200, {"data": {"code": "tool_not_available"}}, True, "HELD(not-exposed)"),
         "events.catalog": (200, {"events": []}, False, "UNCLEAR"),
@@ -145,7 +140,7 @@ def run_live_sweep(system):
     print("\nProbing candidate namespaces for boundary enforcement (all Tier 1 read-only probes):")
     for item in CANDIDATE_TARGETS:
         name = item["name"]
-        args = {} if name in {"events.catalog", "endpoint.mission_control.incidents", "endpoint.job_ledger.forensics"} else {"limit": 1}
+        args = {} if name in {"events.catalog"} else {"limit": 1}
         st, data, is_err = tool(system, name, args)
         v = classify_verdict(st, data, is_err, item["domain"])
         cnt = get_row_count(data)
