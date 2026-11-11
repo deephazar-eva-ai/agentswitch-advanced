@@ -115,6 +115,22 @@ class Reads:
         raise AssertionError(name)
 
 
+class DraftsToSave(unittest.TestCase):
+    PROP = {"drafts": [{"kind": "accounts_digest", "to": "ar@x.example"},
+                       {"kind": "overdue_reminder", "to": "ap@acme.example"},
+                       {"kind": "overdue_reminder", "to": drafts.ACCOUNTS_PLACEHOLDER}]}
+
+    def test_all_kinds_skip_drafts_without_recipient(self):
+        ready, skipped = drafts.drafts_to_save(self.PROP)
+        self.assertEqual([d["kind"] for d in ready], ["accounts_digest", "overdue_reminder"])
+        self.assertEqual(skipped, 1)
+
+    def test_only_the_digest_keeps_customer_reminders_out(self):
+        ready, skipped = drafts.drafts_to_save(self.PROP, "accounts_digest")
+        self.assertEqual([d["to"] for d in ready], ["ar@x.example"])
+        self.assertEqual(skipped, 0)
+
+
 class FindMailbox(unittest.TestCase):
     """The draft mailbox is a Mailbox record (BUG-31-002 fix, 10 Nov); EmailAccount stays empty."""
 

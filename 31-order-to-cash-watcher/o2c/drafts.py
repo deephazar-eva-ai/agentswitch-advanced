@@ -292,6 +292,20 @@ def to_markdown(prop):
     return "\n".join(lines)
 
 
+DRAFT_KINDS = ("accounts_digest", "overdue_reminder")
+
+
+def drafts_to_save(prop, only=None):
+    """(ready, skipped_count): the proposed drafts --create would save, optionally one kind only.
+
+    Drafts without a recipient are never saved. `only="accounts_digest"` saves just the internal
+    note to accounts, so a first test does not put customer reminders into the shared data.
+    """
+    chosen = [d for d in prop["drafts"] if only is None or d["kind"] == only]
+    ready = [d for d in chosen if d["to"] != ACCOUNTS_PLACEHOLDER]
+    return ready, len(chosen) - len(ready)
+
+
 def main():
     ap = argparse.ArgumentParser(prog="o2c.drafts", description="Propose reminder drafts (never sends)")
     ap.add_argument("--days", type=int, default=int(os.environ.get("O2C_DAYS", 7)))
@@ -300,6 +314,8 @@ def main():
     ap.add_argument("--out", type=Path, required=True, help="folder for <instance>-<date>-drafts.md/.json (gitignored)")
     ap.add_argument("--accounts-email", default=os.environ.get("O2C_ACCOUNTS_EMAIL"))
     ap.add_argument("--create", action="store_true", help="after a person confirms, save the drafts in the mailbox (never sends)")
+    ap.add_argument("--only", choices=DRAFT_KINDS,
+                    help="with --create, save only this kind of draft (e.g. accounts_digest for a first test)")
     ap.add_argument("--mailbox-id", default=os.environ.get("O2C_MAILBOX_ID"),
                     help="only needed if this login has several mailboxes and no default one")
     args = ap.parse_args()
@@ -322,9 +338,11 @@ def main():
     if not mailbox:
         raise SystemExit("this login has no mailbox; nothing created")
     writer = DraftWriter(client, mailbox)
-    ready = [d for d in prop["drafts"] if d["to"] != ACCOUNTS_PLACEHOLDER]
-    skipped = len(prop["drafts"]) - len(ready)
-    print(f"About to save {len(ready)} draft(s) in mailbox {mailbox.get('id')}. They stay unsent."
+    ready, skipped = drafts_to_save(prop, args.only)
+    if not ready:
+        raise SystemExit("no draft to save" + (f" of kind {args.only}" if args.only else "") + "; nothing created")
+    print(f"About to save {len(ready)} draft(s){' (' + args.only + ' only)' if args.only else ''} "
+          f"in mailbox {mailbox.get('id')}. They stay unsent."
           + (f" {skipped} draft(s) have no recipient yet (set --accounts-email) and are not saved." if skipped else ""))
     if input("Type 'save drafts' to confirm: ").strip() != "save drafts":
         raise SystemExit("not confirmed; nothing created")
