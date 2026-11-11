@@ -256,6 +256,70 @@ class DraftsMarkdownEscaping(unittest.TestCase):
         self.assertIn("Acme \\| North Division", row)
 
 
+def order_row(number, total, currency="INR", customer="Acme"):
+    return {"number": number, "customer": customer, "order_date": "2026-10-01", "age_days": 45, "invoiced_status": "unbilled",
+            "grand_total": total, "currency": currency, "fixture": False}
+
+
+def full_rep(order_rows=(), inv_rows=(), pay_rows=(), invoices_status="ok"):
+    return {"instance": "t", "report_date": "2026-11-15", "days": 7, "sections": {
+        "orders_not_invoiced": {"status": "ok", "rows": list(order_rows)},
+        "invoices_overdue": {"status": invoices_status, "rows": list(inv_rows)},
+        "payments_not_applied": {"status": "ok", "rows": list(pay_rows)}}}
+
+
+class DigestTables(unittest.TestCase):
+    """Instructor answer 3: a short summary, then one table per exception type, saved as a draft only."""
+
+    def digest(self, **kw):
+        return drafts.accounts_digest(full_rep(**kw), [])
+
+    def test_three_tables_in_order_with_headers(self):
+        d = self.digest(order_rows=[order_row("SO-1", 100.0)],
+                        inv_rows=[dict(inv_row("INV-1", 10.0), days_overdue=14, amount_paid=90.0, payment_state="partially paid")],
+                        pay_rows=[dict(pay_row("PAY1", 500.0), currency="INR")])
+        body = d["body_text"]
+        heads = [body.index(h) for h in ("Summary", "1. Orders not invoiced", "2. Invoices overdue (1)", "3. Payments not applied (1)")]
+        self.assertEqual(heads, sorted(heads))
+        for header in ("Order  ", "Invoice  ", "Payment  "):
+            self.assertIn(header, body)
+        self.assertIn("- Invoices overdue: 1, 10.00 INR outstanding (1 partially paid)", body)
+        self.assertRegex(body, r"INV-1 +Acme +2026-11-01 +14 +10.00 INR +partially paid")
+        self.assertEqual(d["subject"], "Order-to-cash exceptions 2026-11-15: 1 orders not invoiced, 1 invoices overdue, 1 payments not applied")
+        self.assertEqual(d["refs"], ["SO-1", "INV-1", "PAY1"])
+        self.assertEqual(d["status"], "proposed")
+
+    def test_summary_totals_are_per_currency(self):
+        d = self.digest(order_rows=[order_row("A", 100.0, "INR"), order_row("B", 50.0, "USD"), order_row("C", 25.0, "INR")])
+        self.assertIn("- Orders not invoiced: 3, total 125.00 INR; 50.00 USD", d["body_text"])
+        self.assertNotIn("175.00", d["body_text"])
+
+    def test_empty_and_blocked_sections_are_explicit(self):
+        body = self.digest(order_rows=[order_row("A", 1.0)], invoices_status="blocked")["body_text"]
+        self.assertIn("2. Invoices overdue (not available)", body)
+        self.assertIn("Not available: invoice data cannot be read by this login.", body)
+        self.assertIn("3. Payments not applied (0)\n\nNone.", body)
+
+    def test_only_invoices_is_still_a_digest(self):
+        d = self.digest(inv_rows=[dict(inv_row("INV-1", 10.0), days_overdue=3, payment_state="unpaid")])
+        self.assertIsNotNone(d)
+        self.assertIn("1. Orders not invoiced more than 7 days after the order date (0)\n\nNone.", d["body_text"])
+
+    def test_columns_line_up_and_long_or_multiline_names_stay_on_one_line(self):
+        rows = [order_row("SO-1", 100.0, customer="A very long customer name that keeps going and going Ltd"),
+                order_row("SO-22", 5.0, customer="Two\nlines")]
+        body = self.digest(order_rows=rows)["body_text"]
+        table = body.split("after the order date (2)\n\n")[1].split("\n\nPlease raise")[0].splitlines()
+        self.assertEqual(len(table), 4)  # header, rule, two rows: nothing split
+        self.assertIn("Two lines", table[3])
+        self.assertIn("…", table[2])
+        self.assertEqual(table[2].index("100.00 INR") + len("100.00 INR"), table[3].index("5.00 INR") + len("5.00 INR"))  # right-aligned
+
+    def test_text_table(self):
+        out = drafts.text_table(["A", "Amount"], [["x", "1.00"], ["longer", "10.00"]], right={1})
+        self.assertEqual(out, ["A       Amount", "------  ------", "x         1.00", "longer   10.00"])
+
+
 class DraftWriterSafety(unittest.TestCase):
     """The writer refuses before any request: the fake client fails the test if it is called."""
 
