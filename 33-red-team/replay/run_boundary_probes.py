@@ -141,6 +141,21 @@ def run_all():
         *tool(SYS,"Mailbox.list",{"limit":1000}))
     rec("D3","email-privacy",SYS,"EmailAccount.list limit=1000","own only",
         *tool(SYS,"EmailAccount.list",{"limit":1000}))
+    # D4–D6: synthetic-id get/filter (catalogue attempts 21–23).
+    # Same as C1–C3: a made-up id / filter returns not_found or empty whether or not
+    # isolation holds, so the verdict is forced to UNCLEAR (ERROR still wins).
+    SYN_MSG = "00000000-0000-4000-8000-000000000021"
+    SYN_MBOX = "00000000-0000-4000-8000-000000000022"
+    SYN_FILTER = "00000000-0000-4000-8000-000000000023"
+    D_FORCE = "UNCLEAR"
+    not_found_held = lambda st, d, e: verdict(st, d, e, held_codes=NOT_FOUND)
+    rec("D4","email-privacy",SYS,"EmailMessage.get synthetic id","not_found/denied",
+        *tool(SYS,"EmailMessage.get",{"id":SYN_MSG}), force=D_FORCE, judge=not_found_held)
+    rec("D5","email-privacy",SYS,"Mailbox.get synthetic id","not_found/denied",
+        *tool(SYS,"Mailbox.get",{"id":SYN_MBOX}), force=D_FORCE, judge=not_found_held)
+    rec("D6","email-privacy",SYS,"EmailMessage.list synthetic mailbox_id","empty/denied",
+        *tool(SYS,"EmailMessage.list",{"mailbox_id":SYN_FILTER,"limit":20}),
+        force=D_FORCE, judge=not_found_held)
 
     # ================= F: auth/token (safe) =================
     rec("F1","auth",SYS,"No Authorization header","401",
