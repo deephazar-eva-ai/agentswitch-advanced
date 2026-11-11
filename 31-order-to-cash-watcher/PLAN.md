@@ -66,9 +66,9 @@ Every task builds its inputs from the copy at runtime and is judged on the data,
 | 12 | `report_read_only` | A report run changes no record (compare last-updated times before and after) |
 
 ## Open questions for the instructor
-1. **Our login cannot read invoices or applied receipts.** The instructor's 7 Nov answer says to read due date and balance from invoices, and that applied receipts are a separate record type. On both systems our login is told those read tools are not available to the seat, they are not in its tool list, and invoices linked from orders come back redacted. Tracked as `BUG-31-001`.
+1. **Our login cannot read invoices or applied receipts.** The instructor's 7 Nov answer says to read due date and balance from invoices, and that applied receipts are a separate record type. On both systems our login is told those read tools are not available to the seat, they are not in its tool list, and invoices linked from orders come back redacted. Tracked as `BUG-31-001`. **Answered and fixed:** the instructor confirmed it on 10 Nov, and on 11 Nov our login can read invoices and received payments on both systems (closed).
 2. ~~Keystone has no payments.~~ Answered 7 Nov: expected. The Keystone suite task for section 3 passes on an empty section.
-3. **What N should the daily report use** for "orders not invoiced after N days"? We default to 7 and make it a setting.
+3. ~~What N should the daily report use~~ for "orders not invoiced after N days"? We default to 7 and make it a setting. **Answered 10 Nov:** N is a parameter; recommended delay buckets are 0–7, 8–14, 15–30, 31–60 and over 60 days after the order is deliverable.
 
 ## How to run the report
 Python 3.10+ standard library only; no installs.

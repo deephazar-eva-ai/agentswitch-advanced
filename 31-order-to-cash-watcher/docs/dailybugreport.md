@@ -4,8 +4,8 @@ Bugs raised by seat 31, in the format in `BUG_REPORT_FORMAT.md`. Newest day last
 
 | ID | Title | System | Severity | Status |
 |---|---|---|---|---|
-| BUG-31-001 | Invoice and applied-receipt read tools are not available to seat 31 | Both | Medium | Open |
-| BUG-31-002 | Login `team31a` has no mailbox, so reminder drafts cannot be saved | Both | Medium | Open |
+| BUG-31-001 | Invoice and applied-receipt read tools are not available to seat 31 | Both | Medium | Closed: fixed by the instructor, verified by us 11 Nov |
+| BUG-31-002 | Login `team31a` has no mailbox, so reminder drafts cannot be saved | Both | Medium | Closed: fixed by the instructor, verified by us 11 Nov |
 
 ---
 
@@ -81,3 +81,25 @@ Suite task 9 (`reminder_is_draft`) cannot pass, and the demo cannot show a saved
 
 **Ask**
 Please give `team31a` a mailbox on both systems, or tell us which mailbox seat 31 should save drafts in. We only create drafts; we never send.
+
+---
+
+## 10–11 Nov 2026: instructor updates and our checks
+
+### BUG-31-001: update
+- **10 Nov, instructor (seat group):** confirmed and fixed in code. Invoice and received-payment reads were refused to
+  our read-only login; the next release lets our login read them (read only). The instructor will post in the seat
+  group when it is live, and asked us not to wait for it to design the report.
+- **11 Nov, our check (read only):** with a token from 6 Nov the read tools were still missing. After logging in again
+  (about 12:48 pm IST), both the invoice and the received-payment list tools are in our tool list and return rows on
+  both systems.
+- **Status:** closed. Resolution: read access granted by the instructor; verified by us on 11 Nov on both systems.
+  The overdue-invoice section switches on by itself now that the read tool is there.
+
+### BUG-31-002: update
+- **10 Nov, instructor (seat group):** fixed. `team31a` and `team31b` each have a mailbox on both systems, with three
+  sample threads and three unread messages each. Drafts can be saved now.
+- **11 Nov, our check (read only):** after logging in again (about 12:48 pm IST), our login has one mailbox on each
+  system, holding the three sample messages in the inbox. The mailbox appears in the mailbox list; the email-account
+  list we first checked still returns none, so drafts should name the mailbox from the mailbox list.
+- **Status:** closed. Resolution: mailbox added by the instructor; verified by us on 11 Nov on both systems.
