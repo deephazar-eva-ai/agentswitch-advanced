@@ -8,6 +8,7 @@ IST = timezone(timedelta(hours=5, minutes=30))
 SUBMITTED = 1
 CANCELLED = 2
 NOT_INVOICED = ("unbilled", "partially_invoiced")
+RECEIVABLE = "receivable"
 FIXTURE_MARKERS = ("test", "harness", "fixture")
 
 
@@ -136,13 +137,15 @@ def invoices_overdue(invoices, report_date):
 
     Due date and balance are read from the Invoice entity (`due_date`, `outstanding`), not
     derived (instructor, 7 Nov). Any submitted invoice with an empty `due_date` is reported
-    separately, whatever its balance. Field names are from the instructor's answer; check them
-    against Invoice.list once our login can call it (BUG-31-001).
+    separately, whatever its balance. Field names checked against Invoice.list on 11 Nov.
+
+    Only customer invoices count: the Invoice entity also holds supplier bills (`direction` =
+    "payable"; 165 of 487 on Suryodaya, 11 Nov), which must never appear here or get a reminder.
     Returns (overdue, no_due_date).
     """
     overdue, no_due = [], []
     for inv in invoices:
-        if inv.get("docstatus") != SUBMITTED:
+        if inv.get("docstatus") != SUBMITTED or inv.get("direction", RECEIVABLE) != RECEIVABLE:
             continue
         outstanding = round(float(inv.get("outstanding") or 0), 2)
         due = _as_date(inv.get("due_date"))
@@ -189,7 +192,7 @@ def build(client, report_date=None, days=7, instance=None, currencies=None):
         apply_currency(no_due, currencies)
         sections["invoices_overdue"] = {
             "status": "ok",
-            "rule": "submitted, due_date before the report date, outstanding > 0",
+            "rule": "customer invoices (receivable), submitted, due_date before the report date, outstanding > 0",
             "rows": overdue,
             "no_due_date": no_due,
         }

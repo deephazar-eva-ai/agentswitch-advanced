@@ -80,6 +80,15 @@ class InvoicesOverdue(unittest.TestCase):
         self.assertEqual([r["number"] for r in overdue], ["late"])  # due today is not yet overdue
         self.assertEqual(overdue[0]["days_overdue"], 1)
 
+    def test_supplier_bills_are_never_overdue_customer_invoices(self):
+        # 11 Nov: Invoice also holds supplier bills (direction "payable"); they must not get a reminder
+        bill = dict(invoice("bill", "2026-10-01", 100.0), direction="payable")
+        bill_no_due = dict(invoice("bill2", None, 100.0), direction="payable")
+        cust = dict(invoice("cust", "2026-10-01", 100.0), direction="receivable")
+        overdue, no_due = report.invoices_overdue([bill, bill_no_due, cust, invoice("legacy", "2026-10-01", 5.0)], D)
+        self.assertEqual([r["number"] for r in overdue], ["cust", "legacy"])  # no direction field: treated as a customer invoice
+        self.assertEqual(no_due, [])
+
     def test_empty_due_date_listed_separately(self):
         overdue, no_due = report.invoices_overdue([
             invoice("none", None, 100.0), invoice("blank", "", 0.0), invoice("older", "2026-09-15", 50.0),
