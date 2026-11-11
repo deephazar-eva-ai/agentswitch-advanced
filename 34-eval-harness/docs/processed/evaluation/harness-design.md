@@ -74,6 +74,8 @@ results.json  +  runs/<run_id>/<system>__<task>__t0.json
 | Platform | Only `GET` requests, only to `AGENTSWITCH_BASE_URL` | Every request is checked for method, host and token |
 | Model | The harness calls no model. The agent gets `OPENAI_BASE_URL`, `OPENAI_API_KEY` and `OPENAI_MODEL` as given, and the sample agent refuses to start without them | The agent sees the given URL; without it, the sample agent exits with code 4 |
 | What the agent receives | An allowlist: the contract variables plus a few operating-system basics (see [agent-contract.md](agent-contract.md)) | A password set in our environment never reaches the agent |
+| Time limit | The agent runs in its own **process group**. On time-out the whole group is stopped, and the last read of its output is bounded too, so a wrapper such as `uv run` cannot stretch the limit | A wrapper whose child keeps the output open still returns within seconds of a 1 s limit |
+| Secrets in what the agent prints | Each trial record is scrubbed once, before it is saved and before it is scored, so `results.json` and the saved record come from the same clean record | An agent that prints its token and fails: the token is in neither file, and a rescore gives the same row |
 | Network | Nothing besides those two URLs. Packages are installed before the run, and the run uses `uv run --frozen --no-sync` | A guard fails any test in which the harness opens a connection of its own |
 
 ## Graders and the scorer

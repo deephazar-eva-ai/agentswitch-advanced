@@ -8,14 +8,14 @@ Types: **R** risk, **A** assumption, **I** issue (happening now), **D** dependen
 | # | Type | What | Owner | Status | Checked |
 |---|---|---|---|---|---|
 | 1 | I | **Partly fixed on 10 Nov.** The instructor switched on read-only sales, stock and accounting for our login. Sales orders, items, parties and payments are readable now. **Still refused:** quotations, invoices and received payments (by role), and the audit trail (the platform's log of every change). The instructor says invoices and received payments come with the next deploy; quotations and the audit trail were not mentioned. Until then, checks that need these cannot verify seat 31's results. | Krishna | Open: wait for the deploy; ask about quotations and the audit trail (Q3); bug draft BUG-34-003 narrowed | 10 Nov, both systems, fresh login, read-only GETs |
-| 2 | D | Seats 31 and 35 keep their results in **local files**, not on the platform, so our checks have nothing to read. We need to agree where results land (for example drafts or approval requests). | Krishna | Open: talk to both seats | 7 Nov, from their pull requests |
-| 3 | D | Seat 31 cannot yet create its reminder drafts (their own open bug). | seat 31 | Open (theirs) | From their pull request |
+| 2 | D | Seats 31 and 35 keep their results in **local files**, not on the platform, so our checks have nothing to read. **Seat 35, answered by the instructor (10 Nov, seat 35 channel):** for 15 Nov seat 35 writes nothing, and the instructor scores their pairs file directly; for version 1 the recommended proposal record is an approval request. Seat 31's 15 Nov report is local too. So for 15 Nov our tasks check only what the platform shows (records unchanged, no writes). | Krishna | Open: instructor asked to confirm our 15 Nov plan (11 Nov) | 11 Nov, seat 31 and 35 channels and their pull requests |
+| 3 | D | Seat 31's reminder drafts: their mailbox bug is fixed (10 Nov, seat 31 channel), but email is private to its owner. Our login cannot read seat 31's drafts, and in a harness run the agent gets our token, which has no email app. Draft checks wait on how we start seat 31's agent (risk 5). | Krishna | Open: depends on Q2 | 11 Nov, seat 31 channel |
 | 4 | R | The harness file must be at a repository root, but this repository is shared by 8 seats. | Krishna | Open: Q1 | n/a |
 | 5 | R | **Which login:** the instructor said on 7 Nov that a run gives our harness seat 34's token, not the token of the seat under test. **Still open:** how our harness should start another seat's agent. Today the harness lends our token to the agent. That is fine for the plumbing task, but a real seat agent needs its own seat's login and tools (cards S34-22, S34-23). | Krishna | Open: Q2 | 7 Nov, instructor's reply |
 | 6 | R | Official runs are limited (one run every 3 days, plus token caps), so a failed run costs 3 days. | Krishna | Mitigate: local dry run before every official run | 7 Nov |
 | 7 | R | Shared live data changes under us, so expected answers go stale. | suite owners | Mitigate: checks compute from snapshots taken at run time; any fixed answer carries an "as of" date | n/a |
 | 8 | R | Tests written by AI tools score zero. | everyone | Mitigate: agents only draft in `ideas.md`; people write the tasks; each task file names its author | n/a |
-| 9 | A | Course runs happen on a throwaway copy, so any writes by the agent under test are discarded. | Krishna | Assumed from `TASK_FORMAT.md`; confirm in the first official run | n/a |
+| 9 | A | Course runs happen on a throwaway copy, so any writes by the agent under test are discarded. | Krishna | Confirmed by the instructor (seat 35 channel, 10 Nov: "A harness run writes to a copy and discards the writes") | 10 Nov |
 | 10 | R | The platform is still being developed, so behaviour can change with each release. | Krishna | Mitigate: run `scripts/platform_sync.py` after every release notice, and review the change report | n/a |
 
 ## Open questions for the instructor
@@ -26,7 +26,7 @@ Post these in the seat group. For Q3, paste the exact requests and replies from 
 3. **Read access for our checks.** *Partly answered on 10 Nov:* sales, stock and accounting are switched on (read only), and invoices and received payments come with the next deploy. **Still to ask:** quotations are still refused by role, and the audit trail still sits behind the email app. Can seat 34 read both? We do not need the email app itself, only read access to the audit trail.
 4. **Knowledge base.** Our login now has the knowledge base. What is it meant for in our seat: as the written standard of correct behaviour, or as a place to publish score reports?
 5. **Nightly run.** Where may the nightly regression run (our own machine, or a CI job in our fork), and against what: live data read-only, or a copy?
-6. **Test data.** Can a run on the throwaway copy create test records (for example two planted duplicate parties), so tasks have known answers?
+6. **Test data.** *Answered on 10 Nov (seat 35 channel):* the data has a few natural look-alike parties and no planted answers; build your own fixtures for tests. Our login is read only, so our tasks use the existing records.
 
 ## Closed
 - (none yet)

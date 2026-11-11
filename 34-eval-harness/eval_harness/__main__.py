@@ -20,7 +20,7 @@ from eval_harness.results import ResultRow, ResultsWriter
 from eval_harness.scorer import row_for, score_trial
 from eval_harness.settings import HarnessSettings, SettingsMissing, load_settings
 from eval_harness.suite import Suite, load_suite
-from eval_harness.trial import SEAT_DIR, TrialRecord, run_trial, save_record
+from eval_harness.trial import SEAT_DIR, TrialRecord, run_trial, save_record, scrub
 
 RUNS_DIR = SEAT_DIR / "runs"
 
@@ -63,7 +63,7 @@ async def run_suite(suite: Suite, settings: HarnessSettings, out: Path) -> None:
                     manifest={},
                     infrastructure=f"harness error: {type(e).__name__}: {e}",
                 )
-            save_record(record, run_dir, secrets)  # saved BEFORE scoring
+            record = save_record(record, run_dir, secrets)  # saved BEFORE scoring; we score what was saved
             writer.add(row_for(record, task, score_trial(record, task)))
     passed = sum(r.passed for r in writer.rows)
     print(f"{instance}: {passed}/{len(writer.rows)} passed; trial records in {run_dir}")
@@ -91,7 +91,7 @@ def main() -> int:
             suite, settings.agentswitch_instance, f"harness crashed: {type(e).__name__}"
         ):
             writer.add(row)
-        print(f"harness crashed: {type(e).__name__}: {e}", file=sys.stderr)
+        print(scrub(f"harness crashed: {type(e).__name__}: {e}", settings.secrets()), file=sys.stderr)
     return 0
 
 

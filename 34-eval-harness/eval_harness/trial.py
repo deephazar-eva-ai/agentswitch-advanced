@@ -8,9 +8,11 @@ scorer change can be re-run from disk with zero model calls and zero platform ca
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import os
 import shlex
+import signal
 import subprocess
 import time
 from datetime import UTC, datetime
@@ -26,6 +28,7 @@ from eval_harness.suite import Suite, Task
 SEAT_DIR = Path(__file__).resolve().parent.parent
 OUTPUT_TAIL_CHARS = 4000
 RESULT_PREFIX = "AGENT_RESULT "
+KILL_GRACE_S = 10  # after a time-out: how long to wait for the killed agent's last output
 # What a process needs to start and to reach the given endpoints (a proxy, if the runner uses one).
 SYSTEM_VARIABLES = (
     "PATH",
@@ -169,27 +172,48 @@ def parse_reported(output: str) -> dict[str, Any] | None:
 
 
 async def run_agent(command: list[str], env: dict[str, str], timeout_s: float) -> AgentRun:
+    """Start the agent in its own process group, so the time limit also stops what it starts.
+
+    An agent command is often a wrapper (`uv run`, `sh -c`) whose child keeps the output pipe open after the
+    wrapper is killed. Killing the whole group closes the pipe, and the final read is bounded as well, so the
+    time limit always holds. POSIX only; the course runner is Linux.
+    """
     started = time.monotonic()
     run = AgentRun(command=command)
     try:
         process = await asyncio.create_subprocess_exec(
-            *command, cwd=SEAT_DIR, env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT
+            *command,
+            cwd=SEAT_DIR,
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+            start_new_session=True,
         )
     except OSError as e:
         run.output_tail = f"could not start the agent: {e}"
         return run
+    note = ""
     try:
         out, _ = await asyncio.wait_for(process.communicate(), timeout=timeout_s)
     except TimeoutError:
-        process.kill()
-        out, _ = await process.communicate()
         run.timed_out = True
+        _kill_group(process.pid)
+        try:
+            out, _ = await asyncio.wait_for(process.communicate(), timeout=KILL_GRACE_S)
+        except TimeoutError:
+            out = b""  # a process outside the group still holds the pipe: stop waiting for it
+            note = "\n[harness: output not collected; a process outside the agent's group kept it open]"
     run.exit_code = process.returncode
     run.seconds = round(time.monotonic() - started, 1)
-    text = (out or b"").decode("utf-8", "replace")
+    text = (out or b"").decode("utf-8", "replace") + note
     run.output_tail = text[-OUTPUT_TAIL_CHARS:]
     run.reported = parse_reported(text)
     return run
+
+
+def _kill_group(pid: int) -> None:
+    with contextlib.suppress(ProcessLookupError):  # the group has already exited: nothing left to stop
+        os.killpg(pid, signal.SIGKILL)
 
 
 def infrastructure_problem(agent: AgentRun) -> str | None:
@@ -252,11 +276,16 @@ def scrub(text: str, secrets: list[str]) -> str:
     return text
 
 
-def save_record(record: TrialRecord, run_dir: Path, secrets: list[str]) -> Path:
-    """Write the trial record atomically, secrets removed. Called before any grading."""
+def save_record(record: TrialRecord, run_dir: Path, secrets: list[str]) -> TrialRecord:
+    """Write the trial record atomically, secrets removed, and return exactly what was written.
+
+    Called before any grading; the caller scores the returned record. So a token the agent printed reaches
+    neither the saved record nor results.json, and a rescore of the file gives the same row.
+    """
     run_dir.mkdir(parents=True, exist_ok=True)
     path = run_dir / f"{record.instance}__{record.task_id}__t{record.trial}.json"
+    text = scrub(record.model_dump_json(indent=1), secrets)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(scrub(record.model_dump_json(indent=1), secrets))
+    tmp.write_text(text)
     os.replace(tmp, path)
-    return path
+    return TrialRecord.model_validate_json(text)

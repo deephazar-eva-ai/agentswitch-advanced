@@ -21,9 +21,10 @@ import pytest
 
 import eval_harness.__main__ as harness
 from eval_harness.platform import PlatformReader
+from eval_harness.scorer import row_for, score_trial
 from eval_harness.settings import MODEL_VARIABLES, OPTIONAL_MODEL_VARIABLES, SettingsMissing, load_settings
 from eval_harness.suite import Suite, Task, load_suite
-from eval_harness.trial import SYSTEM_VARIABLES, agent_environment
+from eval_harness.trial import SYSTEM_VARIABLES, TrialRecord, agent_environment, run_agent
 
 SEAT = Path(__file__).resolve().parent.parent
 TOKEN = "tok-injected-for-tests"  # the same value as INJECTED_TOKEN in tests/fake_agent.py
@@ -184,6 +185,27 @@ def test_agent_that_cannot_finish_is_infrastructure_never_a_pass(
     rows = run(suite_with(mode, minutes=0.02), tmp_path)
     assert not rows[0]["passed"] and rows[0]["score"] == 0.0
     assert rows[0]["evidence"].startswith("infrastructure:") and reason in rows[0]["evidence"]
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="process groups are POSIX only")
+def test_time_limit_also_stops_the_agents_child_processes() -> None:
+    """A wrapper (here `sh -c`) whose child keeps the output pipe open must not stretch the time limit."""
+    agent = asyncio.run(run_agent(["sh", "-c", "sleep 30; echo late"], {"PATH": "/usr/bin:/bin"}, 1))
+    assert agent.timed_out and agent.seconds < 5
+    assert "late" not in agent.output_tail
+
+
+def test_a_token_the_agent_prints_reaches_neither_results_nor_the_record(
+    platform: FakePlatform, tmp_path: Path
+) -> None:
+    rows = run(suite_with("leak"), tmp_path)
+    assert "exited with code 2" in rows[0]["evidence"] and "<redacted>" in rows[0]["evidence"]
+    assert not any(TOKEN in p.read_text() for p in tmp_path.rglob("*.json"))
+    task = suite_with("leak").tasks[0]
+    record = TrialRecord.model_validate(saved_record(tmp_path, task.id))
+    assert (
+        row_for(record, task, score_trial(record, task)).model_dump() == rows[0]
+    )  # rescore gives the same row
 
 
 def test_missing_model_settings_is_infrastructure_and_starts_no_agent(

@@ -6,6 +6,29 @@ Entry format: date · who · what changed · what's next · blockers. Keep entri
 
 ---
 
+## 2026-11-11 · Krishna
+**What changed**
+- **Abhinav's review of PR #21 (S34-19)**, all 4 comments checked:
+  - **Time limit with child processes (real bug, fixed).** A 1 s limit took 6 s when the agent was a wrapper whose child kept the output open. The agent now runs in its own process group, the whole group is stopped on time-out, and the last read is bounded.
+  - **Token in `results.json` (real bug, fixed).** A token printed by a failing agent reached the evidence text. Each trial record is now scrubbed once, before it is saved and scored, so `results.json` and the saved record match and a rescore gives the same row.
+  - **Environment allowlist:** already done on 10 Nov.
+  - **Paging in the "no writes" check:** fair but not urgent (our login has almost no writes). Moved to new card S34-34.
+  - Two new run-path tests; 23 tests pass.
+- **Checked the team's chat claims** against the seat 31 and 35 channels, their pull requests and our 10 Nov schema dumps:
+  - **Seat 35, for 15 Nov:** writes nothing, and the instructor scores their pairs file directly. The platform has no proposal entity. For version 1 the instructor recommends approval requests.
+  - **Seat 31:** the mailbox bug was fixed on 10 Nov. Their drafts are still out of our reach, because email is private and a harness run gives the agent our token.
+  - **Test data:** the instructor said there are no planted answers, and a harness run writes to a copy.
+- **Board:** S34-07 is Abhinav's and S34-08 is Ranjani's. S34-20 is Abhinav's and blocked. S34-21 moved to version 1. S34-34 added. Risks 2, 3, 9 and Q6 updated.
+
+**What's next**
+1. Krishna: commit and push the fixes, reply on the #21 threads, and re-request review. Post the chat replies.
+2. Abhinav: S34-07 (seat 31 tasks) with the existing graders. Ask the instructor to confirm the 15 Nov plan for both seats.
+3. Ranjani: S34-08 (seat 35 tasks) in `suites/seat35/suite.toml`. Agree the agent command with seat 35.
+
+**Blockers:** Q1 (harness file location) and Q2 (how to start seat agents) are unanswered. The instructor's confirmation of our 15 Nov plan is pending. Invoices and received payments wait for the next deploy.
+
+---
+
 ## 2026-11-10 · Krishna
 **What changed**
 - **The instructor's review of PR #21 (S34-19), both points done:**

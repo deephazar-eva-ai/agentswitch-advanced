@@ -38,6 +38,7 @@
 | **Driver** | The part of the eval harness that starts or calls the agent under test for one trial, and waits for it to finish. Today it starts a program on the same machine. |
 | **Expected change** | A kind of check: the agent was asked to make something, and the check confirms it really exists on the platform and is right. |
 | **Proposal, not action** | A kind of check: the agent was asked to suggest something for a person to approve. The check confirms a proposal exists and that the records it is about are unchanged. |
+| **Process group** | A program together with every program it starts. Stopping the group stops them all, so a wrapper such as `uv run` cannot leave its child running after a time-out. |
 | **Launcher** | `scripts/run_local.py`: sets the same variables the course runner sets, then starts the eval harness on your computer. |
 | **Token cache** | A local, git-ignored file per system holding your current login token, so the password is used only when the token expires. |
 | **Verdict** | A verifier's decision: **approve** (it checked and the work is right), **revise** (it checked and the work is wrong), or **unevaluated** (nothing could be checked). Unevaluated is never a pass. |
