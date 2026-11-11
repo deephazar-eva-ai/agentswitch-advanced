@@ -190,5 +190,67 @@ class Utf8Output(unittest.TestCase):
                           (Path(tmp) / f"{stem}.json").read_text(encoding="utf-8"))
 
 
+class FakeReads:
+    """Just enough of the client for report.build: tool_names and list_all on made-up rows."""
+
+    def __init__(self, data, tools):
+        self.data, self.tools = data, set(tools)
+
+    def tool_names(self):
+        return self.tools
+
+    def list_all(self, entity, filters=None):
+        return [r for r in self.data.get(entity, []) if all(r.get(k) == v for k, v in (filters or {}).items())]
+
+
+CTX = {"parties": {"P-INR": "INR", "P-USD": "USD", "P-NONE": None}, "companies": {"CO": "INR"}}
+
+
+class CurrencyLookup(unittest.TestCase):
+    """Follow-up to the #17 review: currency comes from a recorded source, never a guess
+    (live probe 11 Nov 2026: order currency_code empty, payments have none; Party.currency_id and
+    Company.default_currency are set)."""
+
+    def test_record_then_customer_then_company(self):
+        self.assertEqual(report.resolve_currency("usd", "P-INR", "CO", CTX), ("USD", "record"))
+        self.assertEqual(report.resolve_currency(None, "P-USD", "CO", CTX), ("USD", "customer"))
+        self.assertEqual(report.resolve_currency("  ", "P-NONE", "CO", CTX), ("INR", "company"))
+        self.assertEqual(report.resolve_currency(None, "unknown-party", None, CTX), ("INR", "company"))  # one company
+
+    def test_nothing_recorded_stays_unknown(self):
+        self.assertEqual(report.resolve_currency(None, "P-NONE", None, {"parties": {}, "companies": {}}), (None, None))
+        two = {"parties": {}, "companies": {"A": "INR", "B": "USD"}}
+        self.assertEqual(report.resolve_currency(None, None, None, two), (None, None))  # which company? not guessed
+        self.assertEqual(report.resolve_currency(None, None, "B", two), ("USD", "company"))
+
+    def test_context_skips_sources_this_login_cannot_read(self):
+        c = FakeReads({"Party": [{"id": "P", "currency_id": "inr"}], "Company": [{"id": "CO", "default_currency": "INR"}]},
+                      tools={"Party.list"})
+        self.assertEqual(report.currency_context(c), {"parties": {"P": "INR"}, "companies": {}})
+
+    def test_build_fills_order_and_payment_currency_with_source(self):
+        orders = [dict(order("SO-1", "2026-10-01"), party_id="P-USD", company_id="CO"),
+                  dict(order("SO-2", "2026-10-01"), party_id="P-NONE", company_id="CO", currency_code="eur")]
+        pays = [dict(payment("PAY-1", "2026-11-01", 20.0), party_id="P-NONE", company_id="CO")]
+        c = FakeReads({"SalesOrder": orders, "Payment": pays,
+                       "Party": [{"id": "P-USD", "currency_id": "USD"}, {"id": "P-NONE", "currency_id": None}],
+                       "Company": [{"id": "CO", "default_currency": "INR"}]},
+                      tools={"SalesOrder.list", "Payment.list", "Party.list", "Company.list"})
+        rep = report.build(c, report_date=D, days=7, instance="t")
+        got = {r["number"]: (r["currency"], r["currency_source"])
+               for k in ("orders_not_invoiced", "payments_not_applied") for r in rep["sections"][k]["rows"]}
+        self.assertEqual(got, {"SO-1": ("USD", "customer"), "SO-2": ("EUR", "record"), "PAY-1": ("INR", "company")})
+        md = report.to_markdown(rep)
+        self.assertIn("100.00 EUR", md)
+        self.assertIn("20.00 INR", md)  # payments now show a currency
+        self.assertIn("Rows by source: company 1, customer 1, record 1.", md)
+
+    def test_unknown_currency_is_labelled_in_tables(self):
+        c = FakeReads({"SalesOrder": [order("SO-1", "2026-10-01")]}, tools={"SalesOrder.list", "Payment.list"})
+        md = report.to_markdown(report.build(c, report_date=D, days=7))
+        self.assertIn("100.00 currency not recorded", md)
+        self.assertIn("Rows by source: not recorded 1.", md)
+
+
 if __name__ == "__main__":
     unittest.main()

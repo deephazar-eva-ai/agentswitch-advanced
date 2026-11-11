@@ -52,7 +52,7 @@ def accounts_digest(rep, matches, accounts_email=None):
         lines += [f"Orders not invoiced more than {rep['days']} days after the order date ({len(order_rows)}):", ""]
         for r in order_rows:
             lines.append(f"- {r['number']}, {r['customer'] or 'unknown customer'}, ordered {r['order_date']} "
-                         f"({r['age_days']} days), {r['invoiced_status']}, {_money(r['grand_total'], r['currency'])}"
+                         f"({r['age_days']} days), {r['invoiced_status']}, {_amount(r['grand_total'], r.get('currency'))}"
                          f"{' [test data]' if r['fixture'] else ''}")
         lines += ["", "Please raise the invoice, or reply with the reason it is on hold.", ""]
     if pay_rows:
@@ -61,10 +61,10 @@ def accounts_digest(rep, matches, accounts_email=None):
             m = by_payment.get(r["number"]) or {}
             cands = m.get("candidates") or []
             hint = ("; possible match: " + ", ".join(
-                f"{c['kind']} {c['number']} ({_money(c['amount'])}{', same amount' if c['exact'] else ''})" for c in cands)
+                f"{c['kind']} {c['number']} ({_amount(c['amount'], c.get('currency'))}{', same amount' if c['exact'] else ''})" for c in cands)
                     ) if cands else "; no candidate found"
             lines.append(f"- {r['number']}, {r['customer'] or 'unknown customer'}, received {r['payment_date'] or '?'}, "
-                         f"{_money(r['unallocated'])} unallocated, {r['status']}{hint}{' [test data]' if r['fixture'] else ''}")
+                         f"{_amount(r['unallocated'], r.get('currency'))} unallocated, {r['status']}{hint}{' [test data]' if r['fixture'] else ''}")
         lines += ["", "Please apply each payment to the right invoice. The matches are suggestions only.", ""]
     lines += ["Thank you."]
     return {
@@ -79,7 +79,7 @@ def accounts_digest(rep, matches, accounts_email=None):
     }
 
 
-UNKNOWN_CURRENCY = "currency not recorded"
+UNKNOWN_CURRENCY = report.UNKNOWN_CURRENCY
 
 
 def _currency(row):
@@ -195,13 +195,14 @@ class DraftWriter:
 
 def propose(client, report_date=None, days=7, instance=None, accounts_email=None):
     """Read-only: build the report, the matches and the proposed drafts."""
-    rep = report.build(client, report_date=report_date, days=days, instance=instance)
+    currencies = report.currency_context(client)
+    rep = report.build(client, report_date=report_date, days=days, instance=instance, currencies=currencies)
     inv = rep["sections"]["invoices_overdue"]
     pay_rows = rep["sections"]["payments_not_applied"]["rows"]
     if inv["status"] == "ok":
-        docs = matching.invoice_documents(client.list_all("Invoice", {"docstatus": 1}))
+        docs = matching.invoice_documents(client.list_all("Invoice", {"docstatus": 1}), currencies)
     else:
-        docs = matching.order_documents(client.list_all("SalesOrder", {"docstatus": 1}))
+        docs = matching.order_documents(client.list_all("SalesOrder", {"docstatus": 1}), currencies)
     matches = matching.candidate_matches(pay_rows, docs)
     drafts, skipped = [], []
     digest = accounts_digest(rep, matches, accounts_email)
@@ -244,9 +245,9 @@ def to_markdown(prop):
     if prop["matches"]:
         lines += ["| Payment | Customer | Unallocated | Candidates |", "|---|---|---:|---|"]
         for m in prop["matches"]:
-            cands = ", ".join(f"{c['kind']} {c['number']} {_money(c['amount'])}{' (same amount)' if c['exact'] else ''}"
+            cands = ", ".join(f"{c['kind']} {c['number']} {_amount(c['amount'], c.get('currency'))}{' (same amount)' if c['exact'] else ''}"
                               for c in m["candidates"]) or "none"
-            lines.append(f"| {report.cell(m['payment'])} | {report.cell(m['customer'])} | {_money(m['unallocated'])} | "
+            lines.append(f"| {report.cell(m['payment'])} | {report.cell(m['customer'])} | {_amount(m['unallocated'], m.get('currency'))} | "
                          f"{report.cell(cands)} |")
         lines.append("")
     lines += [f"## Drafts ({len(prop['drafts'])})", ""]

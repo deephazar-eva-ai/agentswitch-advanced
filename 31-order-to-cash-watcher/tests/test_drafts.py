@@ -41,6 +41,21 @@ class Matching(unittest.TestCase):
         self.assertTrue(m["candidates"][0]["exact"])
         self.assertEqual(matching.summary([m]), {"payments": 1, "with_candidates": 1, "with_exact_match": 1})
 
+    def test_same_amount_needs_same_currency(self):
+        ctx = {"parties": {}, "companies": {}}
+        docs = matching.order_documents([dict(order("usd", 500.0), currency_code="USD"),
+                                         dict(order("inr", 500.0), currency_code="INR"),
+                                         dict(order("inr-near", 510.0), currency_code="INR")], ctx)
+        p = dict(pay_row("PAY1", 500.0), currency="INR")
+        m = matching.candidate_matches([p], docs)[0]
+        self.assertEqual([(c["number"], c["exact"]) for c in m["candidates"]],
+                         [("inr", True), ("inr-near", False), ("usd", False)])  # 500 USD is not "same amount"
+        self.assertEqual(m["currency"], "INR")
+
+    def test_documents_take_the_customer_currency(self):
+        docs = matching.order_documents([order("A", 10)], {"parties": {"P1": "INR"}, "companies": {}})
+        self.assertEqual(docs[0]["currency"], "INR")
+
     def test_no_candidate_when_customer_has_no_documents(self):
         m = matching.candidate_matches([pay_row("PAY1", 500.0, party="P9")], matching.order_documents([order("A", 500)]))
         self.assertEqual(m[0]["candidates"], [])

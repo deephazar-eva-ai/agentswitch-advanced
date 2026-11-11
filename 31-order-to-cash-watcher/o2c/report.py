@@ -20,6 +20,53 @@ def looks_like_fixture(row):
     return any(m in text for m in FIXTURE_MARKERS)
 
 
+UNKNOWN_CURRENCY = "currency not recorded"
+
+
+def _code(value):
+    code = str(value or "").strip().upper()
+    return code or None
+
+
+def currency_context(client, names=None):
+    """Where currency is recorded on the platform (probed 11 Nov 2026).
+
+    Sales orders have a `currency_code` field but it is empty on every submitted order, and
+    payments have no currency field at all. The customer (`Party.currency_id`) and the company
+    (`Company.default_currency`) do record one. Returns {"parties": {id: code}, "companies":
+    {id: code}}; a source this login cannot read is left empty.
+    """
+    names = client.tool_names() if names is None else names
+    parties = {p.get("id"): _code(p.get("currency_id")) for p in client.list_all("Party")} if "Party.list" in names else {}
+    companies = {c.get("id"): _code(c.get("default_currency")) for c in client.list_all("Company")} if "Company.list" in names else {}
+    return {"parties": parties, "companies": companies}
+
+
+def resolve_currency(record_code, party_id, company_id, ctx):
+    """(code, source): the record's own currency, else the customer's, else the company's default.
+
+    Never guessed from the instance name or an exchange rate. With one company on the system its
+    default applies when the row has no company_id. Returns (None, None) if nothing is recorded.
+    """
+    ctx = ctx or {}
+    companies = ctx.get("companies") or {}
+    company = companies.get(company_id) if company_id in companies else (
+        next(iter(companies.values())) if len(companies) == 1 else None)
+    for source, value in (("record", record_code), ("customer", (ctx.get("parties") or {}).get(party_id)),
+                          ("company", company)):
+        code = _code(value)
+        if code:
+            return code, source
+    return None, None
+
+
+def apply_currency(rows, ctx):
+    """Set `currency` and `currency_source` on report rows (which carry party_id/company_id)."""
+    for r in rows:
+        r["currency"], r["currency_source"] = resolve_currency(r.get("currency"), r.get("party_id"), r.get("company_id"), ctx)
+    return rows
+
+
 def _as_date(value):
     return date.fromisoformat(str(value)[:10]) if value else None
 
@@ -40,6 +87,8 @@ def orders_not_invoiced(orders, report_date, days):
             "number": o.get("number"),
             "id": o.get("id"),
             "customer": o.get("_party_id_display"),
+            "party_id": o.get("party_id"),
+            "company_id": o.get("company_id"),
             "order_date": order_date.isoformat(),
             "age_days": age,
             "invoiced_status": o.get("invoiced_status"),
@@ -70,6 +119,8 @@ def payments_not_applied(payments, report_date):
             "id": p.get("id"),
             "customer": p.get("_party_id_display"),
             "party_id": p.get("party_id"),
+            "company_id": p.get("company_id"),
+            "currency": None,   # Payment has no currency field; resolved from customer/company
             "payment_date": paid.isoformat() if paid else None,
             "age_days": (report_date - paid).days if paid else None,
             "amount": p.get("amount"),
@@ -100,6 +151,7 @@ def invoices_overdue(invoices, report_date):
             "id": inv.get("id"),
             "customer": inv.get("_party_id_display"),
             "party_id": inv.get("party_id"),
+            "company_id": inv.get("company_id"),
             "due_date": due.isoformat() if due else None,
             "days_overdue": (report_date - due).days if due else None,
             "payment_terms": inv.get("payment_terms"),
@@ -118,20 +170,23 @@ def invoices_overdue(invoices, report_date):
     return overdue, no_due
 
 
-def build(client, report_date=None, days=7, instance=None):
+def build(client, report_date=None, days=7, instance=None, currencies=None):
     report_date = report_date or today_ist()
     sections = {}
+    names = client.tool_names()
+    currencies = currencies if currencies is not None else currency_context(client, names)
 
     orders = client.list_all("SalesOrder", {"docstatus": SUBMITTED})
     sections["orders_not_invoiced"] = {
         "status": "ok",
         "rule": f"submitted, invoiced_status in {list(NOT_INVOICED)}, order date more than {days} days ago",
-        "rows": orders_not_invoiced(orders, report_date, days),
+        "rows": apply_currency(orders_not_invoiced(orders, report_date, days), currencies),
     }
 
-    names = client.tool_names()
     if "Invoice.list" in names:
         overdue, no_due = invoices_overdue(client.list_all("Invoice", {"docstatus": SUBMITTED}), report_date)
+        apply_currency(overdue, currencies)
+        apply_currency(no_due, currencies)
         sections["invoices_overdue"] = {
             "status": "ok",
             "rule": "submitted, due_date before the report date, outstanding > 0",
@@ -150,7 +205,7 @@ def build(client, report_date=None, days=7, instance=None):
     sections["payments_not_applied"] = {
         "status": "ok",
         "rule": "incoming (receive), not cancelled, unallocated > 0",
-        "rows": payments_not_applied(payments, report_date),
+        "rows": apply_currency(payments_not_applied(payments, report_date), currencies),
     }
 
     return {
@@ -173,6 +228,21 @@ def _money(v):
     return f"{v:,.2f}" if isinstance(v, (int, float)) else ""
 
 
+def _cur(r):
+    """Currency label for a table cell: the code, or an explicit 'currency not recorded'."""
+    return r.get("currency") or UNKNOWN_CURRENCY
+
+
+def currency_sources(report):
+    """Count rows by where their currency came from, across every section."""
+    counts = {}
+    for sec in report["sections"].values():
+        for r in sec.get("rows", []) + sec.get("no_due_date", []):
+            key = r.get("currency_source") or "not recorded"
+            counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
 def cell(v):
     """Text from a platform record, safe inside a Markdown table cell.
 
@@ -191,7 +261,7 @@ def _invoice_rows(rows):
     for r in rows:
         out.append(f"| {cell(r['number'])} | {cell(r['customer'])} | {cell(r['due_date'])} | "
                    f"{r['days_overdue'] if r['days_overdue'] is not None else ''} | {cell(r['payment_terms'])} | "
-                   f"{_money(r['grand_total'])} | {_money(r['amount_paid'])} | {_money(r['outstanding'])} {cell(r['currency'])} | "
+                   f"{_money(r['grand_total'])} | {_money(r['amount_paid'])} | {_money(r['outstanding'])} {cell(_cur(r))} | "
                    f"{'fixture' if r['fixture'] else ''} |")
     return out
 
@@ -209,6 +279,9 @@ def to_markdown(report):
         "",
         f"N = {report['days']} days. Generated {report['generated_at']} (IST). Read-only; nothing was changed.",
         "Rows marked **fixture** look like test data from other seats.",
+        "Currency: the record's own, else the customer's currency, else the company default; never converted or added "
+        "across currencies. Rows by source: "
+        + (", ".join(f"{k} {v}" for k, v in sorted(currency_sources(report).items())) or "none") + ".",
         "",
     ]
     for key, title in TITLES.items():
@@ -231,13 +304,13 @@ def to_markdown(report):
                       "|---|---|---|---:|---|---|---:|---|"]
             for r in rows:
                 lines.append(f"| {cell(r['number'])} | {cell(r['customer'])} | {cell(r['order_date'])} | {r['age_days']} | "
-                             f"{cell(r['invoiced_status'])} | {cell(r['delivered_status'])} | {_money(r['grand_total'])} {cell(r['currency'])} | "
+                             f"{cell(r['invoiced_status'])} | {cell(r['delivered_status'])} | {_money(r['grand_total'])} {cell(_cur(r))} | "
                              f"{'fixture' if r['fixture'] else ''} |")
         else:
             lines += ["| Payment | Customer | Date | Age (days) | Amount | Unallocated | Status | |",
                       "|---|---|---|---:|---:|---:|---|---|"]
             for r in rows:
                 lines.append(f"| {cell(r['number'])} | {cell(r['customer'])} | {cell(r['payment_date'])} | {r['age_days'] if r['age_days'] is not None else ''} | "
-                             f"{_money(r['amount'])} | {_money(r['unallocated'])} | {cell(r['status'])} | {'fixture' if r['fixture'] else ''} |")
+                             f"{_money(r['amount'])} | {_money(r['unallocated'])} {cell(_cur(r))} | {cell(r['status'])} | {'fixture' if r['fixture'] else ''} |")
         lines.append("")
     return "\n".join(lines)
