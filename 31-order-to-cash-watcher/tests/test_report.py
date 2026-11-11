@@ -1,8 +1,12 @@
 """Unit tests on made-up rows (no platform data)."""
+import tempfile
 import unittest
 from datetime import date
+from pathlib import Path
+from unittest import mock
 
 from o2c import report
+from o2c.__main__ import write_report
 from o2c.client import Client, WriteBlocked, is_read_tool
 
 D = date(2026, 11, 15)
@@ -120,6 +124,70 @@ class Markdown(unittest.TestCase):
         self.assertIn("**BLOCKED:** no access", md)
         self.assertIn("## Invoices overdue (blocked)", md)  # never "(0)", which would read as "none overdue"
         self.assertIn("## Orders not invoiced (0)", md)
+
+
+def _report(orders=(), invoices=(), payments=()):
+    overdue, no_due = report.invoices_overdue(list(invoices), D)
+    return {"instance": "t", "report_date": "2026-11-15", "days": 7, "generated_at": "x",
+            "sections": {"orders_not_invoiced": {"status": "ok", "rule": "r",
+                                                 "rows": report.orders_not_invoiced(list(orders), D, 7)},
+                         "invoices_overdue": {"status": "ok", "rule": "r", "rows": overdue, "no_due_date": no_due},
+                         "payments_not_applied": {"status": "ok", "rule": "r",
+                                                  "rows": report.payments_not_applied(list(payments), D)}}}
+
+
+def _table_rows(md):
+    return [line for line in md.splitlines() if line.startswith("| ") and not line.startswith("| Order |")
+            and not line.startswith("| Invoice |") and not line.startswith("| Payment |")]
+
+
+def _columns(line):
+    """Column count of a Markdown table row, ignoring escaped pipes."""
+    return line.replace("\\\\", "").replace("\\|", "").count("|") - 1
+
+
+class MarkdownEscaping(unittest.TestCase):
+    """Review #13: a pipe or line break in record text must not add a column or split a row."""
+    NASTY = "Acme | North\r\nDivision\\"
+
+    def test_cell_escapes_pipes_backslashes_and_line_breaks(self):
+        self.assertEqual(report.cell("Acme | North\nDivision"), "Acme \\| North Division")
+        self.assertEqual(report.cell("a\r\nb\rc"), "a b c")
+        self.assertEqual(report.cell("ends with \\"), "ends with \\\\")  # cannot escape the next |
+        self.assertEqual(report.cell(None), "")
+
+    def test_every_table_keeps_its_columns(self):
+        rep = _report(orders=[order("SO|1", "2026-10-01", party=self.NASTY)],
+                      invoices=[invoice("INV\n1", "2026-11-01", 10.0, party=self.NASTY),
+                                invoice("INV2", None, 5.0, party=self.NASTY)],
+                      payments=[payment("PAY|1", "2026-11-01", 20.0, party=self.NASTY)])
+        md = report.to_markdown(rep)
+        rows = _table_rows(md)
+        self.assertEqual(len(rows), 4)  # one line per record: no row was split
+        widths = {"| SO": 8, "| INV": 9, "| PAY": 8}
+        for line in rows:
+            expected = next(w for prefix, w in widths.items() if line.startswith(prefix))
+            self.assertEqual(_columns(line), expected, line)
+        self.assertIn("Acme \\| North Division\\\\", md)
+
+
+class Utf8Output(unittest.TestCase):
+    """Review #13: report files are UTF-8 even when the machine default is cp1252 (Windows)."""
+
+    def test_non_latin_customer_written_under_cp1252_default(self):
+        rep = _report(orders=[order("SO-1", "2026-10-01", party="客户 Ltd")],
+                      payments=[payment("PAY-1", "2026-11-01", 20.0, party="客户 Ltd")])
+        md = report.to_markdown(rep)
+        real = Path.write_text
+
+        def cp1252_default(self, data, encoding=None, errors=None, newline=None):
+            return real(self, data, encoding=encoding or "cp1252", errors=errors, newline=newline)
+
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(Path, "write_text", cp1252_default):
+            stem = write_report(rep, md, Path(tmp), "t")
+            self.assertIn("客户 Ltd", (Path(tmp) / f"{stem}.md").read_text(encoding="utf-8"))
+            self.assertIn("客户 Ltd".encode("unicode_escape").decode(),
+                          (Path(tmp) / f"{stem}.json").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

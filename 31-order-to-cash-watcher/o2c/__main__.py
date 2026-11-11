@@ -14,6 +14,19 @@ from . import report
 from .client import Client
 
 
+def write_report(rep, md, out, instance):
+    """Write <instance>-<date>.json and .md as UTF-8, whatever the machine's default encoding.
+
+    Returns the file stem. Customer names can be any script (e.g. 客户); a cp1252 default on
+    Windows would otherwise fail on the Markdown after the JSON was already written.
+    """
+    out.mkdir(parents=True, exist_ok=True)
+    stem = f"{instance or 'report'}-{rep['report_date']}"
+    (out / f"{stem}.json").write_text(json.dumps(rep, indent=2), encoding="utf-8")
+    (out / f"{stem}.md").write_text(md, encoding="utf-8")
+    return stem
+
+
 def main():
     ap = argparse.ArgumentParser(prog="o2c", description="Daily order-to-cash exception report (read-only)")
     ap.add_argument("--days", type=int, default=int(os.environ.get("O2C_DAYS", 7)), help="N: days before an order counts as not invoiced")
@@ -25,10 +38,7 @@ def main():
     rep = report.build(Client(), report_date=args.date, days=args.days, instance=args.instance)
     md = report.to_markdown(rep)
     if args.out:
-        args.out.mkdir(parents=True, exist_ok=True)
-        stem = f"{args.instance or 'report'}-{rep['report_date']}"
-        (args.out / f"{stem}.json").write_text(json.dumps(rep, indent=2))
-        (args.out / f"{stem}.md").write_text(md)
+        stem = write_report(rep, md, args.out, args.instance)
         counts = ", ".join(f"{k}={len(v['rows'])}" if v["status"] == "ok" else f"{k}={v['status']}" for k, v in rep["sections"].items())
         print(f"wrote {args.out / stem}.md ({counts})")
     else:
