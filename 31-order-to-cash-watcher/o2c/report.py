@@ -171,13 +171,25 @@ def _money(v):
     return f"{v:,.2f}" if isinstance(v, (int, float)) else ""
 
 
+def cell(v):
+    """Text from a platform record, safe inside a Markdown table cell.
+
+    Escapes backslashes and pipes (so a name like `Acme | North` stays one column) and turns
+    CR/LF into spaces (so a line break cannot split the row). None becomes an empty cell.
+    """
+    if v is None:
+        return ""
+    text = str(v).replace("\\", "\\\\").replace("|", "\\|")
+    return " ".join(text.replace("\r\n", "\n").replace("\r", "\n").split("\n")).strip()
+
+
 def _invoice_rows(rows):
     out = ["| Invoice | Customer | Due | Days overdue | Terms | Total | Paid | Outstanding | |",
            "|---|---|---|---:|---|---:|---:|---:|---|"]
     for r in rows:
-        out.append(f"| {r['number']} | {r['customer'] or ''} | {r['due_date'] or ''} | "
-                   f"{r['days_overdue'] if r['days_overdue'] is not None else ''} | {r['payment_terms'] or ''} | "
-                   f"{_money(r['grand_total'])} | {_money(r['amount_paid'])} | {_money(r['outstanding'])} {r['currency'] or ''} | "
+        out.append(f"| {cell(r['number'])} | {cell(r['customer'])} | {cell(r['due_date'])} | "
+                   f"{r['days_overdue'] if r['days_overdue'] is not None else ''} | {cell(r['payment_terms'])} | "
+                   f"{_money(r['grand_total'])} | {_money(r['amount_paid'])} | {_money(r['outstanding'])} {cell(r['currency'])} | "
                    f"{'fixture' if r['fixture'] else ''} |")
     return out
 
@@ -216,14 +228,14 @@ def to_markdown(report):
             lines += ["| Order | Customer | Date | Age (days) | Invoiced | Delivered | Total | |",
                       "|---|---|---|---:|---|---|---:|---|"]
             for r in rows:
-                lines.append(f"| {r['number']} | {r['customer'] or ''} | {r['order_date']} | {r['age_days']} | "
-                             f"{r['invoiced_status']} | {r['delivered_status'] or ''} | {_money(r['grand_total'])} {r['currency'] or ''} | "
+                lines.append(f"| {cell(r['number'])} | {cell(r['customer'])} | {cell(r['order_date'])} | {r['age_days']} | "
+                             f"{cell(r['invoiced_status'])} | {cell(r['delivered_status'])} | {_money(r['grand_total'])} {cell(r['currency'])} | "
                              f"{'fixture' if r['fixture'] else ''} |")
         else:
             lines += ["| Payment | Customer | Date | Age (days) | Amount | Unallocated | Status | |",
                       "|---|---|---|---:|---:|---:|---|---|"]
             for r in rows:
-                lines.append(f"| {r['number']} | {r['customer'] or ''} | {r['payment_date'] or ''} | {r['age_days'] if r['age_days'] is not None else ''} | "
-                             f"{_money(r['amount'])} | {_money(r['unallocated'])} | {r['status']} | {'fixture' if r['fixture'] else ''} |")
+                lines.append(f"| {cell(r['number'])} | {cell(r['customer'])} | {cell(r['payment_date'])} | {r['age_days'] if r['age_days'] is not None else ''} | "
+                             f"{_money(r['amount'])} | {_money(r['unallocated'])} | {cell(r['status'])} | {'fixture' if r['fixture'] else ''} |")
         lines.append("")
     return "\n".join(lines)
