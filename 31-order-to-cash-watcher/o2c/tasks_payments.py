@@ -69,30 +69,38 @@ def _invoices(ctx):
     return ctx.client.list_all("Invoice")
 
 
+def _customer_invoice(inv):
+    """Invoice also holds supplier bills (direction "payable", seen 11 Nov); only customer invoices count."""
+    return inv.get("direction", "receivable") == "receivable"
+
+
 def overdue_invoices(ctx):
     raw = _invoices(ctx)
     if raw is None:
         return _blocked("Invoice.list not available to this login (BUG-31-001)")
     day = ctx.report_date.isoformat()
-    submitted = [i for i in raw if i.get("docstatus") == 1]
-    expected = {i["number"] for i in submitted if i.get("due_date") and str(i["due_date"])[:10] < day and _money(i.get("outstanding")) > 0}
-    expected_no_due = {i["number"] for i in submitted if not i.get("due_date")}
+    submitted = [i for i in raw if i.get("docstatus") == 1 and _customer_invoice(i)]
+    expected = {i["id"] for i in submitted if i.get("due_date") and str(i["due_date"])[:10] < day and _money(i.get("outstanding")) > 0}
+    expected_no_due = {i["id"] for i in submitted if not i.get("due_date")}
+    bills = {i["id"] for i in raw if not _customer_invoice(i)}
     sec = ctx.report()["sections"]["invoices_overdue"]
-    got = {r["number"] for r in sec["rows"]}
-    got_no_due = {r["number"] for r in sec.get("no_due_date", [])}
-    passed = sec["status"] == "ok" and got == expected and got_no_due == expected_no_due
+    got = {r["id"] for r in sec["rows"]}
+    got_no_due = {r["id"] for r in sec.get("no_due_date", [])}
+    leaked = sorted((got | got_no_due) & bills)
+    passed = sec["status"] == "ok" and got == expected and got_no_due == expected_no_due and not leaked
     return _ok(passed, f"verifier=invoice_recount; overdue expected={len(expected)} got={len(got)} ({_diff(expected, got)}); "
-                       f"no_due_date expected={len(expected_no_due)} got={len(got_no_due)}")
+                       f"no_due_date expected={len(expected_no_due)} got={len(got_no_due)}; "
+                       f"supplier_bills_checked={len(bills)} leaked={len(leaked)}")
 
 
 def overdue_ageing(ctx):
     raw = _invoices(ctx)
     if raw is None:
         return _blocked("Invoice.list not available to this login (BUG-31-001)")
-    due = {i["number"]: str(i.get("due_date") or "")[:10] for i in raw}
+    due = {i["id"]: str(i.get("due_date") or "")[:10] for i in raw if _customer_invoice(i)}
     rows = ctx.report()["sections"]["invoices_overdue"]["rows"]
     wrong = [r["number"] for r in rows
-             if not due.get(r["number"]) or r["days_overdue"] != (ctx.report_date - date.fromisoformat(due[r["number"]])).days
+             if not due.get(r["id"]) or r["days_overdue"] != (ctx.report_date - date.fromisoformat(due[r["id"]])).days
              or r["days_overdue"] <= 0]
     ordered = all(a["days_overdue"] >= b["days_overdue"] for a, b in zip(rows, rows[1:]))
     return _ok(not wrong and ordered, f"verifier=ageing_from_due_date; rows={len(rows)}; wrong_age={wrong[:3]}; oldest_first={ordered}")

@@ -41,6 +41,11 @@ class Matching(unittest.TestCase):
         self.assertTrue(m["candidates"][0]["exact"])
         self.assertEqual(matching.summary([m]), {"payments": 1, "with_candidates": 1, "with_exact_match": 1})
 
+    def test_supplier_bills_are_not_matchable(self):
+        invs = [{"number": "C", "id": "C", "party_id": "P1", "docstatus": 1, "outstanding": 500.0, "direction": "receivable"},
+                {"number": "B", "id": "B", "party_id": "P1", "docstatus": 1, "outstanding": 500.0, "direction": "payable"}]
+        self.assertEqual([d["number"] for d in matching.invoice_documents(invs)], ["C"])
+
     def test_same_amount_needs_same_currency(self):
         ctx = {"parties": {}, "companies": {}}
         docs = matching.order_documents([dict(order("usd", 500.0), currency_code="USD"),

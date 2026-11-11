@@ -111,6 +111,17 @@ class Invoices(unittest.TestCase):
         self.assertTrue(r["overdue_ageing"]["passed"], r["overdue_ageing"]["evidence"])
         self.assertIn("overdue expected=2 got=2", r["overdue_invoices"]["evidence"])
 
+    def test_supplier_bills_are_excluded_and_a_leak_fails(self):
+        bill = dict(inv("B1", "2026-10-01", 50.0), direction="payable")
+        c = ctx({"Invoice": INVOICES + [bill]}, tools={"Invoice.list"})
+        res = T.overdue_invoices(c)
+        self.assertTrue(res["passed"], res["evidence"])
+        self.assertIn("supplier_bills_checked=1 leaked=0", res["evidence"])
+        c.report()["sections"]["invoices_overdue"]["rows"].append({"id": "B1", "number": "B1", "days_overdue": 45})
+        res = T.overdue_invoices(c)
+        self.assertFalse(res["passed"])
+        self.assertIn("leaked=1", res["evidence"])
+
     def test_ageing_catches_a_wrong_age(self):
         c = ctx({"Invoice": INVOICES}, tools={"Invoice.list"})
         c.report()["sections"]["invoices_overdue"]["rows"][0]["days_overdue"] += 1

@@ -27,13 +27,15 @@ def order_documents(orders, currencies=None):
 
 
 def invoice_documents(invoices, currencies=None):
-    """Submitted invoices with a balance left, for when Invoice.list is available."""
+    """Submitted customer invoices with a balance left. Supplier bills (direction "payable") are not
+    matchable against a customer's payment."""
     return [
         {"kind": "invoice", "number": i.get("number"), "id": i.get("id"), "party_id": i.get("party_id"),
          "date": str(i.get("date") or "")[:10] or None, "amount": round(float(i.get("outstanding") or 0), 2),
          "currency": _doc_currency(i, currencies)}
         for i in invoices
         if i.get("docstatus") == 1 and float(i.get("outstanding") or 0) > 0 and i.get("party_id")
+        and i.get("direction", "receivable") == "receivable"
     ]
 
 
