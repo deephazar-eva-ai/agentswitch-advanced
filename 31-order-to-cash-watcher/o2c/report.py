@@ -155,27 +155,45 @@ def payments_not_applied(payments, report_date):
     return sorted(out, key=lambda r: (-(r["age_days"] or 0), r["number"] or ""))
 
 
+def _currency_order(codes):
+    """Known currencies A-Z, then None (currency not recorded) last."""
+    codes = set(codes)
+    return sorted(c for c in codes if c) + ([None] if None in codes else [])
+
+
 def payments_summary(rows):
-    """Totals for section 3: overall, by age bucket, by status and by customer (largest first)."""
+    """Totals for section 3, always per currency: overall, by age bucket, by status and by customer.
+
+    Amounts in different currencies are never added together (there is no conversion policy), so
+    there is no single overall total: `by_currency` holds one total per currency, and each age,
+    status and customer line is for one currency. Customers are ranked by amount only within
+    their own currency.
+    """
     def add(table, key, row):
         t = table.setdefault(key, {"count": 0, "unallocated": 0.0})
         t["count"] += 1
         t["unallocated"] = round(t["unallocated"] + row["unallocated"], 2)
 
-    buckets, statuses, customers = {}, {}, {}
+    totals, buckets, statuses, customers = {}, {}, {}, {}
     for r in rows:
-        add(buckets, r["age_bucket"], r)
-        add(statuses, r["status"] or "unknown", r)
-        add(customers, r.get("party_id") or r.get("customer") or "unknown", r)
-        customers[r.get("party_id") or r.get("customer") or "unknown"]["customer"] = r.get("customer")
+        cur = r.get("currency")
+        party = r.get("party_id") or r.get("customer") or "unknown"
+        add(totals, cur, r)
+        add(buckets, (r["age_bucket"], cur), r)
+        add(statuses, (r["status"] or "unknown", cur), r)
+        add(customers, (party, cur), r)
+        customers[(party, cur)]["customer"] = r.get("customer")
+    currencies = _currency_order(totals)
+    rank = {c: i for i, c in enumerate(currencies)}
     order = [b[0] for b in AGE_BUCKETS] + ["unknown"]
     return {
         "count": len(rows),
-        "unallocated": round(sum(r["unallocated"] for r in rows), 2),
-        "by_age": [{"bucket": b, **buckets[b]} for b in order if b in buckets],
-        "by_status": [{"status": k, **v} for k, v in sorted(statuses.items())],
-        "by_customer": sorted(({"party_id": k, **v} for k, v in customers.items()),
-                              key=lambda c: (-c["unallocated"], c.get("customer") or "")),
+        "by_currency": [{"currency": c, **totals[c]} for c in currencies],
+        "by_age": [{"bucket": b, "currency": c, **buckets[(b, c)]} for b in order for c in currencies if (b, c) in buckets],
+        "by_status": [{"status": st, "currency": c, **v} for (st, c), v in
+                      sorted(statuses.items(), key=lambda kv: (kv[0][0], rank[kv[0][1]]))],
+        "by_customer": sorted(({"party_id": p, "currency": c, **v} for (p, c), v in customers.items()),
+                              key=lambda x: (rank[x["currency"]], -x["unallocated"], x.get("customer") or "")),
     }
 
 
@@ -354,15 +372,20 @@ HINT_LABELS = {"same_amount": "**check: same amount**", "has_history": "has hist
 def _payment_tables(sec):
     rows, hist = sec["rows"], sec.get("receipt_history") or {}
     summ = sec.get("summary") or payments_summary(rows)
-    lines = [f"**{summ['count']} payments, {_money(summ['unallocated'])} unallocated.**", "",
+    totals = "; ".join(f"{_money(t['unallocated'])} {cell(_cur(t))}" for t in summ["by_currency"])
+    several = len(summ["by_currency"]) > 1
+    lines = [f"**{summ['count']} payments, {totals} unallocated"
+             f"{' (one total per currency; not added together)' if several else ''}.**", "",
              "| Age (days) | Payments | Unallocated |", "|---|---:|---:|"]
-    lines += [f"| {b['bucket']} | {b['count']} | {_money(b['unallocated'])} |" for b in summ["by_age"]]
+    lines += [f"| {b['bucket']} | {b['count']} | {_money(b['unallocated'])} {cell(_cur(b))} |" for b in summ["by_age"]]
     lines += ["", "| Status | Payments | Unallocated |", "|---|---:|---:|"]
-    lines += [f"| {b['status']} | {b['count']} | {_money(b['unallocated'])} |" for b in summ["by_status"]]
-    top = summ["by_customer"][:5]
-    lines += ["", f"Largest customers ({len(top)} of {len(summ['by_customer'])}):", "",
-              "| Customer | Payments | Unallocated |", "|---|---:|---:|"]
-    lines += [f"| {cell(c.get('customer'))} | {c['count']} | {_money(c['unallocated'])} |" for c in top]
+    lines += [f"| {cell(b['status'])} | {b['count']} | {_money(b['unallocated'])} {cell(_cur(b))} |" for b in summ["by_status"]]
+    for t in summ["by_currency"]:   # largest customers within each currency; amounts are not compared across currencies
+        same = [c for c in summ["by_customer"] if c["currency"] == t["currency"]]
+        top = same[:5]
+        lines += ["", f"Largest customers{' in ' + _cur(t) if several else ''} ({len(top)} of {len(same)}):", "",
+                  "| Customer | Payments | Unallocated |", "|---|---:|---:|"]
+        lines += [f"| {cell(c.get('customer'))} | {c['count']} | {_money(c['unallocated'])} {cell(_cur(c))} |" for c in top]
     lines.append("")
     if hist.get("status") == "ok":
         lines += [f"Receipt history: {hist['source']}.", ""]

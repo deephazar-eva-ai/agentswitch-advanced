@@ -117,12 +117,72 @@ class Section3(unittest.TestCase):
 
     def test_summary_adds_up(self):
         s = report.payments_summary(report.payments_not_applied(self.PAYMENTS, D))
-        self.assertEqual((s["count"], s["unallocated"]), (5, 660.0))
+        self.assertEqual(s["count"], 5)
+        self.assertEqual(s["by_currency"], [{"currency": None, "count": 5, "unallocated": 660.0}])
+        self.assertNotIn("unallocated", s)  # no single total that could mix currencies
         for part in ("by_age", "by_status", "by_customer"):
             self.assertEqual(sum(b["count"] for b in s[part]), 5, part)
             self.assertAlmostEqual(sum(b["unallocated"] for b in s[part]), 660.0, places=2)
         self.assertEqual([b["bucket"] for b in s["by_age"]], ["future", "0-30", "31-60", "90+", "unknown"])
-        self.assertEqual(s["by_customer"][0], {"party_id": "P1", "customer": "Acme", "count": 4, "unallocated": 360.0})
+        self.assertEqual(s["by_customer"][0],
+                         {"party_id": "P1", "currency": None, "customer": "Acme", "count": 4, "unallocated": 360.0})
+
+
+def _with_currency(rows, by_number):
+    for r in rows:
+        r["currency"] = by_number.get(r["number"])
+    return rows
+
+
+class Section3CrossCurrency(unittest.TestCase):
+    """Payments in different currencies are never added together in the section 3 summary."""
+    PAYMENTS = [payment("A", "2026-11-10", 100.0), payment("B", "2026-11-05", 50.0),
+                payment("C", "2026-11-01", 5000.0, party="P2", name="Beta"), payment("D", "2026-09-01", 7.0)]
+    CUR = {"A": "INR", "B": "USD", "C": "INR", "D": None}
+
+    def summary(self):
+        return report.payments_summary(_with_currency(report.payments_not_applied(self.PAYMENTS, D), self.CUR))
+
+    def test_one_total_per_currency(self):
+        self.assertEqual(self.summary()["by_currency"], [
+            {"currency": "INR", "count": 2, "unallocated": 5100.0},
+            {"currency": "USD", "count": 1, "unallocated": 50.0},
+            {"currency": None, "count": 1, "unallocated": 7.0}])
+
+    def test_age_and_status_lines_are_per_currency(self):
+        s = self.summary()
+        self.assertEqual([(b["bucket"], b["currency"], b["unallocated"]) for b in s["by_age"]],
+                         [("0-30", "INR", 5100.0), ("0-30", "USD", 50.0), ("61-90", None, 7.0)])
+        self.assertEqual([(b["status"], b["currency"], b["unallocated"]) for b in s["by_status"]],
+                         [("submitted", "INR", 5100.0), ("submitted", "USD", 50.0), ("submitted", None, 7.0)])
+
+    def test_same_customer_two_currencies_two_lines(self):
+        s = self.summary()
+        acme = [(c["currency"], c["count"], c["unallocated"]) for c in s["by_customer"] if c["party_id"] == "P1"]
+        self.assertEqual(acme, [("INR", 1, 100.0), ("USD", 1, 50.0), (None, 1, 7.0)])
+
+    def test_customers_ranked_only_within_their_currency(self):
+        order = [(c["currency"], c.get("customer")) for c in self.summary()["by_customer"]]
+        self.assertEqual(order, [("INR", "Beta"), ("INR", "Acme"), ("USD", "Acme"), (None, "Acme")])
+
+    def test_markdown_shows_totals_per_currency_and_never_a_mixed_total(self):
+        rows = _with_currency(report.payments_not_applied(self.PAYMENTS, D), self.CUR)
+        md = "\n".join(report._payment_tables({"rows": rows, "summary": report.payments_summary(rows)}))
+        self.assertIn("**4 payments, 5,100.00 INR; 50.00 USD; 7.00 currency not recorded unallocated "
+                      "(one total per currency; not added together).**", md)
+        for wrong in ("5,157.00", "5,150.00", "5,107.00"):
+            self.assertNotIn(wrong, md)
+        self.assertIn("| 0-30 | 2 | 5,100.00 INR |", md)
+        self.assertIn("| 0-30 | 1 | 50.00 USD |", md)
+        self.assertIn("Largest customers in INR (2 of 2):", md)
+        self.assertIn("Largest customers in USD (1 of 1):", md)
+        self.assertIn("Largest customers in currency not recorded (1 of 1):", md)
+
+    def test_single_currency_reads_as_before(self):
+        rows = _with_currency(report.payments_not_applied(self.PAYMENTS[:1] + self.PAYMENTS[2:3], D), {"A": "INR", "C": "INR"})
+        md = "\n".join(report._payment_tables({"rows": rows, "summary": report.payments_summary(rows)}))
+        self.assertIn("**2 payments, 5,100.00 INR unallocated.**", md)
+        self.assertIn("Largest customers (2 of 2):", md)
 
 
 class FakeClient:
