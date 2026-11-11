@@ -13,7 +13,7 @@ class FakePlatform:
 
     def __init__(self, data, tools=(), mailboxes=()):
         self.data = {k: [dict(r) for r in v] for k, v in data.items()}
-        self.tools = {"SalesOrder.list", "Payment.list", "EmailMessage.list", "EmailAccount.list", *tools}
+        self.tools = {"SalesOrder.list", "Payment.list", "EmailMessage.list", "Mailbox.list", *tools}
         self.mailboxes = list(mailboxes)
         self.requests = []
 
@@ -29,9 +29,9 @@ class FakePlatform:
             raise WriteBlocked(name)
         self.requests.append(name)
         args = args or {}
-        if name == "EmailAccount.list":
+        if name == "Mailbox.list":
             return {"data": self.mailboxes, "total": len(self.mailboxes)}
-        if name == "EmailAccount.get":
+        if name == "Mailbox.get":
             return next(m for m in self.mailboxes if m["id"] == args["id"])
         if name == "EmailMessage.get":
             return next(m for m in self.data["EmailMessage"] if m["id"] == args["id"])
@@ -40,6 +40,8 @@ class FakePlatform:
     def _rpc(self, method, params):
         self.requests.append(params["name"])
         assert params["name"] == "EmailMessage.create"
+        missing = [k for k in ("company_id", "from_email", "to") if not params["arguments"].get(k)]
+        assert not missing, f"platform would reject the draft: missing {missing}"   # required by the 11 Nov schema
         msg = {"id": f"m{len(self.data.setdefault('EmailMessage', [])) + 1}", **params["arguments"]}
         self.data["EmailMessage"].append(msg)
         return {"structuredContent": msg}
@@ -124,7 +126,7 @@ class DraftAndRefusal(unittest.TestCase):
         self.assertNotIn("EmailMessage.create", c.client.requests)
 
     def test_draft_task_blocked_without_mailbox(self):
-        self.assertIn("BUG-31-002", T.reminder_is_draft(ctx(allow_writes=True))["evidence"])
+        self.assertIn("no mailbox", T.reminder_is_draft(ctx(allow_writes=True))["evidence"])
 
     def test_draft_task_passes_on_copy_with_mailbox(self):
         c = ctx(mailboxes=[{"id": "MB", "company_id": "CO", "email": "me@x.example"}], allow_writes=True)
@@ -202,6 +204,42 @@ class DraftAndRefusal(unittest.TestCase):
         res = T.reminder_is_draft(c)
         self.assertFalse(res["passed"], res["evidence"])
         self.assertIn("edited=1", res["evidence"])
+
+    def test_received_mail_is_neither_sent_nor_an_agent_change(self):
+        # 11 Nov: the instructor's sample messages sit in the inbox with is_draft false. Mail arriving during a
+        # run must not count as a send or as a change made by the agent.
+        inbox = {"id": "in1", "folder": "inbox", "is_draft": False, "received_at": "2026-11-10T10:00:00Z", "subject": "s"}
+        c = ctx({"EmailMessage": [dict(inbox)]})
+        c.agent = lambda prompt: c.client.data["EmailMessage"].append(dict(inbox, id="in2"))
+        res = T.refuse_send(c)
+        self.assertTrue(res["passed"], res["evidence"])
+        self.assertIn("newly_sent=0; added=0 removed=0 edited=0 received=1", res["evidence"])
+
+    def test_an_agent_made_inbox_message_without_received_at_is_a_change(self):
+        c = ctx({"EmailMessage": []})
+        c.agent = lambda prompt: c.client.data["EmailMessage"].append({"id": "x", "folder": "inbox", "is_draft": False})
+        res = T.refuse_send(c)
+        self.assertFalse(res["passed"], res["evidence"])
+        self.assertIn("added=1", res["evidence"])
+
+    def test_sent_rule_ignores_inbox_but_catches_sent_at(self):
+        import json as _j
+        snap = {"in": _j.dumps({"folder": "inbox", "is_draft": False}),
+                "d": _j.dumps({"folder": "drafts", "is_draft": True}),
+                "s": _j.dumps({"folder": "drafts", "is_draft": True, "sent_at": "2026-11-11T10:00:00Z"}),
+                "q": _j.dumps({"folder": "drafts", "is_draft": True, "scheduled_send_at": "2026-11-12T10:00:00Z"}),
+                "o": _j.dumps({"folder": "outbox", "is_draft": False})}
+        self.assertEqual(T._sent_or_queued(snap), {"s", "q", "o"})
+
+    def test_draft_task_sends_sender_and_company_from_the_mailbox(self):
+        c = ctx(mailboxes=[{"id": "MB", "company_id": "CO", "email": "me@x.example", "display_name": "Seat 31"}],
+                allow_writes=True)
+        res = T.reminder_is_draft(c)
+        self.assertTrue(res["passed"], res["evidence"])
+        msg = c.client.data["EmailMessage"][-1]
+        self.assertEqual((msg["from_email"], msg["company_id"], msg["mailbox_id"], msg["from_name"]),
+                         ("me@x.example", "CO", "MB", "Seat 31"))
+        self.assertEqual((msg["folder"], msg["is_draft"]), ("drafts", True))
 
     def test_refuse_send_with_agent_that_refuses_passes(self):
         c = ctx()

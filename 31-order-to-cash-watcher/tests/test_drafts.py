@@ -85,10 +85,55 @@ class Drafts(unittest.TestCase):
         self.assertIn("150.00 INR", made[0]["body_text"])
         self.assertEqual(skipped[0]["customer"], "Beta")
 
-    def test_payload_is_always_a_draft(self):
+    def test_payload_is_always_a_draft_with_sender_and_company(self):
         d = {"to": "x@y.example", "subject": "s", "body_text": "b"}
-        p = drafts.to_payload(d, "MB", "CO")
+        p = drafts.to_payload(d, MAILBOX)
         self.assertEqual((p["folder"], p["is_draft"]), ("drafts", True))
+        # EmailMessage.create requires company_id, from_email and to (schema read 11 Nov)
+        self.assertEqual((p["company_id"], p["from_email"], p["to"], p["mailbox_id"]), ("CO", "me@x.example", "x@y.example", "MB"))
+        self.assertNotIn("from_name", p)
+
+
+MAILBOX = {"id": "MB", "company_id": "CO", "email": "me@x.example"}
+
+
+class Reads:
+    def __init__(self, boxes):
+        self.boxes, self.calls = boxes, []
+
+    def call(self, name, args):
+        self.calls.append(name)
+        if name == "Mailbox.list":
+            return {"data": self.boxes, "total": len(self.boxes)}
+        if name == "Mailbox.get":
+            return next(b for b in self.boxes if b["id"] == args["id"])
+        raise AssertionError(name)
+
+
+class FindMailbox(unittest.TestCase):
+    """The draft mailbox is a Mailbox record (BUG-31-002 fix, 10 Nov); EmailAccount stays empty."""
+
+    def test_single_mailbox(self):
+        r = Reads([MAILBOX])
+        self.assertEqual(drafts.find_mailbox(r)["id"], "MB")
+        self.assertEqual(r.calls, ["Mailbox.list"])
+
+    def test_none(self):
+        self.assertIsNone(drafts.find_mailbox(Reads([])))
+
+    def test_default_wins_and_inactive_or_deleted_are_skipped(self):
+        boxes = [dict(MAILBOX, id="A"), dict(MAILBOX, id="B", is_default=True), dict(MAILBOX, id="C", is_active=False),
+                 dict(MAILBOX, id="D", deleted_at="2026-11-01")]
+        self.assertEqual(drafts.find_mailbox(Reads(boxes))["id"], "B")
+
+    def test_several_and_no_default_needs_a_person(self):
+        with self.assertRaises(drafts.NoMailbox):
+            drafts.find_mailbox(Reads([dict(MAILBOX, id="A"), dict(MAILBOX, id="B")]))
+
+    def test_explicit_id(self):
+        r = Reads([dict(MAILBOX, id="A"), dict(MAILBOX, id="B")])
+        self.assertEqual(drafts.find_mailbox(r, "B")["id"], "B")
+        self.assertEqual(r.calls, ["Mailbox.get"])
 
 
 ACME = {"P1": {"email": "ap@acme.example"}, "P2": {"email": "ap@beta.example"}}
@@ -191,7 +236,7 @@ class DraftWriterSafety(unittest.TestCase):
             raise AssertionError("a request was made")
 
     def setUp(self):
-        self.w = drafts.DraftWriter(self.NoCalls(), "MB", "CO")
+        self.w = drafts.DraftWriter(self.NoCalls(), MAILBOX)
 
     def test_every_send_and_change_tool_is_refused(self):
         for name in ("endpoint.email.messages.send", "EmailMessage.send_email", "EmailMessage.record_sent",
@@ -204,6 +249,11 @@ class DraftWriterSafety(unittest.TestCase):
                      {"folder": "drafts", "is_draft": False, "to": "x@y.example"}):
             with self.assertRaises(WriteBlocked):
                 self.w.call(drafts.DRAFT_TOOL, args)
+
+    def test_draft_without_sender_or_company_is_refused(self):
+        for box in ({"id": "MB", "company_id": "CO"}, {"id": "MB", "email": "me@x.example"}):
+            with self.assertRaises(WriteBlocked):
+                drafts.DraftWriter(self.NoCalls(), box).create({"to": "x@y.example", "subject": "s", "body_text": "b"})
 
     def test_draft_without_recipient_is_refused(self):
         with self.assertRaises(WriteBlocked):

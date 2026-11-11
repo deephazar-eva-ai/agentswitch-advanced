@@ -1,7 +1,7 @@
 """Reminder drafts for a person to review and send. The agent never sends.
 
     python -m o2c.drafts --instance suryodaya --out reports/            # propose: writes a review file, changes nothing
-    python -m o2c.drafts --instance suryodaya --out reports/ --create --mailbox-id <id>
+    python -m o2c.drafts --instance suryodaya --out reports/ --accounts-email <address> --create [--mailbox-id <id>]
                                                                         # a person approves, then drafts are saved in their mailbox
 
 Two kinds of draft:
@@ -158,11 +158,39 @@ def overdue_reminders(invoice_rows, parties_by_id):
     return drafts, skipped
 
 
-def to_payload(draft, mailbox_id, company_id):
-    """EmailMessage.create arguments for a draft. Always a draft, never sent."""
+class NoMailbox(Exception):
+    pass
+
+
+def find_mailbox(client, mailbox_id=None):
+    """The mailbox this login saves drafts in, or None if it has none.
+
+    The instructor added one mailbox per seat login on 10 Nov (BUG-31-002). It is a `Mailbox` record;
+    `EmailAccount.list` stays empty. With several active mailboxes, the single default one is used;
+    otherwise a person must pick one with --mailbox-id.
+    """
+    if mailbox_id:
+        return client.call("Mailbox.get", {"id": mailbox_id})
+    boxes = [b for b in client.call("Mailbox.list", {"limit": 20}).get("data", [])
+             if b.get("is_active", True) is not False and not b.get("deleted_at")]
+    if len(boxes) <= 1:
+        return boxes[0] if boxes else None
+    default = [b for b in boxes if b.get("is_default")]
+    if len(default) == 1:
+        return default[0]
+    raise NoMailbox(f"{len(boxes)} mailboxes and no single default one; choose one with --mailbox-id")
+
+
+def to_payload(draft, mailbox):
+    """EmailMessage.create arguments for a draft. Always a draft, never sent.
+
+    The platform requires company_id, from_email and to; the sender and company come from the mailbox.
+    """
     return {
-        "company_id": company_id,
-        "mailbox_id": mailbox_id,
+        "company_id": mailbox.get("company_id"),
+        "mailbox_id": mailbox.get("id"),
+        "from_email": mailbox.get("email"),
+        **({"from_name": mailbox["display_name"]} if mailbox.get("display_name") else {}),
         "to": draft["to"],
         "subject": draft["subject"],
         "body_text": draft["body_text"],
@@ -174,8 +202,8 @@ def to_payload(draft, mailbox_id, company_id):
 class DraftWriter:
     """The only code in seat 31 that may write. It creates drafts and nothing else."""
 
-    def __init__(self, client, mailbox_id, company_id):
-        self.client, self.mailbox_id, self.company_id = client, mailbox_id, company_id
+    def __init__(self, client, mailbox):
+        self.client, self.mailbox = client, mailbox or {}
 
     def call(self, name, args):
         if name != DRAFT_TOOL:
@@ -184,13 +212,15 @@ class DraftWriter:
             raise WriteBlocked("refused: a message must be created as a draft (folder=drafts, is_draft=true)")
         if not args.get("to") or args["to"] == ACCOUNTS_PLACEHOLDER:
             raise WriteBlocked("refused: the draft has no recipient yet; a person must fill it in")
+        if not args.get("from_email") or not args.get("company_id"):
+            raise WriteBlocked("refused: the draft needs the mailbox's address and company (from_email, company_id)")
         result = self.client._rpc("tools/call", {"name": name, "arguments": args})
         if result.get("isError"):
             raise McpError(result["content"][0]["text"])
         return result.get("structuredContent") or json.loads(result["content"][0]["text"])
 
     def create(self, draft):
-        return self.call(DRAFT_TOOL, to_payload(draft, self.mailbox_id, self.company_id))
+        return self.call(DRAFT_TOOL, to_payload(draft, self.mailbox))
 
 
 def propose(client, report_date=None, days=7, instance=None, accounts_email=None):
@@ -232,7 +262,7 @@ def to_markdown(prop):
         "",
         "Proposed only. Nothing has been created or sent. A person reviews each draft; "
         "`--create` saves approved drafts in their mailbox as drafts, still unsent. "
-        "Until the login has a mailbox (BUG-31-002), this file is where the drafts are reviewed.",
+        "Without `--create`, this file is where the drafts are reviewed.",
         "",
         f"Overdue-invoice reminders: {prop['overdue_reminders']}.",
         "",
@@ -270,7 +300,8 @@ def main():
     ap.add_argument("--out", type=Path, required=True, help="folder for <instance>-<date>-drafts.md/.json (gitignored)")
     ap.add_argument("--accounts-email", default=os.environ.get("O2C_ACCOUNTS_EMAIL"))
     ap.add_argument("--create", action="store_true", help="after a person confirms, save the drafts in the mailbox (never sends)")
-    ap.add_argument("--mailbox-id", default=os.environ.get("O2C_MAILBOX_ID"))
+    ap.add_argument("--mailbox-id", default=os.environ.get("O2C_MAILBOX_ID"),
+                    help="only needed if this login has several mailboxes and no default one")
     args = ap.parse_args()
 
     client = Client()
@@ -284,12 +315,17 @@ def main():
 
     if not args.create:
         return
-    if not args.mailbox_id:
-        raise SystemExit("--create needs --mailbox-id (or O2C_MAILBOX_ID): a mailbox this login owns")
-    mailbox = client.call("EmailAccount.get", {"id": args.mailbox_id})
-    writer = DraftWriter(client, args.mailbox_id, mailbox.get("company_id"))
+    try:
+        mailbox = find_mailbox(client, args.mailbox_id)
+    except NoMailbox as e:
+        raise SystemExit(str(e))
+    if not mailbox:
+        raise SystemExit("this login has no mailbox; nothing created")
+    writer = DraftWriter(client, mailbox)
     ready = [d for d in prop["drafts"] if d["to"] != ACCOUNTS_PLACEHOLDER]
-    print(f"About to save {len(ready)} draft(s) in mailbox {args.mailbox_id}. They stay unsent.")
+    skipped = len(prop["drafts"]) - len(ready)
+    print(f"About to save {len(ready)} draft(s) in mailbox {mailbox.get('id')}. They stay unsent."
+          + (f" {skipped} draft(s) have no recipient yet (set --accounts-email) and are not saved." if skipped else ""))
     if input("Type 'save drafts' to confirm: ").strip() != "save drafts":
         raise SystemExit("not confirmed; nothing created")
     for d in ready:
