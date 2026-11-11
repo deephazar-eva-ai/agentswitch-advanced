@@ -79,9 +79,40 @@ def accounts_digest(rep, matches, accounts_email=None):
     }
 
 
+UNKNOWN_CURRENCY = "currency not recorded"
+
+
+def _currency(row):
+    """The row's currency code, or None if the record has none. Never guessed."""
+    code = (row.get("currency") or "").strip().upper()
+    return code or None
+
+
+def by_currency(rows, amount_key="outstanding"):
+    """Group rows by currency, keeping row order inside each group.
+
+    Returns [(currency or None, rows, subtotal)], known currencies A-Z, then rows with no
+    currency last. Amounts in different currencies are never added together: there is no
+    conversion policy, so each currency gets its own subtotal.
+    """
+    groups = {}
+    for r in rows:
+        groups.setdefault(_currency(r), []).append(r)
+    order = sorted(k for k in groups if k) + ([None] if None in groups else [])
+    return [(k, groups[k], round(sum(float(r.get(amount_key) or 0) for r in groups[k]), 2)) for k in order]
+
+
+def _amount(v, currency):
+    return _money(v, currency) if currency else f"{_money(v)} ({UNKNOWN_CURRENCY})"
+
+
 def overdue_reminders(invoice_rows, parties_by_id):
     """One reminder per customer with overdue invoices. Customers with no email are returned
-    as skipped, so a person can follow up another way."""
+    as skipped, so a person can follow up another way.
+
+    A customer with invoices in more than one currency gets one section per currency, each
+    with its own subtotal, and no grand total (review of #17: 100 INR + 50 USD is not 150 INR).
+    """
     by_party = {}
     for r in invoice_rows:
         by_party.setdefault(r.get("party_id"), []).append(r)
@@ -93,21 +124,34 @@ def overdue_reminders(invoice_rows, parties_by_id):
         if not email:
             skipped.append({"customer": customer, "invoices": [r["number"] for r in rows], "reason": "no email on the customer record"})
             continue
-        total = round(sum(r["outstanding"] for r in rows), 2)
-        currency = rows[0].get("currency")
+        groups = by_currency(rows)
+        subtotals = [(cur, total) for cur, _, total in groups]
         lines = [f"Dear {customer},", "",
                  "Our records show the following invoice(s) past their due date with a balance outstanding:", ""]
-        for r in rows:
-            lines.append(f"- Invoice {r['number']}, due {r['due_date']}, {_money(r['outstanding'], r.get('currency'))} outstanding")
-        lines += ["", f"Total outstanding: {_money(total, currency)}.", "",
+        if len(groups) == 1:
+            cur, _, total = groups[0]
+            for r in rows:
+                lines.append(f"- Invoice {r['number']}, due {r['due_date']}, {_amount(r['outstanding'], cur)} outstanding")
+            lines += ["", f"Total outstanding: {_amount(total, cur)}."]
+        else:
+            for cur, group, total in groups:
+                lines.append(f"Invoices in {cur or UNKNOWN_CURRENCY}:")
+                for r in group:
+                    lines.append(f"- Invoice {r['number']}, due {r['due_date']}, {_amount(r['outstanding'], cur)} outstanding")
+                lines += [f"Subtotal ({cur or UNKNOWN_CURRENCY}): {_amount(total, cur)}", ""]
+            lines.append("Total outstanding by currency (not added together): "
+                         + "; ".join(_amount(t, c) for c, t in subtotals) + ".")
+        lines += ["",
                   "If you have already paid, please send us the payment details so we can apply it, and accept our thanks. "
                   "Otherwise we would be grateful for payment at your earliest convenience.", "", "Kind regards,"]
         drafts.append({
             "kind": "overdue_reminder",
             "to": email,
-            "subject": f"Payment reminder: {len(rows)} overdue invoice{'s' if len(rows) > 1 else ''}, {_money(total, currency)}",
+            "subject": f"Payment reminder: {len(rows)} overdue invoice{'s' if len(rows) > 1 else ''}, "
+                       + " + ".join(_amount(t, c) for c, t in subtotals),
             "body_text": "\n".join(lines),
             "refs": [r["number"] for r in rows],
+            "subtotals": [{"currency": c, "outstanding": t} for c, t in subtotals],
             "fixture": any(r["fixture"] for r in rows),
             "status": "proposed",
         })
@@ -202,7 +246,8 @@ def to_markdown(prop):
         for m in prop["matches"]:
             cands = ", ".join(f"{c['kind']} {c['number']} {_money(c['amount'])}{' (same amount)' if c['exact'] else ''}"
                               for c in m["candidates"]) or "none"
-            lines.append(f"| {m['payment']} | {m['customer'] or ''} | {_money(m['unallocated'])} | {cands} |")
+            lines.append(f"| {report.cell(m['payment'])} | {report.cell(m['customer'])} | {_money(m['unallocated'])} | "
+                         f"{report.cell(cands)} |")
         lines.append("")
     lines += [f"## Drafts ({len(prop['drafts'])})", ""]
     for i, d in enumerate(prop["drafts"], 1):
@@ -231,8 +276,8 @@ def main():
     prop = propose(client, report_date=args.date, days=args.days, instance=args.instance, accounts_email=args.accounts_email)
     args.out.mkdir(parents=True, exist_ok=True)
     stem = args.out / f"{args.instance or 'report'}-{prop['report_date']}-drafts"
-    stem.with_suffix(".json").write_text(json.dumps(prop, indent=2))
-    stem.with_suffix(".md").write_text(to_markdown(prop))
+    stem.with_suffix(".json").write_text(json.dumps(prop, indent=2), encoding="utf-8")
+    stem.with_suffix(".md").write_text(to_markdown(prop), encoding="utf-8")
     s = prop["match_summary"]
     print(f"wrote {stem}.md ({len(prop['drafts'])} drafts proposed; {s['with_candidates']}/{s['payments']} payments with a candidate)")
 

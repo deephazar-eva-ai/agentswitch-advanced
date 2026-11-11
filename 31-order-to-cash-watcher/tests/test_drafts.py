@@ -15,9 +15,9 @@ def order(number, total, party="P1", invoiced="invoiced", docstatus=1):
             "invoiced_status": invoiced, "docstatus": docstatus, "date": "2026-10-01"}
 
 
-def inv_row(number, outstanding, party="P1", customer="Acme", due="2026-11-01", fixture=False):
+def inv_row(number, outstanding, party="P1", customer="Acme", due="2026-11-01", fixture=False, currency="INR"):
     return {"number": number, "party_id": party, "customer": customer, "due_date": due,
-            "outstanding": outstanding, "currency": "INR", "fixture": fixture}
+            "outstanding": outstanding, "currency": currency, "fixture": fixture}
 
 
 def rep(order_rows=(), pay_rows=()):
@@ -74,6 +74,98 @@ class Drafts(unittest.TestCase):
         d = {"to": "x@y.example", "subject": "s", "body_text": "b"}
         p = drafts.to_payload(d, "MB", "CO")
         self.assertEqual((p["folder"], p["is_draft"]), ("drafts", True))
+
+
+ACME = {"P1": {"email": "ap@acme.example"}, "P2": {"email": "ap@beta.example"}}
+
+
+def _reminder(rows):
+    made, _ = drafts.overdue_reminders(rows, ACME)
+    return made
+
+
+class CrossCurrencyReminders(unittest.TestCase):
+    """Review of #17: invoices in different currencies are grouped and subtotalled separately,
+    never added into one total labelled with the first invoice's currency."""
+
+    def test_two_currencies_are_not_added_together(self):
+        d = _reminder([inv_row("INV-1", 100.0, currency="INR"), inv_row("INV-2", 50.0, currency="USD")])[0]
+        self.assertNotIn("150.00", d["subject"] + d["body_text"])
+        self.assertEqual(d["subject"], "Payment reminder: 2 overdue invoices, 100.00 INR + 50.00 USD")
+        self.assertEqual(d["subtotals"], [{"currency": "INR", "outstanding": 100.0},
+                                          {"currency": "USD", "outstanding": 50.0}])
+        self.assertIn("Subtotal (INR): 100.00 INR", d["body_text"])
+        self.assertIn("Subtotal (USD): 50.00 USD", d["body_text"])
+        self.assertIn("Total outstanding by currency (not added together): 100.00 INR; 50.00 USD.", d["body_text"])
+        self.assertNotIn("Total outstanding: ", d["body_text"])
+
+    def test_each_line_sits_under_its_own_currency_heading(self):
+        body = _reminder([inv_row("INV-1", 100.0, currency="USD"), inv_row("INV-2", 25.0, currency="INR"),
+                          inv_row("INV-3", 10.0, currency="USD")])[0]["body_text"]
+        inr, usd = body.index("Invoices in INR:"), body.index("Invoices in USD:")
+        self.assertLess(inr, usd)  # groups A-Z
+        self.assertTrue(inr < body.index("INV-2, ") < usd)
+        self.assertTrue(usd < body.index("INV-1, ") < body.index("INV-3, "))  # due order kept inside a group
+        self.assertIn("Subtotal (USD): 110.00 USD", body)
+        self.assertIn("Subtotal (INR): 25.00 INR", body)
+
+    def test_three_invoices_two_currencies_subtotals(self):
+        d = _reminder([inv_row("A", 100.0), inv_row("B", 50.0, currency="USD"), inv_row("C", 25.5)])[0]
+        self.assertEqual(d["subtotals"], [{"currency": "INR", "outstanding": 125.5},
+                                          {"currency": "USD", "outstanding": 50.0}])
+        self.assertEqual(d["refs"], ["A", "B", "C"])  # one reminder per customer still
+
+    def test_subtotals_are_rounded_per_currency(self):
+        d = _reminder([inv_row("A", 0.1, currency="EUR"), inv_row("B", 0.2, currency="EUR"),
+                       inv_row("C", 1.005, currency="USD")])[0]
+        self.assertEqual(d["subtotals"][0], {"currency": "EUR", "outstanding": 0.3})
+
+    def test_missing_currency_is_its_own_group_never_guessed(self):
+        d = _reminder([inv_row("A", 100.0, currency="INR"), inv_row("B", 40.0, currency=None),
+                       inv_row("C", 2.0, currency="  ")])[0]
+        self.assertEqual(d["subtotals"], [{"currency": "INR", "outstanding": 100.0},
+                                          {"currency": None, "outstanding": 42.0}])
+        self.assertIn("Invoices in currency not recorded:", d["body_text"])
+        self.assertIn("42.00 (currency not recorded)", d["body_text"])
+        self.assertNotIn("140.00", d["body_text"])
+        self.assertNotIn("142.00", d["body_text"])
+
+    def test_currency_code_case_and_spaces_do_not_split_a_group(self):
+        d = _reminder([inv_row("A", 100.0, currency="inr"), inv_row("B", 50.0, currency=" INR ")])[0]
+        self.assertEqual(d["subtotals"], [{"currency": "INR", "outstanding": 150.0}])
+        self.assertIn("Total outstanding: 150.00 INR.", d["body_text"])
+
+    def test_single_currency_reminder_is_unchanged(self):
+        d = _reminder([inv_row("INV-1", 100.0), inv_row("INV-2", 50.0)])[0]
+        self.assertEqual(d["subject"], "Payment reminder: 2 overdue invoices, 150.00 INR")
+        self.assertIn("Total outstanding: 150.00 INR.", d["body_text"])
+        self.assertNotIn("Subtotal", d["body_text"])
+
+    def test_currencies_are_per_customer(self):
+        made = _reminder([inv_row("A", 100.0, currency="INR"),
+                          inv_row("B", 50.0, party="P2", customer="Beta", currency="USD")])
+        self.assertEqual([m["subtotals"] for m in made], [[{"currency": "INR", "outstanding": 100.0}],
+                                                          [{"currency": "USD", "outstanding": 50.0}]])
+
+    def test_by_currency_helper(self):
+        groups = drafts.by_currency([inv_row("A", 1.0, currency="USD"), inv_row("B", 2.0, currency=None),
+                                     inv_row("C", 3.0, currency="EUR"), inv_row("D", 4.0, currency="USD")])
+        self.assertEqual([(c, [r["number"] for r in rows], t) for c, rows, t in groups],
+                         [("EUR", ["C"], 3.0), ("USD", ["A", "D"], 5.0), (None, ["B"], 2.0)])
+
+
+class DraftsMarkdownEscaping(unittest.TestCase):
+    """Carried from the #13 review: the matches table escapes customer text."""
+
+    def test_pipe_and_newline_in_customer_keep_the_row(self):
+        p = pay_row("PAY|1", 500.0, customer="Acme | North\nDivision")
+        prop = {"instance": "t", "report_date": "2026-11-15", "overdue_reminders": "x", "matched_against": "x",
+                "match_summary": matching.summary(matching.candidate_matches([p], [])),
+                "matches": matching.candidate_matches([p], []), "drafts": [], "skipped": []}
+        md = drafts.to_markdown(prop)
+        row = next(line for line in md.splitlines() if line.startswith("| PAY"))
+        self.assertEqual(row.replace("\\|", "").count("|") - 1, 4)
+        self.assertIn("Acme \\| North Division", row)
 
 
 class DraftWriterSafety(unittest.TestCase):

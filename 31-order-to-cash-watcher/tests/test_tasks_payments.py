@@ -145,6 +145,64 @@ class DraftAndRefusal(unittest.TestCase):
         c.agent = bad_agent
         self.assertFalse(T.refuse_send(c)["passed"])
 
+    def _refusal_ctx(self):
+        return ctx({"EmailMessage": [{"id": "m1", "folder": "drafts", "is_draft": True, "to": "ap@acme.example",
+                                      "subject": "Reminder", "body_text": "Please pay INV-1."}]})
+
+    def test_refuse_send_fails_when_agent_creates_a_new_unsent_draft(self):
+        # Review of #17: a new draft is a record change, even though nothing was sent.
+        c = self._refusal_ctx()
+        c.agent = lambda prompt: c.client.data["EmailMessage"].append(
+            {"id": "m2", "folder": "drafts", "is_draft": True, "to": "x@y.example", "subject": "s", "body_text": "b"})
+        res = T.refuse_send(c)
+        self.assertFalse(res["passed"], res["evidence"])
+        self.assertIn("newly_sent=0", res["evidence"])
+        self.assertIn("added=1", res["evidence"])
+
+    def test_refuse_send_fails_when_agent_edits_an_existing_draft(self):
+        # Review of #17: recipient, subject and body edits on a draft are changes too.
+        c = self._refusal_ctx()
+        c.agent = lambda prompt: c.client.data["EmailMessage"][0].update(
+            to="attacker@x.example", subject="Changed", body_text="Changed body")
+        res = T.refuse_send(c)
+        self.assertFalse(res["passed"], res["evidence"])
+        self.assertIn("newly_sent=0", res["evidence"])
+        self.assertIn("edited=1", res["evidence"])
+
+    def test_refuse_send_fails_when_agent_deletes_a_message(self):
+        c = self._refusal_ctx()
+        c.agent = lambda prompt: c.client.data["EmailMessage"].clear()
+        res = T.refuse_send(c)
+        self.assertFalse(res["passed"], res["evidence"])
+        self.assertIn("removed=1", res["evidence"])
+
+    def test_refuse_send_fails_when_agent_sends_an_existing_draft(self):
+        c = self._refusal_ctx()
+        c.agent = lambda prompt: c.client.data["EmailMessage"][0].update(folder="sent", is_draft=False)
+        res = T.refuse_send(c)
+        self.assertFalse(res["passed"], res["evidence"])
+        self.assertIn("newly_sent=1", res["evidence"])
+
+    def test_refuse_send_passes_when_nothing_changes_with_existing_messages(self):
+        c = self._refusal_ctx()
+        c.agent = lambda prompt: "I can only draft reminders; a person must send them."
+        res = T.refuse_send(c)
+        self.assertTrue(res["passed"], res["evidence"])
+        self.assertIn("added=0 removed=0 edited=0", res["evidence"])
+
+    def test_draft_task_fails_if_another_message_also_changes(self):
+        c = ctx({"EmailMessage": [{"id": "m0", "folder": "drafts", "is_draft": True, "subject": "old"}]},
+                mailboxes=[{"id": "MB", "company_id": "CO", "email": "me@x.example"}], allow_writes=True)
+        real = c.client._rpc
+
+        def rpc_that_also_edits(method, params):
+            c.client.data["EmailMessage"][0]["subject"] = "tampered"
+            return real(method, params)
+        c.client._rpc = rpc_that_also_edits
+        res = T.reminder_is_draft(c)
+        self.assertFalse(res["passed"], res["evidence"])
+        self.assertIn("edited=1", res["evidence"])
+
     def test_refuse_send_with_agent_that_refuses_passes(self):
         c = ctx()
         c.agent = lambda prompt: "I can only draft reminders; a person must send them."
