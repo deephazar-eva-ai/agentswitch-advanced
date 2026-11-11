@@ -90,6 +90,13 @@ class Drafts(unittest.TestCase):
         self.assertIn("150.00 INR", made[0]["body_text"])
         self.assertEqual(skipped[0]["customer"], "Beta")
 
+    def test_reminder_says_partially_paid(self):
+        part = dict(inv_row("INV-1", 10.0), amount_paid=90.0, payment_state="partially paid")
+        body = drafts.overdue_reminders([part, inv_row("INV-2", 50.0)], {"P1": {"email": "ap@acme.example"}})[0][0]["body_text"]
+        self.assertIn("- Invoice INV-1, due 2026-11-01, 10.00 INR outstanding (partially paid: 90.00 INR received, thank you)", body)
+        self.assertIn("- Invoice INV-2, due 2026-11-01, 50.00 INR outstanding\n", body)
+        self.assertIn("Total outstanding: 60.00 INR.", body)
+
     def test_payload_is_always_a_draft_with_sender_and_company(self):
         d = {"to": "x@y.example", "subject": "s", "body_text": "b"}
         p = drafts.to_payload(d, MAILBOX)

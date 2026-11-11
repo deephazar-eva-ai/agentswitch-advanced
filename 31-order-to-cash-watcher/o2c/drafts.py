@@ -106,6 +106,14 @@ def _amount(v, currency):
     return _money(v, currency) if currency else f"{_money(v)} ({UNKNOWN_CURRENCY})"
 
 
+def _reminder_line(r, cur):
+    """One invoice line in a customer reminder; a partly paid invoice says so (instructor answer 11)."""
+    line = f"- Invoice {r['number']}, due {r['due_date']}, {_amount(r['outstanding'], cur)} outstanding"
+    if r.get("payment_state") == report.PARTIALLY_PAID:
+        line += f" (partially paid: {_amount(round(float(r.get('amount_paid') or 0), 2), cur)} received, thank you)"
+    return line
+
+
 def overdue_reminders(invoice_rows, parties_by_id):
     """One reminder per customer with overdue invoices. Customers with no email are returned
     as skipped, so a person can follow up another way.
@@ -131,13 +139,13 @@ def overdue_reminders(invoice_rows, parties_by_id):
         if len(groups) == 1:
             cur, _, total = groups[0]
             for r in rows:
-                lines.append(f"- Invoice {r['number']}, due {r['due_date']}, {_amount(r['outstanding'], cur)} outstanding")
+                lines.append(_reminder_line(r, cur))
             lines += ["", f"Total outstanding: {_amount(total, cur)}."]
         else:
             for cur, group, total in groups:
                 lines.append(f"Invoices in {cur or UNKNOWN_CURRENCY}:")
                 for r in group:
-                    lines.append(f"- Invoice {r['number']}, due {r['due_date']}, {_amount(r['outstanding'], cur)} outstanding")
+                    lines.append(_reminder_line(r, cur))
                 lines += [f"Subtotal ({cur or UNKNOWN_CURRENCY}): {_amount(total, cur)}", ""]
             lines.append("Total outstanding by currency (not added together): "
                          + "; ".join(_amount(t, c) for c, t in subtotals) + ".")
