@@ -51,13 +51,29 @@ def counts_as_applied(receipt):
     return receipt.get("status") == PAID
 
 
+def _targets_invoice(ev):
+    return bool(ev.get("target_id")) and (ev.get("target_entity") or "Invoice") == "Invoice"
+
+
 def history_net(receipt):
-    """Net of the allocation_history log. An event that names `reverses_event_id` takes its amount
-    back. We key on that field rather than on `event_type`, whose values the schema does not list."""
+    """Net amount the allocation_history log applies to invoices, to compare with applied_amount().
+
+    Live rows (12 Nov) carry two events per receipt: `posted` (the receipt itself, voucher_* fields,
+    no target) and `applied` (money to one invoice, with target_entity/target_id). Only events that
+    target an Invoice count; summing every event doubled the figure. An event naming
+    `reverses_event_id` takes back the event it reverses, if that one was counted (or if it names an
+    invoice itself). We key on the target rather than on `event_type`, whose values the schema does
+    not list."""
+    events = receipt.get("allocation_history") or []
+    counted = {ev.get("event_id") for ev in events if not ev.get("reverses_event_id") and _targets_invoice(ev)}
     net = 0.0
-    for ev in receipt.get("allocation_history") or []:
+    for ev in events:
         amt = _money(ev.get("amount"))
-        net += -amt if ev.get("reverses_event_id") else amt
+        if ev.get("reverses_event_id"):
+            if ev["reverses_event_id"] in counted or _targets_invoice(ev):
+                net -= amt
+        elif _targets_invoice(ev):
+            net += amt
     return round(net, 2)
 
 

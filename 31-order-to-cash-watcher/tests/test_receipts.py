@@ -16,7 +16,11 @@ def legacy(number, customer, amount, status="paid", invoices=None):
 def v1(number, customer, amount, status="paid", allocs=None, history=None, consideration=None):
     allocs = allocs if allocs is not None else [{"target_entity": "Invoice", "target_id": f"INV-{number}", "amount": amount}]
     if history is None:
-        history = [{"event_id": "E1", "amount": sum(a["amount"] for a in allocs)}] if status == "paid" else []
+        # live shape (12 Nov): a `posted` event for the receipt, then one `applied` event per invoice
+        history = ([{"event_type": "posted", "event_id": "P1", "voucher_type": "PaymentReceived", "amount": amount}]
+                   + [{"event_type": "applied", "event_id": f"A{i}", "target_entity": a["target_entity"],
+                       "target_id": a["target_id"], "amount": a["amount"]} for i, a in enumerate(allocs)]
+                   ) if status == "paid" else []
     return {"payment_number": number, "customer_id": customer, "amount": amount, "status": status, "date": "2026-10-05",
             "allocation_evidence_version": 1, "allocation_consideration": amount if consideration is None else consideration,
             "applied_allocations": allocs, "allocation_history": history}
@@ -56,14 +60,35 @@ class Reader(unittest.TestCase):
 
     def test_history_net_takes_reversals_back(self):
         r = v1("N", "C", 50.0, status="cancelled", allocs=[], history=[
-            {"event_id": "E1", "amount": 50.0}, {"event_id": "E2", "amount": 50.0, "reverses_event_id": "E1"}])
+            {"event_id": "E1", "target_entity": "Invoice", "target_id": "I", "amount": 50.0},
+            {"event_id": "E2", "amount": 50.0, "reverses_event_id": "E1"}])
         self.assertEqual(R.history_net(r), 0.0)
+
+    def test_history_net_ignores_the_posted_event(self):
+        # live pair, 12 Nov: posted + applied for the same amount nets to the amount, not twice it
+        r = v1("N", "C", 245.92)
+        self.assertEqual([e["event_type"] for e in r["allocation_history"]], ["posted", "applied"])
+        self.assertEqual(R.history_net(r), 245.92)
+        self.assertEqual(R.receipt_issues(r), [])
+
+    def test_history_net_reversing_the_posted_event_changes_nothing(self):
+        r = v1("N", "C", 100.0, history=[
+            {"event_type": "posted", "event_id": "P1", "voucher_type": "PaymentReceived", "amount": 100.0},
+            {"event_type": "applied", "event_id": "A1", "target_entity": "Invoice", "target_id": "I", "amount": 100.0},
+            {"event_id": "X1", "amount": 100.0, "reverses_event_id": "P1"}])
+        self.assertEqual(R.history_net(r), 100.0)
+
+    def test_history_net_counts_only_invoice_targets(self):
+        r = v1("N", "C", 100.0, history=[
+            {"event_id": "A1", "target_entity": "Invoice", "target_id": "I", "amount": 60.0},
+            {"event_id": "A2", "target_entity": "CreditNote", "target_id": "CN", "amount": 40.0}])
+        self.assertEqual(R.history_net(r), 60.0)
 
     def test_issues(self):
         self.assertEqual(R.receipt_issues(v1("ok", "C", 100.0)), [])
         two = legacy("two", "C", 100.0, invoices=[{"invoice_id": "A", "payment": 50.0}, {"invoice_id": "B", "payment": 50.0}])
         self.assertIn("2 invoice allocations", R.receipt_issues(two)[0])
-        drift = v1("drift", "C", 100.0, history=[{"event_id": "E1", "amount": 60.0}])
+        drift = v1("drift", "C", 100.0, history=[{"event_id": "E1", "target_entity": "Invoice", "target_id": "I", "amount": 60.0}])
         self.assertIn("history nets to 60.00", R.receipt_issues(drift)[0])
         over = legacy("over", "C", 100.0, status="draft", invoices=[{"invoice_id": "A", "payment": 130.0}])
         self.assertIn("over-applied by 30.00", R.receipt_issues(over)[0])
