@@ -131,12 +131,26 @@ HINTS = {
 }
 
 
+def receipt_value(receipt):
+    """What the receipt was for. Live v1 rows (12 Nov) have `amount` null and the value in
+    `allocation_consideration`; legacy rows use `amount`. Falls back to the applied amount."""
+    for key in (("allocation_consideration", "amount") if is_v1(receipt) else ("amount",)):
+        if receipt.get(key) is not None:
+            return _money(receipt.get(key))
+    return applied_amount(receipt)
+
+
+def receipt_label(receipt):
+    """Receipt number for people to read. Live rows hold `REC-…` in `number`; `payment_number` is the
+    schema's name for it and is empty on live rows (12 Nov). The id is the last resort."""
+    return receipt.get("number") or receipt.get("payment_number") or receipt.get("id") or "?"
+
+
 def hint_for(payment_row, history, tolerance=TOLERANCE):
     """Receipt-history facts for one unapplied payment row (from report.payments_not_applied)."""
     h = history.get(payment_row.get("party_id")) or {"receipts": 0, "paid": [], "applied_total": 0.0, "last_date": None}
     amount = _money(payment_row.get("unallocated"))
-    same = sorted(r.get("payment_number") or r.get("id") or "?" for r in h["paid"]
-                  if abs(_money(r.get("amount")) - amount) <= tolerance)
+    same = sorted(receipt_label(r) for r in h["paid"] if abs(receipt_value(r) - amount) <= tolerance)
     key = "same_amount" if same else "has_history" if h["paid"] else "no_history"
     return {"hint": key, "receipts_paid": len(h["paid"]), "receipts_applied_total": h["applied_total"],
             "last_receipt_date": h["last_date"], "same_amount_receipts": same}

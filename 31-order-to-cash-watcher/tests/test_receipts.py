@@ -115,6 +115,26 @@ class History(unittest.TestCase):
                          {"hint": "no_history", "receipts_paid": 0, "receipts_applied_total": 0.0,
                           "last_receipt_date": None, "same_amount_receipts": []})
 
+    def test_same_amount_on_the_live_receipt_shape(self):
+        # live v1 rows, 12 Nov: amount null, value in allocation_consideration, REC-… in number, payment_number empty
+        live = v1(None, "C7", 245.92)
+        live.update({"amount": None, "number": "REC-2026-00141", "id": "9b3654f9"})
+        h = R.history_by_customer([live])
+        hint = R.hint_for({"party_id": "C7", "unallocated": 245.92}, h)
+        self.assertEqual(hint["hint"], "same_amount")
+        self.assertEqual(hint["same_amount_receipts"], ["REC-2026-00141"])
+
+    def test_receipt_value_and_label_fallbacks(self):
+        self.assertEqual(R.receipt_value(legacy("L", "C", 100.0)), 100.0)
+        no_consid = v1("N", "C", 80.0)
+        no_consid["allocation_consideration"] = None
+        self.assertEqual(R.receipt_value(no_consid), 80.0)
+        no_consid["amount"] = None
+        self.assertEqual(R.receipt_value(no_consid), 80.0)  # applied amount, last resort
+        self.assertEqual(R.receipt_label({"payment_number": "L1", "id": "x"}), "L1")
+        self.assertEqual(R.receipt_label({"id": "x"}), "x")
+        self.assertEqual(R.receipt_label({}), "?")
+
 
 def payment(number, d, unallocated, amount=None, status="submitted", party="P1", name="Acme"):
     return {"number": number, "id": number, "date": d, "type": "receive", "docstatus": 0 if status == "draft" else 1,
