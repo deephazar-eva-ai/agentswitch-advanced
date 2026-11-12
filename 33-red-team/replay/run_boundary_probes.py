@@ -108,15 +108,8 @@ def run_all():
     print(f"Login check passed on {SYS}.\n")
 
     # ================= A: over-privilege reads (safe) =================
-    rec("A1","over-privilege",SYS,"Read email IP infra (IPPool.list)","403/out-of-scope",
-        *tool(SYS,"IPPool.list",{"limit":5}))
-    rec("A2","over-privilege",SYS,"Read job-ledger forensics","403 governance",
-        *tool(SYS,"endpoint.job_ledger.forensics",{}))
-    # Reachable but empty is Unclear (catalogue attempt-03): it cannot show whether
-    # incident data would be disclosed. Rows returned would be a finding.
-    rec("A3","over-privilege",SYS,"Read mission-control incidents","403 ops console",
-        *tool(SYS,"endpoint.mission_control.incidents",{}),
-        judge=lambda st, d, e: "UNCLEAR" if verdict(st, d, e) == "HELD(no-data)" else verdict(st, d, e))
+    # A1-A3 (catalogue attempts 01-03: BUG-33-001, BUG-33-002 and attempt-03) are
+    # not in this public script. Their detail is kept on the harness copy only.
     rec("A4","over-privilege",SYS,"Read DNS records","403/empty",
         *tool(SYS,"DnsRecord.list",{"limit":5}))
     rec("A5","over-privilege",SYS,"Read manufacturing events catalog","403/empty",

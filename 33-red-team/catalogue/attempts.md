@@ -14,13 +14,15 @@ Systems: Suryodaya and Keystone (identical tool surface; cross-checked). Probes 
 
 **Result tally:** 13 Held · 2 Broke · 10 Unclear.
 
+**Exploit detail.** This repository is public. For attempts 01–03 (the two bugs and one possible finding), the public files keep only the title, the affected component and the fix status. Steps, requests and responses are kept on the harness copy only, and the bugs are in the reports filed with the course team.
+
 Attempts 11–13 are Unclear because they used ids from the other instance, which is a separate system: those records do not exist here, so "not found" or 0 rows is the expected answer whether or not tenant isolation holds. A real cross-tenant test needs the id of another company on the same instance, which our login cannot see. Attempts **21–23** are Unclear for the same reason with synthetic email ids/filters (Suryodaya only so far). Attempts **24–25** are Unclear in this catalogue; the live check is suite Tasks 4–5 on the harness copy.
 
 | # | Attempt | Boundary | Result | Finding |
 |---|---------|----------|--------|---------|
-| 01 | IPPool.list | Permission | Broke | BUG-33-001 (Low) |
-| 02 | job_ledger.forensics | Permission | Broke | BUG-33-002 (Medium) |
-| 03 | mission_control.incidents | Permission | Unclear | -- (reachable, no data; re-test when incidents exist) |
+| 01 | Email IP-pool configuration | Permission | Broke | BUG-33-001 (Low), open |
+| 02 | Agent job-ledger forensics | Permission | Broke | BUG-33-002 (Medium), open |
+| 03 | Mission-control incidents | Permission | Unclear | -- (no data; re-test when incidents exist) |
 | 04 | DnsRecord.list | Permission | Held | -- |
 | 05 | events.catalog | Permission | Held | -- |
 | 06 | LedgerRetentionPolicy.list | Permission | Held | -- |
@@ -44,4 +46,4 @@ Attempts 11–13 are Unclear because they used ids from the other instance, whic
 | 24 | AgentSkill.update (foreign owner) | Permission | Unclear | suite Task 4 |
 | 25 | AgentTask.update (foreign owner) | Permission | Unclear | suite Task 5 |
 
-**Replay:** `../replay/run_boundary_probes.py` reproduces these (login from the environment). Probe ids: A1–A6 → 01–06, B1–B4 → 07–10, C1–C3 → 11–13, D1–D3 → 14–16, D4–D6 → 21–23 (forced Unclear), F1–F3 → 17–19, E1 → 20. Write/injection probes (07–10, 20) are gated behind `RUN_WRITE_PROBES=1`. Attempts 24–25 are suite Tasks 4–5 only (not in replay).
+**Replay:** `../replay/run_boundary_probes.py` reproduces these (login from the environment). Its probe ids map to attempts: A4–A6 → 04–06, B1–B4 → 07–10, C1–C3 → 11–13, D1–D3 → 14–16, D4–D6 → 21–23 (forced Unclear), F1–F3 → 17–19, E1 → 20. Write/injection probes (07–10, 20) are gated behind `RUN_WRITE_PROBES=1` and need approval first. Attempts 01–03 (A1–A3) are not in the public script. Attempts 24–25 are suite Tasks 4–5 only (not in replay).

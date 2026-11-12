@@ -18,6 +18,8 @@ export AGENTSWITCH_KEYSTONE_TOKEN=<token>
 
 Never echo tokens into files that get committed. `.env`, `secrets*`, `*.key` etc. are git-ignored at the repo root.
 
+**Not in this script.** Catalogue attempts 01–03 (BUG-33-001, BUG-33-002 and attempt-03) are not in this public script. This repository is public, so their steps are kept on the harness copy only. The catalogue keeps their title, affected component and fix status.
+
 ## Run
 ```bash
 python run_boundary_probes.py          # read-only + auth probes (safe)
@@ -32,8 +34,8 @@ PROBE_SYSTEM=keystone python run_boundary_probes.py
 | `HELD` | The call was refused: `permission_denied` or HTTP 403. For the auth probes (F1–F3), HTTP 401. |
 | `HELD(not-exposed)` | `tool_not_available`: the tool is not in this login's `tools/list`. If a Broke attempt flips to this, check `tools/list` for a renamed tool before calling it fixed. |
 | `HELD(no-data)` | HTTP 200 with no records. |
-| `FINDING?` | HTTP 200 with records. Compare with the catalogue. A1 and A2 are expected here (BUG-33-001/002). |
-| `UNCLEAR` | The probe ran but cannot decide the boundary: A3 when it is reachable but empty (attempt-03); C1–C3 (cross-tenant ids that may not exist here); D4–D6 (synthetic email ids/filters — see below). |
+| `FINDING?` | HTTP 200 with records. Compare with the catalogue. |
+| `UNCLEAR` | The probe ran but cannot decide the boundary: C1–C3 (cross-tenant ids that may not exist here); D4–D6 (synthetic email ids/filters — see below). |
 | `ERROR` | Anything else: bad arguments, a server or network error, or an unexpected 401. The probe did not test the boundary, so it is never counted as Held. |
 
 The script prints a summary and **exits with status 1 if any probe is `ERROR`**. A forced verdict (`UNCLEAR`) never hides an `ERROR`.
@@ -47,7 +49,7 @@ These only prove tenant isolation if the ids belong to **another company on the 
 ## Probe id → catalogue attempt
 | Probes | Attempts |
 |---|---|
-| A1–A6 | 01–06 |
+| A4–A6 | 04–06 (A1–A3, attempts 01–03, are not in this public script) |
 | B1–B4 | 07–10 |
 | C1–C3 | 11–13 |
 | D1–D3 | 14–16 |
