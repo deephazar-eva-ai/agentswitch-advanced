@@ -14,7 +14,14 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from unittest import mock
 
 from harness import bugs, client, runner
-from harness.tasks import t01_auth_no_token as t01, t02_auth_tampered_token as t02
+from harness.tasks import (
+    t01_auth_no_token as t01,
+    t02_auth_tampered_token as t02,
+    t09_scope_jobledger as t09,
+    t10_scope_ippool as t10,
+    t11_scope_contract_blocked as t11,
+    t12_scope_invoice_blocked as t12,
+)
 
 GOOD = "good-token-" + "x" * 32
 JSON, SSE = "application/json", "text/event-stream"
@@ -92,7 +99,9 @@ class Base(unittest.TestCase):
         threading.Thread(target=cls.srv.serve_forever, daemon=True).start()
         cls.env = {"AGENTSWITCH_BASE_URL": f"http://127.0.0.1:{cls.srv.server_port}",
                    "AGENTSWITCH_TOKEN": GOOD, "AGENTSWITCH_INSTANCE": "suryodaya",
-                   "AGENTSWITCH_RUN_ID": "test-run"}   # the stub stands in for a harness copy
+                   "AGENTSWITCH_RUN_ID": "test-run",
+                   "RT_BUG_33_002_TOOL": "test.forensics",
+                   "RT_BUG_33_001_TOOL": "test.pool.list"}   # the stub stands in for a harness copy
 
     @classmethod
     def tearDownClass(cls):
@@ -156,6 +165,119 @@ class AuthTasks(Base):
         self.assertEqual(len(changed), len(GOOD))
         self.assertNotEqual(changed, GOOD)
         self.assertNotEqual(t02.tamper("A" * 43), "A" * 43)
+
+
+class ScopeTasks(Base):
+    def test_t09_passes_when_bug_open_and_data_returned(self):
+        self.serve(lambda m, a: (200, tool_text({"rows": [{"id": 1}]}), JSON))
+        r = self.run_task(t09.TASK)
+        self.assertTrue(r["passed"], r["evidence"])
+        self.assertIn("status=new", r["evidence"])
+
+    def test_t09_passes_when_fixed_and_empty_rows(self):
+        with mock.patch.object(bugs, "status", return_value="fixed"):
+            self.serve(lambda m, a: (200, tool_text({"result": {"rows": []}}), JSON))
+            r = self.run_task(t09.TASK)
+            self.assertTrue(r["passed"], r["evidence"])
+            self.assertIn("0 rows returned; no disclosure", r["evidence"])
+
+    def test_t09_fails_when_bug_fixed_and_data_returned(self):
+        with mock.patch.object(bugs, "status", return_value="fixed"):
+            self.serve(lambda m, a: (200, tool_text({"rows": [{"id": 1}]}), JSON))
+            r = self.run_task(t09.TASK)
+            self.assertFalse(r["passed"])
+            self.assertIn("regression caught", r["evidence"])
+
+    def test_t09_passes_when_refused(self):
+        self.serve(lambda m, a: (200, jr(error={"code": -32001, "message": "denied",
+                                               "data": {"code": "permission_denied"}}), JSON))
+        r = self.run_task(t09.TASK)
+        self.assertTrue(r["passed"])
+        self.assertIn("no disclosure", r["evidence"])
+
+    def test_t10_passes_when_bug_open_and_data_returned(self):
+        self.serve(lambda m, a: (200, tool_text({"data": [{"pool": "test"}]}), JSON))
+        r = self.run_task(t10.TASK)
+        self.assertTrue(r["passed"], r["evidence"])
+        self.assertIn("status=new", r["evidence"])
+
+    def test_t10_passes_when_fixed_and_empty_rows(self):
+        with mock.patch.object(bugs, "status", return_value="fixed"):
+            self.serve(lambda m, a: (200, tool_text({"data": []}), JSON))
+            r = self.run_task(t10.TASK)
+            self.assertTrue(r["passed"], r["evidence"])
+            self.assertIn("0 rows returned; no disclosure", r["evidence"])
+
+    def test_t10_fails_when_bug_fixed_and_data_returned(self):
+        with mock.patch.object(bugs, "status", return_value="fixed"):
+            self.serve(lambda m, a: (200, tool_text({"data": [{"pool": "test"}]}), JSON))
+            r = self.run_task(t10.TASK)
+            self.assertFalse(r["passed"])
+            self.assertIn("regression caught", r["evidence"])
+
+    def test_t10_passes_when_refused(self):
+        self.serve(lambda m, a: (403, '{"error": "forbidden"}', JSON))
+        r = self.run_task(t10.TASK)
+        self.assertTrue(r["passed"])
+        self.assertIn("no disclosure", r["evidence"])
+
+    def test_t11_passes_when_refused(self):
+        self.serve(lambda m, a: (200, jr(error={"code": -32602, "message": "not found",
+                                               "data": {"code": "tool_not_available"}}), JSON))
+        r = self.run_task(t11.TASK)
+        self.assertTrue(r["passed"])
+        self.assertIn("refused", r["evidence"])
+
+    def test_t11_fails_when_not_refused(self):
+        self.serve(lambda m, a: (200, tool_text({"data": []}), JSON))
+        r = self.run_task(t11.TASK)
+        self.assertFalse(r["passed"])
+        self.assertIn("call was not refused", r["evidence"])
+
+    def test_t12_passes_when_refused(self):
+        self.serve(lambda m, a: (200, jr(error={"code": -32602, "message": "not found",
+                                               "data": {"code": "tool_not_available"}}), JSON))
+        r = self.run_task(t12.TASK)
+        self.assertTrue(r["passed"])
+        self.assertIn("refused", r["evidence"])
+
+    def test_t12_fails_when_not_refused(self):
+        self.serve(lambda m, a: (200, tool_text({"data": []}), JSON))
+        r = self.run_task(t12.TASK)
+        self.assertFalse(r["passed"])
+        self.assertIn("call was not refused", r["evidence"])
+
+    def test_t09_passes_when_not_exposed(self):
+        self.serve(lambda m, a: (200, jr({"tools": []}), JSON))
+        r = self.run_task(t09.TASK, RT_BUG_33_002_TOOL=None)
+        self.assertTrue(r["passed"])
+        self.assertIn("not exposed; no disclosure", r["evidence"])
+
+    def test_t09_resolves_from_tools_list(self):
+        tools = [{"name": "mock.forensic.endpoint", "description": "forensic data"}]
+        self.serve(lambda m, a: (200, jr({"tools": tools}), JSON) if m == "tools/list" else (200, tool_text({"rows": []}), JSON))
+        r = self.run_task(t09.TASK, RT_BUG_33_002_TOOL=None)
+        self.assertTrue(r["passed"])
+        self.assertIn("0 rows returned; no disclosure", r["evidence"])
+
+    def test_t10_passes_when_not_exposed(self):
+        self.serve(lambda m, a: (200, jr({"tools": []}), JSON))
+        r = self.run_task(t10.TASK, RT_BUG_33_001_TOOL=None)
+        self.assertTrue(r["passed"])
+        self.assertIn("not exposed; no disclosure", r["evidence"])
+
+    def test_t10_resolves_from_tools_list(self):
+        tools = [{"name": "mock.pool.list", "description": "pool list"}]
+        self.serve(lambda m, a: (200, jr({"tools": tools}), JSON) if m == "tools/list" else (200, tool_text({"data": []}), JSON))
+        r = self.run_task(t10.TASK, RT_BUG_33_001_TOOL=None)
+        self.assertTrue(r["passed"])
+        self.assertIn("0 rows returned; no disclosure", r["evidence"])
+
+    def test_server_error_is_infrastructure(self):
+        self.serve(lambda m, a: (500, "Internal Server Error", "text/plain"))
+        for task in (t09.TASK, t10.TASK, t11.TASK, t12.TASK):
+            with self.subTest(task=task["id"]):
+                self.assertInfra(self.run_task(task), "server error HTTP 500")
 
 
 class Runner(Base):
