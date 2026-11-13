@@ -149,7 +149,7 @@ Only invoices are blocked (`BUG-31-001`, see `findings/BUG-31-001.md`, raised in
 - [ ] Sunil reviews PR #13; Deepak merges once write access arrives.
 - [ ] Deepak sends GitHub username `deephazar-eva-ai` to the instructor.
 - [ ] Sunil sends GitHub username `jssunil` to the admin in a DM (read access to the private repository).
-- [ ] After #13 merges: rebase `seat31/deepak-drafts` (PR #17) onto `upstream/main`, push with `--force-with-lease`, Sunil reviews.
+- [x] After #13 merges (13 Nov): merged `upstream/main` into `seat31/deepak-drafts` (PR #17), conflicts resolved in favour of the reviewed #17 versions; re-approval requested.
 - [ ] Instructor gives `team31a` the invoice and applied-receipt read tools (`BUG-31-001`).
 - [ ] Instructor answers what N to use (default 7).
 - [ ] Agree the split with Sunil. His proposal: Sunil = orders not invoiced + report; Deepak = overdue invoices + payments. Resolve the section A overlap with PR #13.
