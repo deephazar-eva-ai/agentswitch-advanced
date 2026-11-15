@@ -6,19 +6,27 @@ Two checks, both must hold:
    seat, and every listed policy row reports write:false. Fails if a release adds a
    write verb or a row turns writable.
 
-2. Session binding (copy-only write): a session is created that asks to bind a
-   *foreign* tool policy. The boundary holds if the bind is refused, or the stored
-   session does not end up carrying that policy. If the foreign policy does bind, that
-   is the finding — the task fails and records the scope it would grant (counts only),
+2. Session binding (copy-only write): a session tries to adopt a tool policy the
+   seat is *not* granted — one created by another seat and distinct from the policy
+   this seat already runs under. The boundary holds if the bind is refused, or the
+   stored session does not end up carrying that policy. If it does bind, that is the
+   finding — the task fails and records the scope it would grant (counts only),
    without exercising it.
+
+   Positive control (so a "did not take" can be trusted): a session created normally
+   runs under a policy the seat *is* granted. Before the foreign attempt, that same
+   granted policy is bound explicitly and the stored session is confirmed to reflect
+   it. If it does not reflect, or there is no granted policy to use, the binding field
+   is unverifiable — the task raises InfraError rather than passing, so a field that is
+   silently ignored can never look like an active block.
 
 Tool names and the binding field are resolved at run time (harness setting, else a
 tools/list lookup by component), so no literal tool names or binding arguments appear
 in this public file — only title, component and status.
 
-copy_only: it creates a session, so it runs on the harness copy only (PLAN.md,
-CONTRIBUTING.md Tier 2b). Sessions have no delete verb, so each copy run leaves a
-labelled `[redteam-probe t07]` session behind; this is expected.
+copy_only: it creates sessions, so it runs on the harness copy only (PLAN.md,
+CONTRIBUTING.md Tier 2b). Sessions have no delete verb, so each copy run leaves a few
+labelled `[redteam-probe t07]` sessions behind; this is expected.
 """
 import re
 
@@ -87,6 +95,11 @@ def _writable(row):
     return isinstance(perms, dict) and perms.get("write") is True
 
 
+def _owned(row, my_user):
+    """True if this seat created the policy (so it is not a foreign one)."""
+    return bool(my_user) and str(row.get("created_by") or "") == my_user
+
+
 def _list_policies(env, list_tool):
     offset, rows, refused = 0, [], False
     while True:
@@ -132,6 +145,24 @@ def _session_policy(env, created, read_tool, field):
     return None if val in (None, "") else str(val)
 
 
+def _bind_session(env, create_tool, read_tool, field, policy_id=None):
+    """Create a session, optionally asking to bind policy_id, and report what it
+    ended up carrying. Returns (refused, bound_policy_id_or_None). Non-refusal errors
+    (and a record we cannot read back) raise InfraError."""
+    args = {"title": TITLE}
+    if policy_id is not None:
+        args[field] = policy_id
+    st, data, err = client.tool(env, create_tool, args)
+    if client.refused(st, data, err):
+        return True, None
+    if err:
+        raise client.InfraError(
+            f"session create non-refusal error HTTP {st} code={client.error_code(data)}")
+    if not isinstance(data, dict):
+        raise client.InfraError("session create returned no record to verify the bind")
+    return False, _session_policy(env, data, read_tool, field)
+
+
 def run(env):
     # --- Check 1: tool-policy write guard (read-only) ---
     if _policy_write_tool(env):
@@ -151,7 +182,7 @@ def run(env):
     guard_note = (f"guard ok (no write verb; "
                   f"{'list refused' if refused else f'{len(policies)} rows write:false'})")
 
-    # --- Check 2: session binding to a foreign policy (copy-only write) ---
+    # --- Check 2: a session cannot adopt a policy the seat is not granted ---
     create_tool = _resolve_tool(env, "RT_SESSION_CREATE_TOOL", "session", "create")
     read_tool = _resolve_tool(env, "RT_SESSION_READ_TOOL", "session", "get")
     if not (create_tool and read_tool):
@@ -160,41 +191,60 @@ def run(env):
     if not policy_field:
         raise client.InfraError("could not resolve the session policy-binding field at run time")
 
-    target = next((p for p in policies if p.get("id") not in (None, "")), None)
+    if not any(p.get("id") not in (None, "") for p in policies):
+        return {"passed": True, "score": 1.0,
+                "evidence": f"verifier=policy_bind; component={SESSION_COMPONENT}; "
+                            f"{guard_note}; no policies visible to test a bind"}
+
+    my_user = str(client.whoami(env).get("id") or "")
+
+    # Positive control: a session created normally runs under a policy the seat IS
+    # granted; learn that policy, then bind it explicitly and confirm the stored
+    # session reflects it. If there is no such policy, or it does not reflect, the
+    # binding field is unverifiable -> InfraError, never a pass.
+    refused, granted = _bind_session(env, create_tool, read_tool, policy_field)
+    if refused or not granted:
+        raise client.InfraError(
+            "no granted policy on a plain session to use as a positive control; bind unverifiable")
+    refused, reflected = _bind_session(env, create_tool, read_tool, policy_field, granted)
+    if refused or reflected != granted:
+        raise client.InfraError(
+            "a policy the seat is granted did not reflect when bound; bind unverifiable")
+    control_note = f"positive control ok (granted policy {granted[:8]}… reflects when bound)"
+
+    # Target: a policy outside the seat's grant — created by another seat and not the
+    # one it already runs under. If none is visible, there is nothing to test here.
+    target = next(
+        (p for p in policies
+         if str(p.get("id") or "") not in ("", granted) and not _owned(p, my_user)),
+        None)
     if target is None:
         return {"passed": True, "score": 1.0,
                 "evidence": f"verifier=policy_bind; component={SESSION_COMPONENT}; "
-                            f"{guard_note}; no foreign policy to bind"}
+                            f"{guard_note}; {control_note}; no policy outside the seat's grant to test"}
     target_id = str(target["id"])
 
-    st_c, data_c, err_c = client.tool(
-        env, create_tool, {"title": TITLE, policy_field: target_id}
-    )
-    code = client.error_code(data_c)
-    if client.refused(st_c, data_c, err_c):
+    refused, bound = _bind_session(env, create_tool, read_tool, policy_field, target_id)
+    if refused:
         return {"passed": True, "score": 1.0,
                 "evidence": f"verifier=policy_bind; component={SESSION_COMPONENT}; "
-                            f"{guard_note}; bind refused HTTP {st_c} code={code or 'denied'}"}
-    if err_c:
-        raise client.InfraError(f"session create non-refusal error HTTP {st_c} code={code}")
-    if not isinstance(data_c, dict):
-        raise client.InfraError("session create returned no record to verify the bind")
-
-    bound = _session_policy(env, data_c, read_tool, policy_field)
+                            f"{guard_note}; {control_note}; bind refused"}
     if bound == target_id:
         return {"passed": False, "score": 0.0,
                 "evidence": f"verifier=policy_bind; component={SESSION_COMPONENT}; {guard_note}; "
-                            f"FINDING: session bound to foreign policy {target_id[:8]}… "
-                            f"({_grant_shape(target)}); not exercised; leaves labelled probe session on copy"}
+                            f"{control_note}; FINDING: session adopted a non-granted policy "
+                            f"{target_id[:8]}… ({_grant_shape(target)}); not exercised; "
+                            f"leaves labelled probe sessions on copy"}
     return {"passed": True, "score": 1.0,
             "evidence": f"verifier=policy_bind; component={SESSION_COMPONENT}; {guard_note}; "
-                        f"bind did not take (stored policy={'none' if bound is None else 'other'}); "
-                        f"leaves labelled probe session on copy"}
+                        f"{control_note}; non-granted policy not adopted "
+                        f"(stored={'none' if bound is None else 'other'}); "
+                        f"leaves labelled probe sessions on copy"}
 
 
 TASK = {
     "id": "rt_toolpolicy_write_blocked",
-    "title": "Agent tool policy: no write path, and a session cannot adopt a foreign policy",
+    "title": "Agent tool policy: no write path, and a session cannot adopt a policy the seat is not granted",
     "copy_only": True,
     "run": run,
 }
