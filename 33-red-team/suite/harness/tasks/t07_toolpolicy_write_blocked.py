@@ -13,12 +13,17 @@ Two checks, both must hold:
    finding — the task fails and records the scope it would grant (counts only),
    without exercising it.
 
-   Positive control (so a "did not take" can be trusted): a session created normally
-   runs under a policy the seat *is* granted. Before the foreign attempt, that same
-   granted policy is bound explicitly and the stored session is confirmed to reflect
-   it. If it does not reflect, or there is no granted policy to use, the binding field
-   is unverifiable — the task raises InfraError rather than passing, so a field that is
-   silently ignored can never look like an active block.
+   Positive control (so a "did not take" can be trusted): a plain session first shows
+   the policy the seat runs under by default. The control then asks for a made-up
+   policy id — a value that can never be the default. If it is rejected, or stored as
+   asked, the binding field is read. If the session comes back on the default anyway,
+   the field is ignored or silently overridden: a block could not be told apart from
+   an ignored field, so the task raises InfraError rather than passing. (Re-binding
+   the default policy cannot serve as the control: an ignored field returns the
+   default too.)
+
+   Assumption: a seat runs under one policy, its default. If a seat may legitimately
+   use several, a FAIL here needs a human check that the target is outside its grant.
 
 Tool names and the binding field are resolved at run time (harness setting, else a
 tools/list lookup by component), so no literal tool names or binding arguments appear
@@ -29,6 +34,7 @@ CONTRIBUTING.md Tier 2b). Sessions have no delete verb, so each copy run leaves 
 labelled `[redteam-probe t07]` sessions behind; this is expected.
 """
 import re
+import uuid
 
 from harness import client
 
@@ -40,6 +46,8 @@ TITLE = "[redteam-probe t07] benign policy-bind check"
 PAGE = 100
 
 _POLICY_FIELD_RE = re.compile(r"polic.*id$", re.I)
+# Error codes that mean "the value was read and rejected" (bad argument / no such id).
+_REJECTED = {"invalid_arguments", "not_found"}
 
 
 def _tools(env):
@@ -163,6 +171,32 @@ def _bind_session(env, create_tool, read_tool, field, policy_id=None):
     return False, _session_policy(env, data, read_tool, field)
 
 
+def _made_up_id():
+    """A policy id that cannot be the default (tests patch this)."""
+    return str(uuid.uuid4())
+
+
+def _positive_control(env, create_tool, read_tool, field):
+    """Show the binding field is read: ask for a made-up policy id. Rejected, or
+    stored as asked -> read. Anything else -> InfraError (never a pass). Only called
+    after a plain create succeeded, so a rejection here is down to the field."""
+    probe = _made_up_id()
+    st, data, err = client.tool(env, create_tool, {"title": TITLE, field: probe})
+    code = client.error_code(data) if err else None
+    if client.refused(st, data, err) or code in _REJECTED or st in (400, 404, 422):
+        return "positive control ok (made-up policy id rejected)"
+    if err:
+        raise client.InfraError(
+            f"positive control: session create error HTTP {st} code={code}")
+    if not isinstance(data, dict):
+        raise client.InfraError("positive control: session create returned no record")
+    if _session_policy(env, data, read_tool, field) == probe:
+        return "positive control ok (made-up policy id stored as asked)"
+    raise client.InfraError(
+        "positive control: a made-up policy id was neither rejected nor stored; "
+        "binding field ignored or overridden, bind unverifiable")
+
+
 def run(env):
     # --- Check 1: tool-policy write guard (read-only) ---
     if _policy_write_tool(env):
@@ -198,19 +232,15 @@ def run(env):
 
     my_user = str(client.whoami(env).get("id") or "")
 
-    # Positive control: a session created normally runs under a policy the seat IS
-    # granted; learn that policy, then bind it explicitly and confirm the stored
-    # session reflects it. If there is no such policy, or it does not reflect, the
-    # binding field is unverifiable -> InfraError, never a pass.
+    # Baseline: a plain session shows the policy the seat runs under by default
+    # (may be none), and proves a session can be created at all.
     refused, granted = _bind_session(env, create_tool, read_tool, policy_field)
-    if refused or not granted:
-        raise client.InfraError(
-            "no granted policy on a plain session to use as a positive control; bind unverifiable")
-    refused, reflected = _bind_session(env, create_tool, read_tool, policy_field, granted)
-    if refused or reflected != granted:
-        raise client.InfraError(
-            "a policy the seat is granted did not reflect when bound; bind unverifiable")
-    control_note = f"positive control ok (granted policy {granted[:8]}… reflects when bound)"
+    if refused:
+        raise client.InfraError("plain session create refused; policy bind cannot be tested")
+
+    # Positive control: a made-up policy id must be rejected or stored as asked,
+    # else the binding field is unverifiable -> InfraError, never a pass.
+    control_note = _positive_control(env, create_tool, read_tool, policy_field)
 
     # Target: a policy outside the seat's grant — created by another seat and not the
     # one it already runs under. If none is visible, there is nothing to test here.

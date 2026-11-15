@@ -4,12 +4,14 @@
 
 Task 7 makes one tools/list call (the write-verb guard), lists policies, then, for
 the binding check, reads the seat identity (GET /api/auth/me) and creates sessions:
-a plain one to learn the policy the seat is granted, a control that re-binds that
-granted policy (positive control), and finally one that asks for a non-granted
-policy. Tool names and the policy-binding field come from neutral RT_* fakes in the
-test base env, so no real identifiers appear here. The stub sees only the JSON-RPC
-method, so tools/call steps are sequenced with a counter.
+a plain one to learn the default policy, a control that asks for a made-up policy id
+(positive control: must be rejected or stored as asked), and finally one that asks
+for a non-granted policy. Tool names and the policy-binding field come from neutral
+RT_* fakes in the test base env, so no real identifiers appear here. The stub sees
+only the JSON-RPC method, so tools/call steps are sequenced with a counter.
 """
+from unittest import mock
+
 from harness.tasks import t07_toolpolicy_write_blocked as t07
 from tests.test_suite import JSON, Base, GOOD, jr, tool_text
 
@@ -33,6 +35,10 @@ def _not_available():
     return _denied(code="tool_not_available", rpc=-32602)
 
 
+def _bad_argument():
+    return _denied(code="invalid_arguments", rpc=-32602)
+
+
 def _policies(*rows):
     """Each row: (id, writable, allowed_actions, role, created_by)."""
     data = [{"id": rid, "_permissions": {"write": w}, "allowed_actions": acts,
@@ -48,9 +54,10 @@ def _session(sid="s1", policy=None):
     return 200, tool_text(body), JSON
 
 
-# The two positive-control steps: a plain session that runs under GRANTED, then a
-# control session that reflects GRANTED when it is bound explicitly.
-CONTROL = [_session(sid="plain", policy=GRANTED), _session(sid="ctl", policy=GRANTED)]
+# The baseline + positive-control steps: a plain session that runs under GRANTED,
+# then a made-up policy id that the platform rejects as a bad argument.
+CONTROL = [_session(sid="plain", policy=GRANTED), _bad_argument()]
+MADE_UP = "made-up-pol"   # patched in for the "stored as asked" control path
 
 # A foreign policy: created by another seat, read-only, with some scope.
 FOREIGN_POLICY = ("p1", False, ["read", "list"], "viewer", "other-seat")
@@ -95,20 +102,50 @@ class Task7(Base):
         self.assertTrue(r["passed"], r["evidence"])
         self.assertIn("no policies visible", r["evidence"])
 
-    # --- Positive control ---
-    def test_no_granted_policy_is_infrastructure(self):
-        # plain session carries no policy -> cannot establish a positive control.
-        self.serve(_H7(steps=[_policies(FOREIGN_POLICY), _session(sid="plain", policy=None)]))
+    # --- Baseline + positive control ---
+    def test_plain_session_refused_is_infrastructure(self):
+        self.serve(_H7(steps=[_policies(FOREIGN_POLICY), _denied()]))
         r = self.run_task(t07.TASK, **ENV)
-        self.assertInfra(r, "positive control")
+        self.assertInfra(r, "plain session create refused")
 
-    def test_granted_policy_not_reflected_is_infrastructure(self):
-        # plain session runs under GRANTED, but re-binding it is ignored -> unverifiable.
-        self.serve(_H7(steps=[_policies(FOREIGN_POLICY),
-                              _session(sid="plain", policy=GRANTED),
-                              _session(sid="ctl", policy=None)]))
+    def test_field_ignored_is_infrastructure(self):
+        # Every session comes back on the default policy, whatever was asked for.
+        # Re-binding the default would "reflect" here; the made-up id must not pass.
+        self.serve(_H7(steps=[_policies(FOREIGN_POLICY), _session(policy=GRANTED)]))
         r = self.run_task(t07.TASK, **ENV)
-        self.assertInfra(r, "did not reflect")
+        self.assertInfra(r, "binding field ignored or overridden")
+
+    def test_field_ignored_no_default_is_infrastructure(self):
+        # Same, when sessions carry no policy by default.
+        self.serve(_H7(steps=[_policies(FOREIGN_POLICY), _session(policy=None)]))
+        r = self.run_task(t07.TASK, **ENV)
+        self.assertInfra(r, "binding field ignored or overridden")
+
+    def test_control_server_error_is_infrastructure(self):
+        self.serve(_H7(steps=[_policies(FOREIGN_POLICY), _session(policy=GRANTED),
+                              _denied(code="server_error", rpc=-32000)]))
+        r = self.run_task(t07.TASK, **ENV)
+        self.assertInfra(r, "positive control: session create error")
+
+    def test_control_stored_as_asked_then_bind_refused_passes(self):
+        self.serve(_H7(steps=[_policies(FOREIGN_POLICY), _session(policy=GRANTED),
+                              _session(sid="ctl", policy=MADE_UP), _denied()]))
+        with mock.patch.object(t07, "_made_up_id", return_value=MADE_UP):
+            r = self.run_task(t07.TASK, **ENV)
+        self.assertTrue(r["passed"], r["evidence"])
+        self.assertIn("made-up policy id stored as asked", r["evidence"])
+        self.assertIn("bind refused", r["evidence"])
+
+    def test_no_default_policy_still_tested(self):
+        # A plain session with no policy is fine: the made-up id still proves the field.
+        self.serve(_H7(steps=[_policies(FOREIGN_POLICY),
+                              _session(policy=None),     # plain create: no policy echoed
+                              _session(policy=None),     # plain read-back: none
+                              _bad_argument(),           # made-up id rejected
+                              _session(policy="p1")]))   # non-granted policy adopted
+        r = self.run_task(t07.TASK, **ENV)
+        self.assertFalse(r["passed"], r["evidence"])
+        self.assertIn("FINDING", r["evidence"])
 
     # --- Check 2: the non-granted bind attempt ---
     def test_bind_refused_passes(self):
