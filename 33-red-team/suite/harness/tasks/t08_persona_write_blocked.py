@@ -60,8 +60,8 @@ def _rows(data):
 
 
 def _writable(row):
-    perms = row.get("_permissions")
-    return isinstance(perms, dict) and perms.get("write") is True
+    """True if any flag object in the row marks it writable (no field named)."""
+    return any(isinstance(v, dict) and v.get("write") is True for v in row.values())
 
 
 def run(env):

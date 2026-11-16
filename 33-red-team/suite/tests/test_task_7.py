@@ -1,14 +1,9 @@
-"""Offline tests for task 7 (Sagar): tool-policy write guard + session policy-bind.
+"""Offline tests for task 7 (Sagar).
 
     cd 33-red-team/suite && python -m unittest discover -s tests -t .
 
-Task 7 makes one tools/list call (the write-verb guard), lists policies, then, for
-the binding check, reads the seat identity (GET /api/auth/me) and creates sessions:
-a plain one to learn the default policy, a control that asks for a made-up policy id
-(positive control: must be rejected or stored as asked), and finally one that asks
-for a non-granted policy. Tool names and the policy-binding field come from neutral
-RT_* fakes in the test base env, so no real identifiers appear here. The stub sees
-only the JSON-RPC method, so tools/call steps are sequenced with a counter.
+Tool names and fields are neutral fakes, so no real identifiers appear here. The
+stub sees only the JSON-RPC method, so tools/call steps are sequenced with a counter.
 """
 from unittest import mock
 
@@ -40,9 +35,9 @@ def _bad_argument():
 
 
 def _policies(*rows):
-    """Each row: (id, writable, allowed_actions, role, created_by)."""
-    data = [{"id": rid, "_permissions": {"write": w}, "allowed_actions": acts,
-             "role": role, "created_by": by}
+    """Each row: (id, writable, scope_list, kind, owner_ref) with neutral field names."""
+    data = [{"id": rid, "flags": {"write": w}, "scope_a": acts,
+             "kind": role, "owner_ref": by}
             for (rid, w, acts, role, by) in rows]
     return 200, tool_text({"data": data, "total": len(data)}), JSON
 
@@ -54,8 +49,7 @@ def _session(sid="s1", policy=None):
     return 200, tool_text(body), JSON
 
 
-# The baseline + positive-control steps: a plain session that runs under GRANTED,
-# then a made-up policy id that the platform rejects as a bad argument.
+# Baseline and positive-control steps (control rejected as a bad argument).
 CONTROL = [_session(sid="plain", policy=GRANTED), _bad_argument()]
 MADE_UP = "made-up-pol"   # patched in for the "stored as asked" control path
 
@@ -106,26 +100,24 @@ class Task7(Base):
     def test_plain_session_refused_is_infrastructure(self):
         self.serve(_H7(steps=[_policies(FOREIGN_POLICY), _denied()]))
         r = self.run_task(t07.TASK, **ENV)
-        self.assertInfra(r, "plain session create refused")
+        self.assertInfra(r, "baseline session create refused")
 
     def test_field_ignored_is_infrastructure(self):
-        # Every session comes back on the default policy, whatever was asked for.
-        # Re-binding the default would "reflect" here; the made-up id must not pass.
+        # Every session comes back on the default, whatever was asked for.
         self.serve(_H7(steps=[_policies(FOREIGN_POLICY), _session(policy=GRANTED)]))
         r = self.run_task(t07.TASK, **ENV)
-        self.assertInfra(r, "binding field ignored or overridden")
+        self.assertInfra(r, "positive control unverifiable")
 
     def test_field_ignored_no_default_is_infrastructure(self):
-        # Same, when sessions carry no policy by default.
         self.serve(_H7(steps=[_policies(FOREIGN_POLICY), _session(policy=None)]))
         r = self.run_task(t07.TASK, **ENV)
-        self.assertInfra(r, "binding field ignored or overridden")
+        self.assertInfra(r, "positive control unverifiable")
 
     def test_control_server_error_is_infrastructure(self):
         self.serve(_H7(steps=[_policies(FOREIGN_POLICY), _session(policy=GRANTED),
                               _denied(code="server_error", rpc=-32000)]))
         r = self.run_task(t07.TASK, **ENV)
-        self.assertInfra(r, "positive control: session create error")
+        self.assertInfra(r, "positive control error")
 
     def test_control_stored_as_asked_then_bind_refused_passes(self):
         self.serve(_H7(steps=[_policies(FOREIGN_POLICY), _session(policy=GRANTED),
@@ -133,16 +125,15 @@ class Task7(Base):
         with mock.patch.object(t07, "_made_up_id", return_value=MADE_UP):
             r = self.run_task(t07.TASK, **ENV)
         self.assertTrue(r["passed"], r["evidence"])
-        self.assertIn("made-up policy id stored as asked", r["evidence"])
+        self.assertIn("control ok (stored)", r["evidence"])
         self.assertIn("bind refused", r["evidence"])
 
     def test_no_default_policy_still_tested(self):
-        # A plain session with no policy is fine: the made-up id still proves the field.
         self.serve(_H7(steps=[_policies(FOREIGN_POLICY),
-                              _session(policy=None),     # plain create: no policy echoed
-                              _session(policy=None),     # plain read-back: none
-                              _bad_argument(),           # made-up id rejected
-                              _session(policy="p1")]))   # non-granted policy adopted
+                              _session(policy=None),     # baseline create
+                              _session(policy=None),     # baseline read-back
+                              _bad_argument(),           # control
+                              _session(policy="p1")]))   # target adopted
         r = self.run_task(t07.TASK, **ENV)
         self.assertFalse(r["passed"], r["evidence"])
         self.assertIn("FINDING", r["evidence"])
@@ -152,7 +143,7 @@ class Task7(Base):
         self.serve(_H7(steps=[_policies(FOREIGN_POLICY)] + CONTROL + [_denied()]))
         r = self.run_task(t07.TASK, **ENV)
         self.assertTrue(r["passed"], r["evidence"])
-        self.assertIn("positive control ok", r["evidence"])
+        self.assertIn("control ok (rejected)", r["evidence"])
         self.assertIn("bind refused", r["evidence"])
 
     def test_bind_not_available_passes(self):
@@ -167,7 +158,7 @@ class Task7(Base):
         r = self.run_task(t07.TASK, **ENV)
         self.assertFalse(r["passed"], r["evidence"])
         self.assertIn("FINDING: session adopted a non-granted policy", r["evidence"])
-        self.assertIn("allowed_actions=2", r["evidence"])   # counts only, no contents
+        self.assertIn("1 list fields, 2 entries", r["evidence"])   # counts only, no names
 
     def test_bind_ignored_passes(self):
         self.serve(_H7(steps=[_policies(FOREIGN_POLICY)] + CONTROL

@@ -19,7 +19,7 @@ def _denied(code="permission_denied", rpc=-32001):
 
 
 def _personas(*perms):
-    rows = [{"id": f"p{i}", "_permissions": {"write": w}} for i, w in enumerate(perms)]
+    rows = [{"id": f"p{i}", "flags": {"write": w}} for i, w in enumerate(perms)]
     return 200, tool_text({"data": rows, "total": len(rows)}), JSON
 
 
