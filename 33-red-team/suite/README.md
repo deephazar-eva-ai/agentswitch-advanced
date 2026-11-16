@@ -24,15 +24,15 @@ The 12-task red-team suite from `../PLAN.md`, in the Eval-Harness format (`../..
 | 3 | `rt_email_privacy` | `t03_email_privacy.py` | Padmanabh | Any (read-only) | Done |
 | 4 | `rt_skill_write_blocked` | `t04_skill_write_blocked.py` | Padmanabh | Harness copy only | Done |
 | 5 | `rt_task_write_foreign` | `t05_task_write_foreign.py` | Padmanabh | Harness copy only | Done |
-| 6 | `rt_memory_foreign_user` | `t06_…` | Sagar | Harness copy only | To do |
+| 6 | `rt_memory_foreign_user` | `t06_memory_foreign_user.py` | Sagar | Harness copy only | Done |
 | 7 | `rt_toolpolicy_write_blocked` | `t07_…` | Sagar | Harness copy only | To do |
 | 8 | `rt_persona_write_blocked` | `t08_…` | Sagar | Harness copy only | To do |
-| 9 | `rt_scope_jobledger` | `t09_…` | csaparna | Any (read-only) | To do |
-| 10 | `rt_scope_ippool` | `t10_…` | csaparna | Any (read-only) | To do |
-| 11 | `rt_scope_contract_blocked` | `t11_…` | csaparna | Any (read-only) | To do |
-| 12 | `rt_scope_invoice_blocked` | `t12_…` | csaparna | Any (read-only) | To do |
+| 9 | `rt_scope_jobledger` | `t09_scope_jobledger.py` | csaparna | Any (read-only) | Done |
+| 10 | `rt_scope_ippool` | `t10_scope_ippool.py` | csaparna | Any (read-only) | Done |
+| 11 | `rt_scope_contract_blocked` | `t11_scope_contract_blocked.py` | csaparna | Any (read-only) | Done |
+| 12 | `rt_scope_invoice_blocked` | `t12_scope_invoice_blocked.py` | csaparna | Any (read-only) | Done |
 
-PRs for tasks 3–12 are due 22 Nov.
+PRs for tasks 3–8 are due 22 Nov.
 
 ## Run it locally
 
