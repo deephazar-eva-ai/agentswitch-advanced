@@ -101,7 +101,12 @@ class Base(unittest.TestCase):
                    "AGENTSWITCH_TOKEN": GOOD, "AGENTSWITCH_INSTANCE": "suryodaya",
                    "AGENTSWITCH_RUN_ID": "test-run",
                    "RT_BUG_33_002_TOOL": "test.forensics",
-                   "RT_BUG_33_001_TOOL": "test.pool.list"}   # the stub stands in for a harness copy
+                   "RT_BUG_33_001_TOOL": "test.pool.list",
+                   "RT_MEMORY_CREATE_TOOL": "test.mem.create",
+                   "RT_MEMORY_READ_TOOL": "test.mem.get",
+                   "RT_SEAT_LIST_TOOL": "test.seat.list",
+                   "RT_MEMORY_USER_FIELD": "owner_ref",
+                   "RT_SEAT_USER_FIELD": "seat_owner_ref"}   # the stub stands in for a harness copy
 
     @classmethod
     def tearDownClass(cls):
@@ -247,11 +252,9 @@ class ScopeTasks(Base):
         self.assertFalse(r["passed"])
         self.assertIn("call was not refused", r["evidence"])
 
-    def test_t09_passes_when_not_exposed(self):
+    def test_t09_unevaluated_when_tool_unresolved(self):
         self.serve(lambda m, a: (200, jr({"tools": []}), JSON))
-        r = self.run_task(t09.TASK, RT_BUG_33_002_TOOL=None)
-        self.assertTrue(r["passed"])
-        self.assertIn("not exposed; no disclosure", r["evidence"])
+        self.assertInfra(self.run_task(t09.TASK, RT_BUG_33_002_TOOL=None), "unevaluated")
 
     def test_t09_resolves_from_tools_list(self):
         tools = [{"name": "mock.forensic.endpoint", "description": "forensic data"}]
@@ -260,11 +263,9 @@ class ScopeTasks(Base):
         self.assertTrue(r["passed"])
         self.assertIn("0 rows returned; no disclosure", r["evidence"])
 
-    def test_t10_passes_when_not_exposed(self):
+    def test_t10_unevaluated_when_tool_unresolved(self):
         self.serve(lambda m, a: (200, jr({"tools": []}), JSON))
-        r = self.run_task(t10.TASK, RT_BUG_33_001_TOOL=None)
-        self.assertTrue(r["passed"])
-        self.assertIn("not exposed; no disclosure", r["evidence"])
+        self.assertInfra(self.run_task(t10.TASK, RT_BUG_33_001_TOOL=None), "unevaluated")
 
     def test_t10_resolves_from_tools_list(self):
         tools = [{"name": "mock.pool.list", "description": "pool list"}]
