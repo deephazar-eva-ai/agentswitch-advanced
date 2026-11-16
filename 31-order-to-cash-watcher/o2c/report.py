@@ -3,6 +3,8 @@
 The rules are pure functions over rows so they can be tested without the platform.
 """
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
+from .values import business_date, money, money_number, money_text, money_sum, currency_code
 
 from . import receipts as receipts_mod
 
@@ -13,6 +15,7 @@ NOT_INVOICED = ("unbilled", "partially_invoiced")
 RECEIVABLE = "receivable"
 PARTIALLY_PAID = "partially paid"
 FIXTURE_MARKERS = ("test", "harness", "fixture")
+ORDER_AGE_BUCKETS = ("0-7", "8-14", "15-30", "31-60", ">60")
 AGE_BUCKETS = (("future", None, -1), ("0-30", 0, 30), ("31-60", 31, 60), ("61-90", 61, 90), ("90+", 91, None))
 
 
@@ -29,8 +32,7 @@ UNKNOWN_CURRENCY = "currency not recorded"
 
 
 def _code(value):
-    code = str(value or "").strip().upper()
-    return code or None
+    return currency_code(value)
 
 
 def currency_context(client, names=None):
@@ -65,24 +67,130 @@ def resolve_currency(record_code, party_id, company_id, ctx):
     return None, None
 
 
-def apply_currency(rows, ctx):
+def apply_currency(rows, ctx, issues=None):
     """Set `currency` and `currency_source` on report rows (which carry party_id/company_id)."""
     for r in rows:
+        if r.get("currency") not in (None, "") and _code(r["currency"]) is None:
+            _issue(issues, r, "currency", "invalid currency code; using verified fallback if available")
         r["currency"], r["currency_source"] = resolve_currency(r.get("currency"), r.get("party_id"), r.get("company_id"), ctx)
     return rows
 
 
 def _as_date(value):
-    return date.fromisoformat(str(value)[:10]) if value else None
+    return business_date(value)
 
 
-def orders_not_invoiced(orders, report_date, days):
-    """Submitted orders not (fully) invoiced more than `days` days after the order date."""
+def _issue(issues, row, field, reason):
+    if issues is not None:
+        issues.append({"id": row.get("id"), "number": row.get("number"), "field": field, "reason": reason})
+
+
+def _date_value(row, field, issues, report_date=None):
+    try:
+        day = business_date(row.get(field))
+    except ValueError:
+        _issue(issues, row, field, "invalid date")
+        return None
+    if day is None:
+        _issue(issues, row, field, "missing date")
+    elif report_date is not None and day > report_date:
+        _issue(issues, row, field, "future date; age unknown")
+        return None
+    return day
+
+
+def _amount_value(row, field, issues):
+    try:
+        result = money_number(row.get(field))
+        if result is None:
+            _issue(issues, row, field, "missing amount")
+        return result
+    except ValueError:
+        _issue(issues, row, field, "invalid or nonfinite amount")
+        return None
+
+
+def validate_days(days):
+    """Reject invalid thresholds before a client or a report run is started."""
+    if isinstance(days, bool) or not isinstance(days, int) or days < 0:
+        raise ValueError("days must be a nonnegative integer")
+    return days
+
+
+def order_age_bucket(age_days):
+    """Order-date age bucket; negative/unknown ages are not bucketed."""
+    if age_days is None or age_days < 0:
+        return None
+    for maximum, label in zip((7, 14, 30, 60), ORDER_AGE_BUCKETS):
+        if age_days <= maximum:
+            return label
+    return ORDER_AGE_BUCKETS[-1]
+
+
+def _order_date(row):
+    try:
+        return _as_date(row.get("date"))
+    except (ValueError, TypeError):
+        return None
+
+
+def order_date_issues(orders, report_date):
+    """Unbilled submitted orders whose order dates cannot support an age check.
+
+    These are diagnostics, not additional exception rows or financial totals.
+    """
+    issues = []
+    for row in orders:
+        if row.get("docstatus") != SUBMITTED or row.get("invoiced_status") not in NOT_INVOICED:
+            continue
+        day = _order_date(row)
+        reason = None
+        if day is None:
+            reason = "missing order date" if not row.get("date") else "invalid order date"
+        elif day > report_date:
+            reason = "future order date"
+        if reason:
+            issues.append({"id": row.get("id"), "number": row.get("number"), "reason": reason})
+    return sorted(issues, key=lambda r: (str(r["number"] or ""), str(r["id"] or "")))
+
+
+def _order_sort_key(row):
+    """Oldest first, then currency group, then descending value within the group."""
+    currency = _code(row.get("currency"))
+    try:
+        amount = money(row.get("grand_total"))
+    except ValueError:
+        amount = None
+    return (-row["age_days"], currency is None, currency or "", amount is None,
+            amount.copy_negate() if amount is not None else Decimal(0), str(row.get("number") or ""), str(row.get("id") or ""))
+
+
+def sort_orders(rows):
+    """Sort again after currency resolution so fallback codes determine the groups too."""
+    return sorted(rows, key=_order_sort_key)
+
+
+def order_age_summary(rows):
+    counts = dict.fromkeys(ORDER_AGE_BUCKETS, 0)
+    for row in rows:
+        bucket = order_age_bucket(row.get("age_days"))
+        if bucket is not None:
+            counts[bucket] += 1
+    return counts
+
+
+def orders_not_invoiced(orders, report_date, days, issues=None):
+    """Submitted orders not fully invoiced, strictly older than N by order date.
+
+    No verified deliverable-date field is agreed yet; delivery state is not used
+    to invent one. Invalid/missing/future dates are surfaced by order_date_issues.
+    """
+    validate_days(days)
     out = []
     for o in orders:
         if o.get("docstatus") != SUBMITTED or o.get("invoiced_status") not in NOT_INVOICED:
             continue
-        order_date = _as_date(o.get("date"))
+        order_date = _date_value(o, "date", issues, report_date)
         if order_date is None:
             continue
         age = (report_date - order_date).days
@@ -96,13 +204,16 @@ def orders_not_invoiced(orders, report_date, days):
             "company_id": o.get("company_id"),
             "order_date": order_date.isoformat(),
             "age_days": age,
+            "age_basis": "order_date",
+            "age_bucket": order_age_bucket(age),
+            "deliverability_status": "unverified",
             "invoiced_status": o.get("invoiced_status"),
             "delivered_status": o.get("delivered_status"),
-            "grand_total": o.get("grand_total"),
+            "grand_total": _amount_value(o, "grand_total", issues),
             "currency": o.get("currency_code"),
             "fixture": looks_like_fixture(o),
         })
-    return sorted(out, key=lambda r: (-r["age_days"], r["number"] or ""))
+    return sort_orders(out)
 
 
 def age_bucket(age_days):
@@ -115,7 +226,7 @@ def age_bucket(age_days):
     return "unknown"
 
 
-def payments_not_applied(payments, report_date):
+def payments_not_applied(payments, report_date, issues=None):
     """Incoming payments (draft or submitted, not cancelled) with money not yet allocated to an invoice.
 
     These are Payment rows of type `receive`; applied receipts are a separate entity, PaymentReceived
@@ -126,14 +237,16 @@ def payments_not_applied(payments, report_date):
     for p in payments:
         if p.get("type") != "receive" or p.get("docstatus") == CANCELLED:
             continue
-        unallocated = round(float(p.get("unallocated") or 0), 2)
-        if unallocated <= 0:
+        unallocated = _amount_value(p, "unallocated", issues)
+        if unallocated is None or unallocated <= 0:
             continue
-        paid = _as_date(p.get("date"))
+        paid = _date_value(p, "date", issues)
         age = (report_date - paid).days if paid else None
-        amount = round(float(p.get("amount") or 0), 2)
+        if age is not None and age < 0:
+            _issue(issues, p, "date", "future payment date; classified as future")
+        amount = _amount_value(p, "amount", issues)
         notes = []
-        if p.get("status") == "reconciled" and abs(unallocated - amount) < 0.01:
+        if p.get("status") == "reconciled" and amount is not None and abs(unallocated - amount) < 0.01:
             notes.append("reconciled but nothing allocated")
         out.append({
             "number": p.get("number"),
@@ -145,7 +258,7 @@ def payments_not_applied(payments, report_date):
             "payment_date": paid.isoformat() if paid else None,
             "age_days": age,
             "age_bucket": age_bucket(age),
-            "amount": p.get("amount"),
+            "amount": amount,
             "unallocated": unallocated,
             "status": p.get("status"),
             "docstatus": p.get("docstatus"),
@@ -172,14 +285,15 @@ def payments_summary(rows):
     def add(table, key, row):
         t = table.setdefault(key, {"count": 0, "unallocated": 0.0})
         t["count"] += 1
-        t["unallocated"] = round(t["unallocated"] + row["unallocated"], 2)
+        t["unallocated"] = money_sum([money(t["unallocated"]), money(row["unallocated"])])
 
     totals, buckets, statuses, customers = {}, {}, {}, {}
     for r in rows:
         cur = r.get("currency")
         party = r.get("party_id") or r.get("customer") or "unknown"
         add(totals, cur, r)
-        add(buckets, (r["age_bucket"], cur), r)
+        # Reports saved before #35 have age_days but no age_bucket/summary.
+        add(buckets, (r.get("age_bucket", age_bucket(r.get("age_days"))), cur), r)
         add(statuses, (r["status"] or "unknown", cur), r)
         add(customers, (party, cur), r)
         customers[(party, cur)]["customer"] = r.get("customer")
@@ -205,7 +319,50 @@ def add_receipt_hints(rows, receipts):
     return rows
 
 
-def invoices_overdue(invoices, report_date):
+def validated_receipts(receipts, issues):
+    """Keep #35's allocation logic, but don't let bad raw amounts become zero/NaN.
+
+    Unusable financial child rows quarantine that receipt from the hint input.
+    A bad receipt date is diagnosed while its otherwise valid allocation facts
+    remain usable, with no invented last-receipt date.
+    """
+    out = []
+    for raw in receipts:
+        row = dict(raw)
+        valid = True
+        for field in ("amount", "allocation_consideration"):
+            if row.get(field) is not None:
+                value = _amount_value(row, field, issues)
+                valid = valid and value is not None
+                row[field] = value
+        for field, amount_key in (("applied_allocations", "amount"), ("invoices", "payment"), ("allocation_history", "amount")):
+            children = [] if row.get(field) is None else row[field]
+            if not isinstance(children, list) or any(not isinstance(c, dict) for c in children):
+                _issue(issues, raw, "PaymentReceived." + field, "invalid receipt child records; receipt hint excluded")
+                valid = False
+                continue
+            normalized = []
+            for child in children:
+                child = dict(child)
+                relevant = (field != "allocation_history" or receipts_mod._targets_invoice(child) or child.get("reverses_event_id"))
+                if relevant:
+                    value = _amount_value(child, amount_key, None)
+                    if value is None:
+                        _issue(issues, raw, "PaymentReceived." + field + "." + amount_key,
+                               "unusable receipt allocation amount; receipt hint excluded")
+                        valid = False
+                    child[amount_key] = value
+                normalized.append(child)
+            row[field] = normalized
+        if row.get("date") not in (None, ""):
+            day = _date_value(row, "date", issues)
+            row["date"] = day.isoformat() if day else None
+        if valid:
+            out.append(row)
+    return out
+
+
+def invoices_overdue(invoices, report_date, issues=None):
     """Submitted invoices past their due date with a balance left, plus invoices with no due date.
 
     Due date and balance are read from the Invoice entity (`due_date`, `outstanding`), not
@@ -220,9 +377,9 @@ def invoices_overdue(invoices, report_date):
     for inv in invoices:
         if inv.get("docstatus") != SUBMITTED or inv.get("direction", RECEIVABLE) != RECEIVABLE:
             continue
-        outstanding = round(float(inv.get("outstanding") or 0), 2)
-        paid = round(float(inv.get("amount_paid") or 0), 2)
-        due = _as_date(inv.get("due_date"))
+        outstanding = _amount_value(inv, "outstanding", issues)
+        paid = _amount_value(inv, "amount_paid", issues)
+        due = _date_value(inv, "due_date", issues)
         row = {
             "number": inv.get("number"),
             "id": inv.get("id"),
@@ -232,18 +389,19 @@ def invoices_overdue(invoices, report_date):
             "due_date": due.isoformat() if due else None,
             "days_overdue": (report_date - due).days if due else None,
             "payment_terms": inv.get("payment_terms"),
-            "grand_total": inv.get("grand_total"),
-            "amount_paid": inv.get("amount_paid"),
+            "grand_total": _amount_value(inv, "grand_total", issues),
+            "amount_paid": paid,
             "outstanding": outstanding,
             # Instructor answer 11 (10 Nov): money received and a balance left -> report the balance,
             # age it from the due date, and label it "partially paid".
-            "payment_state": PARTIALLY_PAID if paid > 0 and outstanding > 0 else ("unpaid" if outstanding > 0 else "paid"),
+            "payment_state": "unknown" if outstanding is None or paid is None else (
+                PARTIALLY_PAID if paid > 0 and outstanding > 0 else ("unpaid" if outstanding > 0 else "paid")),
             "currency": inv.get("currency_code"),
             "fixture": looks_like_fixture(inv),
         }
         if due is None:
             no_due.append(row)
-        elif due < report_date and outstanding > 0:
+        elif due < report_date and outstanding is not None and outstanding > 0:
             overdue.append(row)
     overdue.sort(key=lambda r: (-r["days_overdue"], r["number"] or ""))
     no_due.sort(key=lambda r: r["number"] or "")
@@ -251,27 +409,40 @@ def invoices_overdue(invoices, report_date):
 
 
 def build(client, report_date=None, days=7, instance=None, currencies=None):
+    validate_days(days)
     report_date = report_date or today_ist()
     sections = {}
     names = client.tool_names()
     currencies = currencies if currencies is not None else currency_context(client, names)
 
     orders = client.list_all("SalesOrder", {"docstatus": SUBMITTED})
+    order_issues = []
     sections["orders_not_invoiced"] = {
         "status": "ok",
         "rule": f"submitted, invoiced_status in {list(NOT_INVOICED)}, order date more than {days} days ago",
-        "rows": apply_currency(orders_not_invoiced(orders, report_date, days), currencies),
+        "rows": sort_orders(apply_currency(orders_not_invoiced(orders, report_date, days, order_issues), currencies, order_issues)),
+        "data_issues": order_issues,
     }
+    order_section = sections["orders_not_invoiced"]
+    order_section.update(
+        age_basis="order_date",
+        deliverability_status="unverified",
+        unverified_deliverability_count=len(order_section["rows"]),
+        age_buckets=order_age_summary(order_section["rows"]),
+        date_issues=order_date_issues(orders, report_date),
+    )
 
     if "Invoice.list" in names:
-        overdue, no_due = invoices_overdue(client.list_all("Invoice", {"docstatus": SUBMITTED}), report_date)
-        apply_currency(overdue, currencies)
-        apply_currency(no_due, currencies)
+        invoice_issues = []
+        overdue, no_due = invoices_overdue(client.list_all("Invoice", {"docstatus": SUBMITTED}), report_date, invoice_issues)
+        apply_currency(overdue, currencies, invoice_issues)
+        apply_currency(no_due, currencies, invoice_issues)
         sections["invoices_overdue"] = {
             "status": "ok",
             "rule": "customer invoices (receivable), submitted, due_date before the report date, outstanding > 0",
             "rows": overdue,
             "no_due_date": no_due,
+            "data_issues": invoice_issues,
         }
     else:
         sections["invoices_overdue"] = {
@@ -282,10 +453,21 @@ def build(client, report_date=None, days=7, instance=None, currencies=None):
         }
 
     payments = client.list_all("Payment", {"type": "receive"})
-    pay_rows = apply_currency(payments_not_applied(payments, report_date), currencies)
+    payment_issues = []
+    pay_rows = apply_currency(payments_not_applied(payments, report_date, payment_issues), currencies, payment_issues)
     if "PaymentReceived.list" in names:
-        add_receipt_hints(pay_rows, client.list_all("PaymentReceived"))
-        history = {"status": "ok", "source": "PaymentReceived (applied receipts), joined on customer"}
+        receipt_issues = []
+        source_receipts = client.list_all("PaymentReceived")
+        add_receipt_hints(pay_rows, validated_receipts(source_receipts, receipt_issues))
+        if receipt_issues:
+            for row in pay_rows:
+                if row.get("hint") == "no_history":
+                    # Excluded corrupt input is not evidence of absent history.
+                    row["hint"] = "unknown"
+                    row["receipts_applied_total"] = None
+        payment_issues.extend(receipt_issues)
+        history = {"status": "ok", "source": "PaymentReceived (applied receipts), joined on customer",
+                   "coverage": "partial" if receipt_issues else "complete", "data_issues": receipt_issues}
     else:
         history = {"status": "blocked",
                    "reason": "this login has no PaymentReceived read tool, so receipt history is not shown. Tracked as BUG-31-001"}
@@ -296,7 +478,11 @@ def build(client, report_date=None, days=7, instance=None, currencies=None):
         "summary": payments_summary(pay_rows),
         "receipt_history": history,
         "note": None if payments else "no incoming payments on this instance (expected, instructor 7 Nov)",
+        "data_issues": payment_issues,
     }
+    for section in sections.values():
+        section["coverage"] = ("blocked" if section["status"] != "ok" else
+                               "partial" if section.get("data_issues") else "complete")
 
     return {
         "instance": instance,
@@ -315,7 +501,7 @@ TITLES = {
 
 
 def _money(v):
-    return f"{v:,.2f}" if isinstance(v, (int, float)) else ""
+    return money_text(v)
 
 
 def _cur(r):
@@ -366,7 +552,8 @@ def _invoice_tables(rows, no_due):
     return lines
 
 
-HINT_LABELS = {"same_amount": "**check: same amount**", "has_history": "has history", "no_history": "no history"}
+HINT_LABELS = {"same_amount": "**check: same amount**", "has_history": "has history", "no_history": "no history",
+               "unknown": "history incomplete"}
 
 
 def _payment_tables(sec):
@@ -389,6 +576,9 @@ def _payment_tables(sec):
     lines.append("")
     if hist.get("status") == "ok":
         lines += [f"Receipt history: {hist['source']}.", ""]
+        lines += ["Receipt-history hints compare customer/amount only; they do not allocate money or prove that an invoice is paid.", ""]
+        if hist.get("coverage") == "partial":
+            lines += ["Receipt-history coverage is partial; invalid receipt data was excluded or diagnosed.", ""]
     else:
         lines += [f"Receipt history: **{hist.get('status', 'blocked').upper()}**: {hist.get('reason', '')}", ""]
     show_hist = hist.get("status") == "ok"
@@ -405,7 +595,8 @@ def _payment_tables(sec):
                 f"{cell(' (' + '; '.join(r['notes']) + ')') if r.get('notes') else ''} |")
         if show_hist:
             same = f" {cell(', '.join(r['same_amount_receipts']))}" if r.get("same_amount_receipts") else ""
-            line += f" {HINT_LABELS.get(r.get('hint'), '')}{same} ({r.get('receipts_paid', 0)} paid) |"
+            paid_label = "verified paid" if hist.get("coverage") == "partial" else "paid"
+            line += f" {HINT_LABELS.get(r.get('hint'), '')}{same} ({r.get('receipts_paid', 0)} {paid_label}) |"
         lines.append(line + f" {'fixture' if r['fixture'] else ''} |")
     return lines
 
@@ -430,9 +621,30 @@ def to_markdown(report):
             lines += [f"**{sec['status'].upper()}:** {sec['reason']}", ""]
             continue
         lines += [f"Rule: {sec['rule']}.", ""]
+        if sec.get("data_issues"):
+            lines += [f"Data validation: **{len(sec['data_issues'])} issue(s)**; coverage is partial. "
+                      "Valid exceptions are retained; unknown values are not zero.", ""]
+            lines += [f"- {cell(r.get('number') or r.get('id') or '(unnamed record)')}: "
+                      f"{cell(r['field'])}: {cell(r['reason'])}" for r in sec["data_issues"]]
+            lines.append("")
         if key == "invoices_overdue":
             lines += _invoice_tables(rows, sec.get("no_due_date", []))
             continue
+        if key == "orders_not_invoiced":
+            # Compute from canonical rows as well for reports built by older callers.
+            counts = order_age_summary(rows)
+            lines += ["Age basis: **order date**, not a verified deliverable date. "
+                      f"Deliverability unverified: **{len(rows)}** order(s), already included above; not an extra total.",
+                      "Oldest first; equal ages grouped by currency (unknown last), then value descending within each currency.",
+                      "Order-age buckets (exception rows only): "
+                      + "; ".join(f"{label}: {count}" for label, count in counts.items()) + ".",
+                      "The strict age > N filter still applies; buckets do not add younger orders.", ""]
+            issues = sec.get("date_issues", [])
+            if issues:
+                lines += [f"### Orders with unusable dates ({len(issues)})", "",
+                          "Excluded from age-based exception rows and bucket counts; review these date issues separately.", ""]
+                lines += [f"- {cell(r.get('number') or r.get('id') or '(unnamed order)')}: {cell(r['reason'])}" for r in issues]
+                lines += ["", "### Age-based exception rows", ""]
         if not rows:
             lines += [f"None{' (' + sec['note'] + ')' if sec.get('note') else ''}.", ""]
             continue

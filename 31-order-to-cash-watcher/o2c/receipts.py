@@ -128,6 +128,7 @@ HINTS = {
     "same_amount": "same customer and amount already recorded as an applied receipt; check before applying",
     "has_history": "customer has applied receipts; match against their open invoices",
     "no_history": "no applied receipts for this customer",
+    "unknown": "receipt history is incomplete; no absence or total can be verified",
 }
 
 
