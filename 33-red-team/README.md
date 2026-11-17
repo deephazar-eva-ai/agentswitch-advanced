@@ -4,19 +4,19 @@
 Adversarial testing of the platform and of the other seats' agents: permission boundaries, prompt injection, cross-tenant reads. Read-only on live data, no destructive actions.
 
 ## First task
-A boundary catalogue: **25 attempts**, each with the expected and the actual result, findings in the bug-report format. Status: **done** (13 Held · 2 Broke · 10 Unclear). See [catalogue/attempts.md](catalogue/attempts.md).
+A boundary catalogue: 20 attempts, each with the expected and the actual result, findings in the bug-report format.
 
 ## Access
 crm, email, support, projects (deliberately low privilege)
 
 ## Milestones
-- 15 Nov 2026: first task delivered — **done** (catalogue + findings)
-- 30 Nov 2026: version 1, with a 12-task test suite — **in progress** (tasks 1–6 and 9–12 done; 7–8 still open)
+- 15 Nov 2026: first task delivered
+- 30 Nov 2026: version 1, with a 12-task test suite
 - 20 Dec 2026: integration run of all eight seats
 - 31 Dec 2026: final
 
 ## Working rules
-See the top-level README. Put your agent code, tests and notes in this folder; open a pull request for every change. Seat workflow, safety tiers and credentials: [CONTRIBUTING.md](CONTRIBUTING.md).
+See the top-level README. Put your agent code, tests and notes in this folder; open a pull request for every change.
 
 ---
 
@@ -28,7 +28,7 @@ See the top-level README. Put your agent code, tests and notes in this folder; o
 | Findings for Broke results | [findings/](findings/) | BUG-33-001, BUG-33-002 (`new`) |
 | Live catalogue replay | [replay/](replay/) | Done (course team re-runs before releases) |
 | Scope sweep → suite tasks 11–12 | [docs/scope-sweep.md](docs/scope-sweep.md) | Done |
-| 12-task Eval-Harness suite | [suite/](suite/) | 10/12 tasks implemented (7–8 To do) |
+| 12-task Eval-Harness suite | [suite/](suite/) | 12/12 tasks implemented |
 | Seat plan / DoD | [PLAN.md](PLAN.md) | Living doc |
 
 **Team:** Ramesh (lead), Sagar, Padmanabh, csaparna (until 13 Dec 2026).
@@ -118,14 +118,14 @@ python scope_sweep.py --dry-run
 | 4 | `rt_skill_write_blocked` | Padmanabh | Harness copy only | Done |
 | 5 | `rt_task_write_foreign` | Padmanabh | Harness copy only | Done |
 | 6 | `rt_memory_foreign_user` | Sagar | Harness copy only | Done |
-| 7 | `rt_toolpolicy_write_blocked` | Sagar | Harness copy only | **To do** |
-| 8 | `rt_persona_write_blocked` | Sagar | Harness copy only | **To do** |
+| 7 | `rt_toolpolicy_write_blocked` | Sagar | Harness copy only | Done |
+| 8 | `rt_persona_write_blocked` | Sagar | Any (read-only) | Done |
 | 9 | `rt_scope_jobledger` (BUG-33-002) | csaparna | Any (read-only) | Done |
 | 10 | `rt_scope_ippool` (BUG-33-001) | csaparna | Any (read-only) | Done |
 | 11 | `rt_scope_contract_blocked` | csaparna | Any (read-only) | Done |
 | 12 | `rt_scope_invoice_blocked` | csaparna | Any (read-only) | Done |
 
-Tasks 11–12 target `Contract.list` and `Invoice.list` (chosen from the scope sweep: both `HELD(not-exposed)` on both systems).
+Tasks 11–12 were chosen from the scope sweep: both refused on both systems.
 
 ```bash
 cd 33-red-team/suite
@@ -160,7 +160,7 @@ From the instructor brief (interpreted in [PLAN.md](PLAN.md)):
 3. A README for the seat (this file).
 4. Closed bug list — every `BUG-33-NNN` triaged with status and note; any still open on 31 Dec stays listed here with its ID and status.
 
-**Current progress:** catalogue done; suite 10/12; bugs still `new` / Received; demo and final closeout planned.
+**Current progress:** catalogue done; suite 12/12; bugs still `new` / Received; demo and final closeout planned.
 
 ## Related docs
 
