@@ -69,12 +69,20 @@ async def run_suite(suite: Suite, settings: HarnessSettings, out: Path) -> None:
     print(f"{instance}: {passed}/{len(writer.rows)} passed; trial records in {run_dir}")
 
 
+def with_agent(suite: Suite, agent: str | None) -> Suite:
+    """The suite with another agent command (the manifest of each trial records which one ran)."""
+    return suite.model_copy(update={"agent": agent}) if agent else suite
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(prog="python -m eval_harness", description=__doc__.split("\n")[0])
     parser.add_argument("--suite", type=Path, required=True, help="suite folder or suite.toml")
     parser.add_argument("--out", type=Path, default=Path("results.json"), help="where to write results.json")
+    parser.add_argument(
+        "--agent", help="run this command instead of the suite's agent; `true` is the do-nothing baseline"
+    )
     args = parser.parse_args()
-    suite = load_suite(args.suite)
+    suite = with_agent(load_suite(args.suite), args.agent)
     try:
         settings = load_settings()
     except SettingsMissing as e:

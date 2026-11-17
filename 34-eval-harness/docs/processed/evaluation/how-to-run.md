@@ -52,6 +52,16 @@ uv run python -m eval_harness.rescore runs/<run_id> --suite suites/example --out
 ```
 This makes no model calls and no platform calls. Use it after changing a grader or the scorer. If a task's version changed, it prints a note.
 
+### 4a. Check that the tasks can fail (calibration)
+A task that an agent doing nothing can pass tells you nothing. Check every suite this way:
+```bash
+uv run python scripts/run_local.py --instance keystone -- --suite suites/seat31 --agent true --out runs/null.json
+uv run python -m eval_harness.calibrate --suite suites/seat31 --real runs/<real_run> --null runs/<null_run>
+```
+- `--agent true` swaps in an agent that does nothing. It writes nothing, so it is safe on live data.
+- The report says how many tasks the do-nothing agent passes. It also lists tasks where different prompts got the same output, which means the agent probably ignored the prompt.
+- On the 16 Nov records, all 24 trials fall into 4 groups of 6 identical outputs.
+
 ## 5. Read a trial record
 `runs/<run_id>/<system>__<task>__t0.json` holds:
 - `manifest`: everything that can change a score (git commit, task version, graders, agent command, model);

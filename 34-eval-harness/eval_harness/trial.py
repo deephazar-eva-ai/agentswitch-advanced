@@ -110,13 +110,17 @@ def entities_to_watch(task: Task) -> list[str]:
     return sorted(set(names))
 
 
+GONE: dict[str, Any] = {"_harness": "not_found"}  # the platform said 404: the record is gone
+
+
 async def snapshot(platform: PlatformReader, entity: str, ids: list[str]) -> dict[str, dict[str, Any] | None]:
+    """One row per id. A 404 is saved as GONE (a fact); any other failed read as None (could not check)."""
     rows: dict[str, dict[str, Any] | None] = {}
     for record_id in ids:
         try:
             rows[record_id] = await platform.get(entity, record_id)
-        except PlatformError:
-            rows[record_id] = None
+        except PlatformError as e:
+            rows[record_id] = dict(GONE) if e.status == 404 else None
     return rows
 
 

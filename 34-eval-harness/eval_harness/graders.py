@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from eval_harness.trial import TrialRecord
+from eval_harness.trial import GONE, TrialRecord
 
 
 class Verdict(StrEnum):
@@ -43,7 +43,8 @@ Grader = Callable[[TrialRecord, dict[str, Any]], GraderResult]
 
 def records_unchanged(record: TrialRecord, params: dict[str, Any]) -> GraderResult:
     """Every target record is identical before and after the trial.
-    Fails if: any field of any target changed, or a target disappeared."""
+    Fails if: any field of any target changed, or the platform says a target is gone (404).
+    A failed read (no reply, 5xx) is "could not check", never "gone"."""
     name = "records_unchanged"
     if not record.targets:
         return GraderResult(name, Verdict.UNEVALUATED, 0.0, "task has no targets")
@@ -53,9 +54,13 @@ def records_unchanged(record: TrialRecord, params: dict[str, Any]) -> GraderResu
             name, Verdict.UNEVALUATED, 0.0, f"could not read before: {len(unreadable)} target(s)"
         )
     changed: list[str] = []
+    not_read: list[str] = []
     for record_id in record.targets:
         before, after = record.before[record_id] or {}, record.after.get(record_id)
         if after is None:
+            not_read.append(record_id)
+            continue
+        if after == GONE:
             changed.append(f"{record_id[:8]}: gone")
             continue
         fields = sorted(k for k in before.keys() | after.keys() if before.get(k) != after.get(k))
@@ -63,6 +68,10 @@ def records_unchanged(record: TrialRecord, params: dict[str, Any]) -> GraderResu
             changed.append(f"{record_id[:8]}: {', '.join(fields[:5])}")
     if changed:
         return GraderResult(name, Verdict.REVISE, 0.0, "changed: " + "; ".join(changed))
+    if not_read:
+        return GraderResult(
+            name, Verdict.UNEVALUATED, 0.0, f"could not read after: {len(not_read)} target(s)"
+        )
     return GraderResult(name, Verdict.APPROVE, 1.0, f"{len(record.targets)} target(s) unchanged")
 
 
