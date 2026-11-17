@@ -275,6 +275,26 @@ needs a fresh scan of both systems, which needs the person's approval. "The matc
 | W3 | Version 3 against version 4 comparison over every pair id in either version: counts and the pass result recorded here, the per-pair listing in `local/` (pair ids from the saved reads are platform data) | 1.5 | W2 frozen |
 | W4 | Rescan both systems, re-export, review any changed pair | 1 | W3 passed; the person's approval |
 
+**W2 and W3 status (17 Nov).** W2 is built at commit `1f1aea2` (branch `seat35/rules-v4`): R1 to R3, the four
+required cases and per-rule tests, and 11 tuning records (p48 to p57, p56 read twice). W3 ran offline at that commit
+against version 3 as frozen at `457799b`, with the pass rules in step 3. **Pass on all 18 runs**, no failure:
+- Tuning set, parties: 4 changes, all on the new records (2 by R1 and 1 by R2, each propose to review; 1 left out
+  by R3). Propose went from 8 to 4, review from 13 to 16. On the 47 earlier records the figures are unchanged (4
+  right proposals, the same 2 wrong review pairs). The labelled figures differ only by the new records: the 3 known
+  non-duplicates version 3 proposed are held at review, and the duplicate whose record has a withheld copy is now
+  missed by design (R3).
+- Tuning set items, both held-back sets (parties and items): no change. The 6 Nov and 9 Nov figures carry over; they
+  are version 3 figures matched by version 4, not a new blind check.
+- The saved reads of 3, 6 and 11 Nov, both systems, parties and items (12 runs): no change; every count the same.
+  Keystone parties: 62 at review; Suryodaya parties: 16 at review; Suryodaya items: 4 at review and 1 excluded;
+  Keystone items: none.
+- The checker was also run against the 10 Nov wording of R2 and R3 on the required cases and failed both, so it can
+  catch the faults it is meant to.
+
+The checker and its per-pair listing are in `local/` (`w3_compare.py`, `w3-v3-v4.json`). Next: W4 needs the person's
+approval for a fresh scan of both systems; until then the committed results file stays on version 3, and an export
+from this branch refuses version 3 reports.
+
 ## Held-back set (step 4b)
 
 The one honest check of the matcher: data the tuner never saw, run once against the frozen rules. Two sets so far,
