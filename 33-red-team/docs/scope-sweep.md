@@ -34,13 +34,13 @@ The scope sweep was automated via `33-red-team/replay/scope_sweep.py`:
 
 ## 3. Real Scope Sweep Findings (Live Runs on Suryodaya and Keystone)
 
-Live runs were executed against both production instances using read-only probes:
+Live runs were executed against both production instances using read-only probes. This repository is public, so the bug entries keep only the title, the affected component and the fix status. Their steps are kept on the harness copy only.
 
 ### A. Infrastructure & Platform Administration
 * `DnsRecord.list`, `DomainConfig.list`, `TenantIpAssignment.list` (High Risk): Callable on both systems (HTTP 200) but return 0 rows → `UNCLEAR`. They do not produce refusals, so they are not counted as Held.
-* `IPPool.list` (Medium Risk): Discloses deliverability IP pool configurations on Suryodaya (`FINDING?`, `BUG-33-001`), but returns 0 rows on Keystone (`UNCLEAR`). `BUG-33-001` is specific to Suryodaya.
-* `endpoint.mission_control.incidents` (Critical Risk): Reachable on both systems with 0 incidents → `UNCLEAR`.
-* `endpoint.job_ledger.forensics` (Critical Risk): Discloses agent job ledger forensics on both systems → `FINDING?` (`BUG-33-002`).
+* **BUG-33-001**, low-privilege seat can read email IP-pool configuration. Component: email IP-pool configuration. Fix status: open (filed in the app on 6 Nov, Suryodaya; not seen on Keystone).
+* **BUG-33-002**, low-privilege seat can read the agent job-ledger forensics. Component: agent job-ledger forensics. Fix status: open (filed in the app on 6 Nov, Suryodaya and Keystone).
+* **Catalogue attempt-03**, mission-control incidents. Component: mission-control incidents. Status: Unclear, no data yet; re-test when data exists.
 
 ### B. Financial & Accounting Isolation (Seats 31, 32)
 * `Invoice.list` (High Risk): Hidden from tool list on both systems → `HELD(not-exposed)`.
@@ -51,7 +51,7 @@ Live runs were executed against both production instances using read-only probes
 * `Contract.list`, `ComplianceFiling.list`, `EsignRequest.list` (High Risk): Hidden from tool list on both systems → `HELD(not-exposed)`.
 
 ### D. Inventory & Manufacturing (Seats 31, 35)
-* `Item.list` (Medium Risk): Returns live product catalog data on both systems → `FINDING?` (Pending confirmation under Open Question 2).
+* **Inventory items.** Component: inventory item master. Status: pending open question 2; a finding only if inventory is outside our scope.
 * `Warehouse.list`, `StockMovement.list` (High Risk): Hidden from tool list on both systems → `HELD(not-exposed)`.
 * `events.catalog` (Medium Risk): Reachable with 0 events → `UNCLEAR`.
 
