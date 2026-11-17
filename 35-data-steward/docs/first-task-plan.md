@@ -172,27 +172,37 @@ platform. The matcher stays at rules version 3.
 
 Question 7 (tracing damage to the job that caused it) stays out of version 1 until answered.
 
-## Rules version 4 (planned 10 Nov, after 15 Nov)
+## Rules version 4 (planned 10 Nov, revised 17 Nov, after 15 Nov)
 
 A review of rules version 3 on 10 Nov found gaps that no saved read shows today (0 proposals on either system, no
 repeated id, no country-coded dummy phone, no item listing its own code as a variant) but a new read could. The worst
 case is V2: a wrong proposal there becomes a platform record. So version 4 is needed before V2 publishes, not for
 15 Nov. The 13 Nov results file and the 15 Nov handover stay on version 3.
 
-**Only stricter.** Version 4 moves pairs from propose to review, or withholds them. It never makes a new proposal.
-That is what makes it checkable without a new held-back set (see "How it is checked").
+**Only stricter.** Version 4 moves pairs from propose to review, drops a review pair, or withholds a pair. It never
+makes a new pair, raises a score or band, or removes a cap. That is what makes it checkable without a new held-back set
+(see "How it is checked"). It holds only because each change is built on top of version 3's grouping, counts and
+conflicts, as worded below. A review on 17 Nov (Fable and Astra, both NO-GO on the 10 Nov wording, confirmed by
+running version 3 with each change patched in) found that R2 and R3 as first written could raise a pair to propose:
+- R2 as "no phone" removed the conflict a dummy phone makes with a real one. Same name, same email, one phone
+  `+91 0000000000`: review ("phone differs") in version 3, propose without the conflict.
+- R3 as "withhold every copy before grouping" removed the ordinary copy from the counts. An email held by 6 records is
+  ignored as shared; with 5 it counts again, and a same-name pair went from review at 0.6 to propose at 1.0. A group of
+  51 same-name records is skipped; with 50 it gave 1,225 new review pairs.
 
 | # | Change | Gap it closes |
 |---|---|---|
-| R1 | Without a shared customer code, a party pair reaches propose only with the same name after normalizing and a shared email or phone. Otherwise it is held at review with a new cap. This takes in the near-name cap, which stays under its own wording. | Different names sharing an email and a phone propose at 1.0 (a household, or one owner of two firms). A blank or placeholder name does the same. Same name, website host and city with no shared contact proposes at 0.95; a website is compared by host only, so two listings on one marketplace share a "website". |
-| R2 | A phone whose last ten digits are one repeated digit is no phone. | `+91 0000000000` counts as a real phone today. |
-| R3 | If any copy of a party id is under a privacy state other than the ordinary one, or none, every copy is withheld, in either order. The report's count says it counts rows. | A second, ordinary copy of a withheld id can be paired. |
+| R1 | Without a shared customer code, a party pair reaches propose only with the same name after normalizing and a shared email or phone. Otherwise, when it scores 0.9 or more, it is held at review with a new cap; a pair below 0.9 gets no new cap, so its published reason does not change. This takes in the near-name cap, which stays under its own wording. "Same name" is the `name` signal, so two blank names never count; "shared email or phone" is a signal, so a value held by more than 5 records does not count. It is a cap only: it changes no score, signal, group or exclusion. | Different names sharing an email and a phone propose at 1.0 (a household, or one owner of two firms). A blank or placeholder name does the same. Same name, website host and city with no shared contact proposes at 0.95; a website is compared by host only, so two listings on one marketplace share a "website". |
+| R2 | A phone whose last ten digits are one repeated digit gives no evidence. It is blanked in the keys used for signals and grouping after the copy used for conflicts is taken, the way a widely shared value is, so it still conflicts with a different phone. `norm_phone` does not change. Two records with the same name and the same such phone go from propose (1.0) to review (0.6); a pair that scored on such a phone with only the same city and postal code (0.65) is dropped. | `+91 0000000000` counts as a real phone today, so two records with it match. |
+| R3 | If any row of a party id is under a privacy state other than the ordinary one, or none, every pair and exclusion touching that id is left out after scoring, in either row order. The ordinary copy still counts toward the shared-value limit (5) and the group limit (50) as in version 3, so leaving it out cannot bring back a value or a group; nothing of it reaches a pair or an exclusion. Ids are compared as text, as version 3 does (a withheld `7` and an ordinary `"7"` are one id); a withheld row with no id is counted and otherwise ignored. `shared_record` is worked out after this, from the pairs that remain. The report counts withheld rows and the pairs left out. The `find_duplicates` docstring ("left out before grouping") is reworded to match. | A second, ordinary copy of a withheld id can be paired. |
 
 The renamed company sharing an email and a phone moves from propose to review. That is the cost of R1, and it is the
 same choice as the household rule for near names. Not in version 4, recorded under "Known gaps" instead:
 - An item listing its own code among its variants is excluded as a variant of its duplicate. Fixing that could make
   new proposals, which this check cannot cover.
 - Unit spellings ("kg" and "Kgs") exclude a pair. Each system uses a fixed list today.
+- A shared customer code and a shared website propose at 0.9 with entirely different names. R1 leaves this, since a
+  customer code belongs to one customer.
 
 **Also, on version 3, docs only (before 15 Nov):** add the gaps above to "Known gaps" and "Never proposed" (the privacy
 line promises more than the code does). Correct:
@@ -200,34 +210,69 @@ line promises more than the code does). Correct:
 - a value held by more than 5 records still counts as a conflict;
 - a near item name also reaches review with a shared category alone;
 - the 50-record skip applies to every grouping key;
-- `tokens` drops combining accents in every script.
+- `tokens` drops the combining accents U+0300 to U+036F wherever they appear and keeps every other combining mark (a
+  Devanagari vowel sign stays).
 
 Docstrings inside `dedupe.py` change with version 4, so no version 3 commit touches the matcher file.
 
 **How it is checked.** There will be no new held-back set from Dheeraj or the instructor (10 Nov). This replaces
 step 7's rule for this version, with the seat lead's agreement:
 1. Before the change, Pravin adds tuning cases for each kind R1 to R3 covers, both duplicates and distinct ones. These
-   are not blind: the same person writes the rules.
+   are not blind: the same person writes the rules. Four of them are required, because no committed set has a
+   country-coded dummy phone or a repeated id, so the comparison in step 3 would otherwise find nothing to show on R2
+   and R3. The expected outcome of each is written down before the change. The first three failed the 10 Nov wording
+   and must come out no higher in version 4 than in version 3:
+   - same name and email, one phone `+91 0000000000`, the other a real phone: review, "phone differs", in both;
+   - 6 records share an email, one of their ids also has a restricted row, and two of the others share a name: that
+     pair stays at review, 0.6;
+   - 51 records with the same one-word name of 3 or more letters (so the name and its word are both groups over 50)
+     and nothing else shared, one id also with a restricted row: no pairs in either;
+   - the plain R3 case: an ordinary and a restricted row of one id, each paired with another record, one pair listed
+     and one excluded, plus a withheld id given as a number beside the same id as text: both pairs gone in version 4.
+   The last three are run in both row orders (restricted row first and second).
 2. Unit tests: one per change, plus the exporter's wording for the new cap in `report.py` and `results.py`. A cap
    without wording stops the export.
-3. Freeze, then compare version 3 and version 4 pair by pair, offline, on the tuning set, both held-back sets and
-   the saved reads. List every pair whose band, score, caps or exclusion changed. **Pass:** no pair gains a band or
-   a new proposal, every change is one R1 to R3 explains, and no withheld id appears in a pair or an exclusion.
-   Measured before the change: R1 would hold 0 of the 17 party proposals across the three labelled sets, so the 6 Nov
-   and 9 Nov figures should carry over unchanged. Record that they are version 3 figures matched by version 4, not
-   a new blind check.
-4. **Fail:** version 1 stays on version 3, with these gaps listed. No retuning against the same sets to pass.
+3. Freeze, then compare version 3 and version 4 offline on the tuning set, both held-back sets and the saved reads,
+   separately per system and entity. Take every pair id found in `pairs` or `excluded` of either version (a dropped
+   pair is only counted, so a new pair shows only this way). For each, list before and after: not listed, excluded,
+   review or propose; score; signals; caps; exclusion reason. Also list `rows`, `withheld_private`, `repeated_ids`,
+   `ignored_shared`, `skipped_blocks` and `dropped`. **Pass:**
+   - no pair is listed only in version 4;
+   - for every pair in both, the score is not higher, the signals are a subset of version 3's and the caps a superset
+     (so a lost conflict shows even when the band does not move); propose above review above not listed, a pair
+     never moves up;
+   - an excluded pair stays excluded with the same reason, or leaves under R2 or R3; it never becomes review or
+     propose;
+   - `rows`, `withheld_private`, `repeated_ids` and `skipped_blocks` are the same in both (a phone held by more than 5
+     records is blanked before grouping, so no phone group reaches the 50 limit); `ignored_shared` may fall only
+     under phone; `dropped` may rise only by pairs R2 explains;
+   - items show no change at all, since R1 to R3 touch parties only;
+   - every other change matches one of these exactly, and anything else fails:
+     - R1: propose to review, caps gain only the new cap, score and signals the same;
+     - R2: the only signal lost is phone, and one record of the pair has a dummy phone;
+     - R3: the pair or exclusion leaves, and one of its ids has a row that is not ordinary;
+     - `shared_record` is as worked out from the pairs that remain;
+   - no withheld id appears in a pair or an exclusion.
+   On the existing sets the expected party difference is empty: no country-coded dummy phone, no repeated id, and R1
+   would hold 0 of the 17 party proposals across the three labelled sets (measured before the change). So the 6 Nov
+   and 9 Nov figures should carry over unchanged, and any difference there is looked at even when it matches a rule
+   above. Record that they are version 3 figures matched by version 4, not
+   a new blind check. A pass shows no regression on these sets; it is not proof for a future read. That comes from
+   how R1 to R3 are built (above) and the three required cases.
+4. **Fail:** version 1 stays on version 3, with these gaps listed. No retuning against the same sets to pass. Staying
+   on version 3 does not clear V2 to publish: these gaps are why version 4 exists. V2 publishes on version 3 only if
+   the seat lead agrees in writing, knowing the gaps.
 
 **Order.** Version 4 goes on its own branch. The exporter refuses reports from another rules version
-(`results.py:116`), so any re-export for step 11 must happen from version 3 first. After version 4 merges, an export
+(`results.py:119`), so any re-export for step 11 must happen from version 3 first. After version 4 merges, an export
 needs a fresh scan of both systems, which needs the person's approval. "The matcher stays at rules version 3" under
 "Version 1" changes only once step 3 passes.
 
 | # | Step | Hours | Needs |
 |---|---|---|---|
 | W1 | Docs-only corrections on version 3 (above) | 1 | |
-| W2 | Tuning cases, R1 to R3 with tests, `RULES_VERSION` "4", cap wording | 3 | 15 Nov handover done |
-| W3 | Version 3 against version 4 comparison, recorded here | 1 | W2 frozen |
+| W2 | Tuning cases (with the three required ones), R1 to R3 with tests, `RULES_VERSION` "4", cap wording | 3.5 | 15 Nov handover done |
+| W3 | Version 3 against version 4 comparison over every pair id in either version: counts and the pass result recorded here, the per-pair listing in `local/` (pair ids from the saved reads are platform data) | 1.5 | W2 frozen |
 | W4 | Rescan both systems, re-export, review any changed pair | 1 | W3 passed; the person's approval |
 
 ## Held-back set (step 4b)
