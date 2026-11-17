@@ -1,5 +1,6 @@
 import datetime as dt
 import json
+from pathlib import Path
 
 import pytest
 
@@ -67,6 +68,9 @@ def test_entries_follow_the_instructors_format(setup):
     assert pairs[("q1", "q2")]["reason"].endswith("held at review: different phone numbers")
     assert pairs[("i1", "i2")]["kind"] == "item"
     assert [e["kind"] for e in found] == sorted((e["kind"] for e in found), key=["party", "item"].index)
+    readme = (Path(__file__).parents[1] / "README.md").read_text()
+    sample = readme.split("Example: the export of the made-up records", 1)[1].split("```json\n", 1)[1]
+    assert found == json.loads(sample.split("```", 1)[0])  # the README example is this export, word for word
     counts = json.loads(captured.out[:captured.out.rindex("}") + 1])
     assert counts["keystone"]["party"] == {"listed": 4, "left_out_rejected": 0, "left_out_test_records": 1,
                                            "written": 3}

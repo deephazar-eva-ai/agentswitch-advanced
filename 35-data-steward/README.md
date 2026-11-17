@@ -51,6 +51,25 @@ values. Pairs a person labelled "rejected" and test-record pairs are left out. A
 system and kind (listed, left out, written) and the number of rejected labels that match no listed pair: check it is
 0 before committing the file.
 
+Example: the export of the made-up records in `tests/` (ids such as `p1` are made up; these are not pairs from
+either system). `tests/test_results.py` checks that this block is what the exporter writes for those records.
+```json
+[
+  {"kind": "party", "id_a": "p1", "id_b": "p2", "confidence": 1.0, "reason": "same email; matching name"},
+  {"kind": "party", "id_a": "p3", "id_b": "p4", "confidence": 0.6, "reason": "matching name"},
+  {"kind": "party", "id_a": "q1", "id_b": "q2", "confidence": 0.6,
+   "reason": "same email; matching name; held at review: different phone numbers"},
+  {"kind": "item", "id_a": "i1", "id_b": "i2", "confidence": 0.6,
+   "reason": "matching name; same unit of measure; held at review: different item codes"}
+]
+```
+The first pair is proposed (score 0.9 or more) and keeps its score. The other three are review pairs, listed at 0.6;
+`q1` and `q2` score 1.0 but are held at review because their phone numbers differ.
+
+The committed file, made from the 9 Nov reports, holds 1 item pair and no party pair. No party pair reached propose,
+and each of the 78 party pairs at review was either labelled rejected by a person (16, Suryodaya) or between records
+left by earlier test runs (62, Keystone). Pull request #25 gives the counts per system and kind.
+
 Two optional input files in `local/` (git-ignored; the run reads them and never writes them). To reproduce another
 person's report, get both from them privately:
 
