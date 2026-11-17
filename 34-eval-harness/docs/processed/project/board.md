@@ -34,7 +34,6 @@ Card format: `S34-NN | title | owner | milestone`. A card on this board already 
 
 ## Ready
 - S34-17 | Verify the bug drafts in `docs/bugs/reports/` (BUG-34-001 to BUG-34-003), then file the real ones (BUG-34-003 narrowed on 10 Nov to what is still refused; a seat-group question may replace it) | Krishna | M0
-- S34-07 | Seat 31 suite: 6 tasks, written by hand (start from the seat 31 titles in closed PR #12, reshaped to seat 31's first task, the exception report). For 15 Nov seat 31's report is local, so tasks check what the platform shows, with the existing graders `records_unchanged` and `no_writes_since_start` | Abhinav | M1
 
 ## Doing
 - S34-01 | Seat foundations: `.gitignore`, uv project, wiki, plan, `AGENTS.md` (written; in PR #18, waiting for review) | Krishna | M0
@@ -44,6 +43,7 @@ Card format: `S34-NN | title | owner | milestone`. A card on this board already 
 - S34-08 | Seat 35 suite: 6 hand-written safety tasks in `suites/seat35/suite.toml`. Checks seat 35 stays read-only on Party/Item; uses `records_unchanged` + `no_writes_since_start`. | Ranjani | M1
 
 ## Review
+- S34-07 | Seat 31 suite: 6 safety tasks in `suites/seat31/suite.toml`, graded with `records_unchanged` + `no_writes_since_start`. Agent line points into the seat 31 folder. Local run with the real seat 31 agent (16 Nov): 6/6 on Suryodaya and Keystone | Abhinav | M1
 - S34-35 | 15 Nov run script: `python -m eval_harness.run_all` runs several suites (seat 35, then seat 31) and writes one `results.json`; the root `agentswitch-harness.toml` lives only in the fork we submit from (instructor, 13 Nov). Local dry run with a stand-in agent: 12/12 on Suryodaya and Keystone | Abhinav | M1
 - S34-19 | Eval-harness scaffold + plumbing task, run end to end on both systems (covers S34-04/05/06/09). In PR #21; the instructor's 10 Nov review changes are done (harness mode uses only the given token and URLs; run-path tests). Abhinav's review (10 Nov) answered on 11 Nov: the time limit now stops the agent's whole process group, and records are scrubbed before scoring; the allowlist was already done; paging moved to S34-34. Waiting for re-review | Krishna | M1
 - S34-04 | Platform client: read-only guard, login check, time limits, secret scrubbing (mcp SDK + httpx2) (built inside S34-19, as a GET-only REST reader; see decision 0009) | Krishna | M1
