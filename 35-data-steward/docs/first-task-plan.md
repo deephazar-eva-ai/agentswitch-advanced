@@ -158,7 +158,7 @@ and orphan checks, and the 12-task suite (30 Nov).
 ## Version 1 (30 Nov)
 
 Every task in the suite passes only on platform state after the run, so version 1 needs a proposal record on the
-platform. The matcher stays at rules version 3.
+platform. The matcher is rules version 4 (W3 passed 17 Nov) once its branch merges; until then, version 3.
 
 | # | Step | Hours | Needs |
 |---|---|---|---|
@@ -291,9 +291,15 @@ against version 3 as frozen at `457799b`, with the pass rules in step 3. **Pass 
 - The checker was also run against the 10 Nov wording of R2 and R3 on the required cases and failed both, so it can
   catch the faults it is meant to.
 
-The checker and its per-pair listing are in `local/` (`w3_compare.py`, `w3-v3-v4.json`). Next: W4 needs the person's
-approval for a fresh scan of both systems; until then the committed results file stays on version 3, and an export
-from this branch refuses version 3 reports.
+The checker and its per-pair listing are in `local/` (`w3_compare.py`, `w3-v3-v4.json`).
+
+**W4 (17 Nov), with the person's approval.** A fresh read-only scan of both systems at rules version 4 read every
+table whole (Suryodaya 233 parties and 104 items, Keystone 147 parties and 28 items), with nothing withheld and no
+repeated id. Every pair, score, signal, cap, band and exclusion is the same as in the 17 Nov version 3 reports (kept
+in `local/v3-2026-11-17/`); the only report differences are the rules version and the new withheld-pairs count, 0
+everywhere. The re-export wrote `results/dedupe_pairs.json` byte for byte as committed (63 pairs, all at review: 62
+Keystone party pairs between test-run records and 1 Suryodaya item pair), so no pair needed review and the file does
+not change.
 
 ## Held-back set (step 4b)
 
