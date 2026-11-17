@@ -193,7 +193,7 @@ running version 3 with each change patched in) found that R2 and R3 as first wri
 | # | Change | Gap it closes |
 |---|---|---|
 | R1 | Without a shared customer code, a party pair reaches propose only with the same name after normalizing and a shared email or phone. Otherwise, when it would propose (0.9 or more and no other cap), it is held at review with a new cap; any other pair gets no new cap, so no review pair's published reason changes. This takes in the near-name cap, which stays under its own wording. "Same name" is the `name` signal, so two blank names never count; "shared email or phone" is a signal, so a value held by more than 5 records does not count. It is a cap only: it changes no score, signal, group or exclusion. | Different names sharing an email and a phone propose at 1.0 (a household, or one owner of two firms). A blank or placeholder name does the same. Same name, website host and city with no shared contact proposes at 0.95; a website is compared by host only, so two listings on one marketplace share a "website". |
-| R2 | A phone whose last ten digits are one repeated digit gives no evidence. It is blanked in the keys used for signals and grouping after the copy used for conflicts is taken, the way a widely shared value is, so it still conflicts with a different phone. `norm_phone` does not change. Two records with the same name and the same such phone go from propose (1.0) to review (0.6); a pair that scored on such a phone with only the same city and postal code (0.65) is dropped. | `+91 0000000000` counts as a real phone today, so two records with it match. |
+| R2 | A phone whose last ten digits are one repeated digit gives no evidence. It is blanked in the keys used for signals and grouping after the copy used for conflicts is taken, the way a widely shared value is, so it still conflicts with a different phone. `norm_phone` does not change. Two records with the same name and the same such phone go from propose (1.0) to review (0.6); a pair that scored on such a phone with only the same city and postal code (0.65) falls below review and is no longer listed (and is not even compared when the phone was its only shared key). | `+91 0000000000` counts as a real phone today, so two records with it match. |
 | R3 | If any row of a party id is under a privacy state other than the ordinary one, or none, every pair and exclusion touching that id is left out after scoring, in either row order. The ordinary copy still counts toward the shared-value limit (5) and the group limit (50) as in version 3, so leaving it out cannot bring back a value or a group; nothing of it reaches a pair or an exclusion. Ids are compared as text, as version 3 does (a withheld `7` and an ordinary `"7"` are one id); a withheld row with no id is counted and otherwise ignored. `shared_record` is worked out after this, from the pairs that remain. The report counts withheld rows and the pairs left out. The `find_duplicates` docstring ("left out before grouping") is reworded to match. | A second, ordinary copy of a withheld id can be paired. |
 
 The renamed company sharing an email and a phone moves from propose to review. That is the cost of R1, and it is the
@@ -203,6 +203,10 @@ same choice as the household rule for near names. Not in version 4, recorded und
 - Unit spellings ("kg" and "Kgs") exclude a pair. Each system uses a fixed list today.
 - A shared customer code and a shared website propose at 0.9 with entirely different names. R1 leaves this, since a
   customer code belongs to one customer.
+- A saved label for a pair that R3 now leaves out is listed among the labels with no matching pair, so its pair id,
+  which names the withheld id, can appear in the report in `local/`. That report is owner-only and git-ignored and
+  already holds party data; the id is one the person wrote. It never reaches the pair list, the results file or
+  standard output.
 
 **Also, on version 3, docs only (before 15 Nov):** add the gaps above to "Known gaps" and "Never proposed" (the privacy
 line promises more than the code does). Correct:
@@ -218,7 +222,8 @@ Docstrings inside `dedupe.py` change with version 4, so no version 3 commit touc
 **How it is checked.** There will be no new held-back set from Dheeraj or the instructor (10 Nov). This replaces
 step 7's rule for this version, with the seat lead's agreement:
 1. Before the change, Pravin adds tuning cases for each kind R1 to R3 covers, both duplicates and distinct ones. These
-   are not blind: the same person writes the rules. Four of them are required, because no committed set has a
+   are not blind: the same person writes the rules. Four of them are required, written as unit tests in
+   `tests/test_dedupe.py` (the tuning records cover R1 to R3 apart from the limits), because no committed set has a
    country-coded dummy phone or a repeated id, so the comparison in step 3 would otherwise find nothing to show on R2
    and R3. The expected outcome of each is written down before the change. The first three failed the 10 Nov wording
    and must come out no higher in version 4 than in version 3:
@@ -245,7 +250,8 @@ step 7's rule for this version, with the seat lead's agreement:
      propose;
    - `rows`, `withheld_private`, `repeated_ids` and `skipped_blocks` are the same in both (a phone held by more than 5
      records is blanked before grouping, so no phone group reaches the 50 limit); `ignored_shared` may fall only
-     under phone; `dropped` may rise only by pairs R2 explains;
+     under phone; `dropped` may rise only by pairs R2 explains, and may fall where a dummy phone was a pair's only
+     shared key, since R2 then never compares the pair;
    - items show no change at all, since R1 to R3 touch parties only;
    - every other change matches one of these exactly, and anything else fails:
      - R1: propose to review, caps gain only the new cap, score and signals the same;
@@ -264,7 +270,7 @@ step 7's rule for this version, with the seat lead's agreement:
    the seat lead agrees in writing, knowing the gaps.
 
 **Order.** Version 4 goes on its own branch. The exporter refuses reports from another rules version
-(`results.py:119`), so any re-export for step 11 must happen from version 3 first. After version 4 merges, an export
+(`results.py:121`), so any re-export for step 11 must happen from version 3 first. After version 4 merges, an export
 needs a fresh scan of both systems, which needs the person's approval. "The matcher stays at rules version 3" under
 "Version 1" changes only once step 3 passes.
 
@@ -276,7 +282,7 @@ needs a fresh scan of both systems, which needs the person's approval. "The matc
 | W4 | Rescan both systems, re-export, review any changed pair | 1 | W3 passed; the person's approval |
 
 **W2 and W3 status (17 Nov).** W2 is built at commit `1f1aea2` (branch `seat35/rules-v4`): R1 to R3, the four
-required cases and per-rule tests, and 11 tuning records (p48 to p57, p56 read twice). W3 ran offline at that commit
+required cases and per-rule tests in `tests/test_dedupe.py`, and 11 tuning records (p48 to p57, p56 read twice). W3 ran offline at that commit
 against version 3 as frozen at `457799b`, with the pass rules in step 3. **Pass on all 18 runs**, no failure:
 - Tuning set, parties: 4 changes, all on the new records (2 by R1 and 1 by R2, each propose to review; 1 left out
   by R3). Propose went from 8 to 4, review from 13 to 16. On the 47 earlier records the figures are unchanged (4

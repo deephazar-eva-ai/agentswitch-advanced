@@ -496,10 +496,12 @@ def test_r3_every_pair_and_exclusion_of_a_withheld_id_is_left_out(restricted_fir
     assert result["withheld_pairs"] == 2 and result["withheld_private"] == 1 and result["repeated_ids"] == 0
 
 
-def test_r3_ids_are_compared_as_text_and_a_withheld_row_without_an_id_is_counted():
-    rows = [party(7, "Lena Ortiz", email="l@ortiz.example", privacy_state="restricted"),
-            party("7", "Lena Ortiz", email="l@ortiz.example"), party("8", "Lena Ortiz", email="l@ortiz.example"),
-            {"name": "No Id", "privacy_state": "restricted"}]
+@pytest.mark.parametrize("restricted_first", [True, False])
+def test_r3_ids_are_compared_as_text_and_a_withheld_row_without_an_id_is_counted(restricted_first):
+    copies = [party(7, "Lena Ortiz", email="l@ortiz.example", privacy_state="restricted"),
+              party("7", "Lena Ortiz", email="l@ortiz.example")]
+    rows = (copies if restricted_first else copies[::-1]) + [
+        party("8", "Lena Ortiz", email="l@ortiz.example"), {"name": "No Id", "privacy_state": "restricted"}]
     result = dedupe.find_duplicates("party", rows)
     assert result["pairs"] == [] and result["withheld_private"] == 2 and result["withheld_pairs"] == 1
 

@@ -41,7 +41,8 @@ SIGNALS = {
 # Why a pair is held at review.
 CAPS = {
     "names differ slightly": "similar names without a matching customer code", "roles differ": "different roles",
-    "name and contact not both shared": "without a matching customer code, not the same name with the same email or phone",
+    "name and contact not both shared":
+        "without a matching customer code, not the same name with the same email or phone",
     "customer_code differs": "different customer codes", "email differs": "different emails",
     "phone differs": "different phone numbers", "code differs": "different item codes", "sku differs": "different SKUs",
 }
