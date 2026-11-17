@@ -91,7 +91,8 @@ uv run python -m data_steward.results  # offline: saved reports in local/ -> res
   ids are platform data too. Standard output is counts only, safe for a pull request description; never add ids to it.
 - `python -m data_steward.results` turns the saved reports into `results/dedupe_pairs.json` in the instructor's
   format, with no platform call. It lists propose and review pairs except those a person labelled "rejected" (read
-  from `local/dedupe-labels.json` at export time) and test-record pairs. Confidence is a propose pair's score, or a
+  from `local/dedupe-labels.json` at export time). Test-record pairs are listed, their reason ending "test-run
+  records" (repeated test-run records count as duplicates since 17 Nov). Confidence is a propose pair's score, or a
   review pair's score capped at 0.6 (so every review pair gets 0.6 today). The reason is built only from fixed wording
   for the matcher's signals and caps; one without wording stops the export. It checks every field it reads and
   refuses a report from another rules version, with a cut-off table or with a malformed pair. A failure prints one

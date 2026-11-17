@@ -46,10 +46,11 @@ with no platform call:
 uv run python -m data_steward.results                        # both systems; or --instance suryodaya
 ```
 One entry per proposed pair: `kind`, `id_a`, `id_b`, `confidence` and `reason`, and no names, emails or other record
-values. Pairs a person labelled "rejected" and test-record pairs are left out. A review pair's confidence is capped at
-0.6, since a pair held at review can score 1.0; today every review pair gets 0.6. Standard output gives counts per
-system and kind (listed, left out, written) and the number of rejected labels that match no listed pair: check it is
-0 before committing the file.
+values. Pairs a person labelled "rejected" are left out. Test-record pairs are listed, with "test-run records" at the
+end of the reason: since 17 Nov, repeated test-run records count as duplicates. A review pair's confidence is capped
+at 0.6, since a pair held at review can score 1.0; today every review pair gets 0.6. Standard output gives counts per
+system and kind (listed, left out, written, test-record pairs written) and the number of rejected labels that match
+no listed pair: check it is 0 before committing the file.
 
 Example: the export of the made-up records in `tests/` (ids such as `p1` are made up; these are not pairs from
 either system). `tests/test_results.py` checks that this block is what the exporter writes for those records.
@@ -57,18 +58,21 @@ either system). `tests/test_results.py` checks that this block is what the expor
 [
   {"kind": "party", "id_a": "p1", "id_b": "p2", "confidence": 1.0, "reason": "same email; matching name"},
   {"kind": "party", "id_a": "p3", "id_b": "p4", "confidence": 0.6, "reason": "matching name"},
+  {"kind": "party", "id_a": "p5", "id_b": "p6", "confidence": 0.6, "reason": "matching name; test-run records"},
   {"kind": "party", "id_a": "q1", "id_b": "q2", "confidence": 0.6,
    "reason": "same email; matching name; held at review: different phone numbers"},
   {"kind": "item", "id_a": "i1", "id_b": "i2", "confidence": 0.6,
    "reason": "matching name; same unit of measure; held at review: different item codes"}
 ]
 ```
-The first pair is proposed (score 0.9 or more) and keeps its score. The other three are review pairs, listed at 0.6;
-`q1` and `q2` score 1.0 but are held at review because their phone numbers differ.
+The first pair is proposed (score 0.9 or more) and keeps its score. The other four are review pairs, listed at 0.6;
+`p5` and `p6` are test-run records, and `q1` and `q2` score 1.0 but are held at review because their phone numbers
+differ.
 
-The committed file, made from the 9 Nov reports, holds 1 item pair and no party pair. No party pair reached propose,
-and each of the 78 party pairs at review was either labelled rejected by a person (16, Suryodaya) or between records
-left by earlier test runs (62, Keystone). Pull request #25 gives the counts per system and kind.
+The committed file, made from the 17 Nov reports, holds 63 pairs, all at review (0.6): 62 Keystone party pairs
+between records left by earlier test runs, and 1 Suryodaya item pair. No pair reached propose. The 16 Suryodaya party
+pairs at review are left out because they are labelled rejected. Pull request #25 gives the counts per system and
+kind.
 
 Two optional input files in `local/` (git-ignored; the run reads them and never writes them). To reproduce another
 person's report, get both from them privately:

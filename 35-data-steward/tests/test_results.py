@@ -72,14 +72,14 @@ def test_entries_follow_the_instructors_format(setup):
     sample = readme.split("Example: the export of the made-up records", 1)[1].split("```json\n", 1)[1]
     assert found == json.loads(sample.split("```", 1)[0])  # the README example is this export, word for word
     counts = json.loads(captured.out[:captured.out.rindex("}") + 1])
-    assert counts["keystone"]["party"] == {"listed": 4, "left_out_rejected": 0, "left_out_test_records": 1,
-                                           "written": 3}
+    assert counts["keystone"]["party"] == {"listed": 4, "left_out_rejected": 0, "written": 4,
+                                           "written_test_records": 1}
 
 
-def test_test_record_excluded_and_private_pairs_are_left_out(setup):
+def test_test_record_pairs_are_listed_and_excluded_and_private_pairs_are_left_out(setup):
     _, _, _, run = setup
     pairs = by_pair(run()[0])
-    assert ("p5", "p6") not in pairs  # test-run records
+    assert pairs[("p5", "p6")]["reason"].endswith("; test-run records")  # they count since 17 Nov
     assert ("p0", "p9") not in pairs  # ruled out: individual and organisation
     assert not any("p7" in key for key in pairs)  # restricted privacy state
 

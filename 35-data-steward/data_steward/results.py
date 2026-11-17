@@ -10,8 +10,9 @@ made only from this module's fixed wording for the matcher's signals and caps, a
 stops the export rather than pass an unknown value through.
 
 Which pairs: every propose and review pair in the reports, except a pair a person labelled "rejected" (labels are
-read now from local/dedupe-labels.json, not from the report, whose copy is as old as the scan) and a test-record pair
-(either record carries a confirmed test-run tag). Ruled-out and low-scoring pairs are never in a report's list.
+read now from local/dedupe-labels.json, not from the report, whose copy is as old as the scan). A test-record pair
+(either record carries a confirmed test-run tag) is listed too, since 17 Nov, and its reason says so: repeated
+test-run records count as duplicates. Ruled-out and low-scoring pairs are never in a report's list.
 
 Confidence: a propose pair's score; a review pair's score capped at the review cut (0.6), since a pair held at review
 can score 1.0. Scores are rule scores, not probabilities.
@@ -79,29 +80,31 @@ def reason(pair: dict) -> str:
     text = "; ".join(SIGNALS[s] for s in pair["signals"])
     if pair["caps"]:
         text += "; held at review: " + ", ".join(CAPS[c] for c in pair["caps"])
+    if pair["tagged"]:
+        text += "; test-run records"
     return text
 
 
 def entries(saved: dict, labels: dict) -> tuple[list[dict], dict, set]:
-    """One report's entries, its counts per kind (listed, rejected, test records, written) and its pair ids."""
+    """One report's entries, its counts per kind (listed, rejected, written, test records written) and its pair
+    ids."""
     out, counts, ids = [], {}, set()
     for kind in report.TABLES:
         listed = saved["sections"][kind]["proposals"]
         if not isinstance(listed, list):
             raise ExportError("a report's pair list is malformed")
-        n = {"listed": len(listed), "left_out_rejected": 0, "left_out_test_records": 0, "written": 0}
+        n = {"listed": len(listed), "left_out_rejected": 0, "written": 0, "written_test_records": 0}
         for p in listed:
             _check_pair(p)
             ids.add(p["id"])
             if labels.get(p["id"], {}).get("label") == "rejected":
                 n["left_out_rejected"] += 1
-            elif p["tagged"]:
-                n["left_out_test_records"] += 1
             else:
                 id_a, id_b = sorted(p["ids"])
                 out.append({"kind": kind, "id_a": id_a, "id_b": id_b, "confidence": confidence(p),
                             "reason": reason(p)})
                 n["written"] += 1
+                n["written_test_records"] += p["tagged"]
         counts[kind] = n
     return out, counts, ids
 
