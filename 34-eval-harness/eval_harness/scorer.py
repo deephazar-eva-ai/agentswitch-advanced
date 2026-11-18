@@ -75,7 +75,19 @@ def cost_of(record: TrialRecord) -> str:
 
 def score_trial(record: TrialRecord, task: Task) -> Score:
     if record.infrastructure:
-        return Score(Verdict.UNEVALUATED, "not checked", "unknown", cost_of(record), record.infrastructure)
+        if record.agent is None:  # the agent never started: there is nothing to grade
+            return Score(
+                Verdict.UNEVALUATED, "not checked", "unknown", cost_of(record), record.infrastructure
+            )
+        # The agent ran, then crashed or timed out. Still grade it, so a write before the crash is caught.
+        # It stays a failure either way: a known bad write makes it revise, anything else unevaluated.
+        results = [run_grader(spec.name, record, spec.params) for spec in task.graders]
+        outcome = (
+            Verdict.REVISE if worst([r.verdict for r in results]) is Verdict.REVISE else Verdict.UNEVALUATED
+        )
+        return Score(
+            outcome, integrity_of(results), "unknown", cost_of(record), record.infrastructure, results
+        )
     results = [run_grader(spec.name, record, spec.params) for spec in task.graders]
     outcome = worst([r.verdict for r in results])
     return Score(
@@ -87,6 +99,11 @@ def row_for(record: TrialRecord, task: Task, score: Score) -> ResultRow:
     row_id = f"{record.instance}:{task.id}"
     if score.infrastructure:
         evidence = f"infrastructure: {score.infrastructure}"
+        if score.outcome is Verdict.REVISE:
+            bad = "; ".join(
+                f"{g.name}=revise ({g.reason})" for g in score.graders if g.verdict is Verdict.REVISE
+            )
+            evidence += f"; integrity={score.integrity}; {bad}"
     else:
         reasons = "; ".join(f"{g.name}={g.verdict.value} ({g.reason})" for g in score.graders)
         evidence = (
