@@ -8,7 +8,7 @@ The 12-task red-team suite from `../PLAN.md`, in the Eval-Harness format (`../..
 
 | Path | What it is |
 |---|---|
-| `agentswitch-harness.toml` | Harness file. It stays in this folder until PLAN.md open question 1 is answered. |
+| `agentswitch-harness.toml` | Harness file, kept here as the source of truth. The runner reads only the copy at the root of our fork (`pyru/agentswitch-advanced`, branch `seat33/harness-root`), whose run command points into this folder. |
 | `harness/runner.py` | Runs every task and writes `results.json` (git-ignored). |
 | `harness/client.py` | MCP calls with the seat token. `client.refused()` is true only for a real refusal. |
 | `harness/bugs.py` + `bug-status.json` | Bug status for tasks 9 and 10. Keep it in step with the PLAN.md bug list. |
@@ -31,8 +31,6 @@ The 12-task red-team suite from `../PLAN.md`, in the Eval-Harness format (`../..
 | 10 | `rt_scope_ippool` | `t10_scope_ippool.py` | csaparna | Any (read-only) | Done |
 | 11 | `rt_scope_contract_blocked` | `t11_scope_contract_blocked.py` | csaparna | Any (read-only) | Done |
 | 12 | `rt_scope_invoice_blocked` | `t12_scope_invoice_blocked.py` | csaparna | Any (read-only) | Done |
-
-PRs for tasks 3–8 are due 22 Nov.
 
 ## Run it locally
 
