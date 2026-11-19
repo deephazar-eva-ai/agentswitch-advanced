@@ -84,6 +84,7 @@ def accounts_digest(rep, matches, accounts_email=None):
         return None
     by_payment = {m["payment"]: m for m in matches}
     partly = sum(1 for r in inv_rows if r.get("payment_state") == report.PARTIALLY_PAID)
+    credited = sum(1 for r in inv_rows if r.get("payment_state") == report.PARTIALLY_CREDITED)
     inv_count = str(len(inv_rows)) if invoices["status"] == "ok" else "not available"
     test = lambda r: "test data" if r.get("fixture") else ""
 
@@ -96,7 +97,8 @@ def accounts_digest(rep, matches, accounts_email=None):
         "Summary",
         f"- Orders not invoiced: {len(order_rows)}" + (f", total {_totals(order_rows, 'grand_total')}" if order_rows else ""),
         f"- Invoices overdue: {inv_count}" + (f", {_totals(inv_rows, 'outstanding')} outstanding" if inv_rows else "")
-        + (f" ({partly} partially paid)" if partly else ""),
+        + (f" ({'; '.join(t for t in (f'{partly} partially paid' if partly else '', f'{credited} partially credited' if credited else '') if t)})"
+           if partly or credited else ""),
         f"- Payments not applied: {len(pay_rows)}" + (f", {_totals(pay_rows, 'unallocated')} unallocated" if pay_rows else ""),
         "Amounts in different currencies are shown separately, never added together.",
         "",
@@ -222,8 +224,13 @@ def _amount(v, currency):
 def _reminder_line(r, cur):
     """One invoice line in a customer reminder; a partly paid invoice says so (instructor answer 11)."""
     line = f"- Invoice {r['number']}, due {r['due_date']}, {_amount(r['outstanding'], cur)} outstanding"
+    credit = r.get("credits_applied")
+    credit_text = f"credit of {_amount(credit, cur)} applied" if credit is not None and credit > 0 else ""
     if r.get("payment_state") == report.PARTIALLY_PAID:
-        line += f" (partially paid: {_amount(r.get('amount_paid'), cur)} received, thank you)"
+        line += f" (partially paid: {_amount(r.get('amount_paid'), cur)} received, thank you"
+        line += f"; {credit_text})" if credit_text else ")"
+    elif r.get("payment_state") == report.PARTIALLY_CREDITED and credit_text:
+        line += f" ({credit_text})"   # bug hunt B4: a credit note is not "unpaid"
     return line
 
 

@@ -34,9 +34,10 @@ class Matching(unittest.TestCase):
         self.assertEqual([d["number"] for d in docs], ["A", "D"])
 
     def test_same_customer_exact_amount_first(self):
+        inr = {"parties": {"P1": "INR", "P2": "INR"}, "companies": {}}   # B3: same amount needs a known currency
         docs = matching.order_documents([order("far", 900.0), order("exact", 500.0), order("near", 510.0),
-                                         order("other", 500.0, party="P2")])
-        m = matching.candidate_matches([pay_row("PAY1", 500.0)], docs)[0]
+                                         order("other", 500.0, party="P2")], inr)
+        m = matching.candidate_matches([dict(pay_row("PAY1", 500.0), currency="INR")], docs)[0]
         self.assertEqual([c["number"] for c in m["candidates"]], ["exact", "near", "far"])
         self.assertTrue(m["candidates"][0]["exact"])
         self.assertEqual(matching.summary([m]), {"payments": 1, "with_candidates": 1, "with_exact_match": 1})
@@ -56,6 +57,13 @@ class Matching(unittest.TestCase):
         self.assertEqual([(c["number"], c["exact"]) for c in m["candidates"]],
                          [("inr", True), ("inr-near", False), ("usd", False)])  # 500 USD is not "same amount"
         self.assertEqual(m["currency"], "INR")
+
+    def test_unknown_currency_is_never_same_amount(self):
+        # Bug hunt B3: a payment and an invoice of 100 with no currency are not "same amount".
+        docs = matching.order_documents([order("nocur", 100.0)], {"parties": {}, "companies": {}})
+        m = matching.candidate_matches([dict(pay_row("PAY1", 100.0), currency=None)], docs)[0]
+        self.assertEqual([(c["number"], c["exact"]) for c in m["candidates"]], [("nocur", False)])
+        self.assertEqual(matching.summary([m])["with_exact_match"], 0)
 
     def test_documents_take_the_customer_currency(self):
         docs = matching.order_documents([order("A", 10)], {"parties": {"P1": "INR"}, "companies": {}})
@@ -96,6 +104,21 @@ class Drafts(unittest.TestCase):
         self.assertIn("- Invoice INV-1, due 2026-11-01, 10.00 INR outstanding (partially paid: 90.00 INR received, thank you)", body)
         self.assertIn("- Invoice INV-2, due 2026-11-01, 50.00 INR outstanding\n", body)
         self.assertIn("Total outstanding: 60.00 INR.", body)
+
+    def test_reminder_mentions_credit_notes(self):
+        # Bug hunt B4: a credit note is mentioned, and a credited invoice is not presented as unpaid.
+        cred = dict(inv_row("INV-1", 50.0), amount_paid=0.0, credits_applied=50.0, payment_state="partially credited")
+        both = dict(inv_row("INV-2", 10.0), amount_paid=60.0, credits_applied=30.0, payment_state="partially paid")
+        body = drafts.overdue_reminders([cred, both], {"P1": {"email": "ap@acme.example"}})[0][0]["body_text"]
+        self.assertIn("- Invoice INV-1, due 2026-11-01, 50.00 INR outstanding (credit of 50.00 INR applied)\n", body)
+        self.assertIn("- Invoice INV-2, due 2026-11-01, 10.00 INR outstanding "
+                      "(partially paid: 60.00 INR received, thank you; credit of 30.00 INR applied)", body)
+
+    def test_digest_counts_partially_credited(self):
+        rows = [dict(inv_row("INV-1", 50.0), days_overdue=3, payment_state="partially credited"),
+                dict(inv_row("INV-2", 10.0), days_overdue=3, payment_state="partially paid")]
+        body = drafts.accounts_digest(full_rep(inv_rows=rows), [])["body_text"]
+        self.assertIn("- Invoices overdue: 2, 60.00 INR outstanding (1 partially paid; 1 partially credited)", body)
 
     def test_payload_is_always_a_draft_with_sender_and_company(self):
         d = {"to": "x@y.example", "subject": "s", "body_text": "b"}

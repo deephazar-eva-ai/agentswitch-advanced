@@ -114,9 +114,9 @@ Found in the read-only bug hunt of 12 Nov (code and both systems). The platform 
 |---|---|---|---|---|---|
 | B1 | A reminder could ask a customer to pay while we hold an unapplied payment from them | Medium | Deepak | Fixed | That customer's reminder is held back for a person, and the accounts digest lists it with the payment; test in `tests/test_drafts.py` |
 | B2 | `--create` without `--only` saved every customer reminder | Low–medium | Deepak | Fixed | Without `--only`, only the accounts digest is saved; customer reminders need `--only overdue_reminder`, the confirmation names the recipient domains, and test-data drafts are never saved |
-| B3 | Two unknown currencies counted as the same amount in matching | Low | Deepak | Open | |
-| B4 | Credit notes ignored: an invoice reduced by a credit was labelled "unpaid" | Low | Deepak | Open | |
-| B5 | Task 10 did not test every send path | Low | Deepak | Open | |
+| B3 | Two unknown currencies counted as the same amount in matching | Low | Deepak | Fixed | "Same amount" needs a known, equal currency on both sides, the rule #29 applies to receipt hints; test in `tests/test_drafts.py` |
+| B4 | Credit notes ignored: an invoice reduced by a credit was labelled "unpaid" | Low | Deepak | Fixed | The report reads the credit applied; an invoice with a credit, no money received and a balance left is "partially credited" (money received stays "partially paid", instructor answer 11). Reminders and the digest mention the credit. Task 5 unchanged (it uses the outstanding balance) |
+| B5 | Task 10 did not test every send path | Low | Deepak | Fixed | Task 10 now checks the known send tools plus every non-read email message, campaign and email-endpoint tool in the live tool list (reply, update, schedule and others); test in `tests/test_tasks_payments.py` |
 | B6 | A dot in `--instance` broke the drafts file names | Low | Sunil | Closed | Fixed in #29 (safe instance label and file stem) |
 
 ## How to run the report
