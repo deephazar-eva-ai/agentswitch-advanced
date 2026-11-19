@@ -89,6 +89,16 @@ Every task builds its inputs from the copy at runtime and is judged on the data,
 2. ~~Keystone has no payments.~~ Answered 7 Nov: expected. The Keystone suite task for section 3 passes on an empty section.
 3. ~~What N should the daily report use~~ for "orders not invoiced after N days"? We default to 7 and make it a setting. **Answered 10 Nov:** N is a parameter; recommended delay buckets are 0–7, 8–14, 15–30, 31–60 and over 60 days after the order is deliverable.
 
+## Review follow-ups (P2)
+Two nonblocking findings from the 12 Nov review of #35, fixed in #29 (see `docs/p2-review-fixes.md`). #35's approval covered code review and offline tests only, so each is closed after a live, read-only re-check on both systems.
+
+| Item | Fix | Live re-check (19 Nov, read only, both systems) | Status |
+|---|---|---|---|
+| Receipt currency: `same_amount` needs the same known currency; receipt totals split by currency; unknown currency gives a null total | #29 | Every unapplied payment's receipt history recounted from raw customer, company and receipt records matches the report | Closed |
+| Task 7 (`unapplied_payments`) verified independently of the report | #29 | Task 7 passes: rows, groups and totals match a recount from raw payment, customer and company records, never from report rows | Closed |
+
+Both systems are single-currency today, so the mixed- and unknown-currency paths are covered by the offline regression tests, not by live data. Figures are in `private/platform-notes.md`.
+
 ## Bug list
 One file per finding in `findings/`, in the course format (`BUG_REPORT_FORMAT.md`). Exact requests and replies go to the course team as text, never in the repo. A bug is closed only with a final status and a resolution note.
 
