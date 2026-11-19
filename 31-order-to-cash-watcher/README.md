@@ -87,6 +87,7 @@ python3 -m o2c.drafts --instance suryodaya --out reports/ --create --only overdu
 - Without `--create`, nothing is created: `reports/<instance>-<date>-drafts.md` is where a person reviews every proposed draft.
 - `--create` saves only the **accounts digest**. Customer reminders are saved only with `--only overdue_reminder`.
 - Before saving, it shows how many drafts go to which recipient domains and waits for `save drafts` to be typed. Any other answer saves nothing.
+- A draft that is already waiting unsent in the mailbox (same recipient and subject) is not saved again, so running `--create` twice is safe.
 - A customer with overdue invoices **and** a payment we haven't applied yet gets no reminder. They're listed for accounts to apply the payment first.
 - A partly paid or credited invoice says so in the reminder.
 

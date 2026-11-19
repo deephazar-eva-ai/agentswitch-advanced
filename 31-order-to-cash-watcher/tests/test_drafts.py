@@ -514,15 +514,24 @@ class RecordTextInDrafts(unittest.TestCase):
 
 
 class FakeDraftClient:
-    """Stands in for the MCP client in main(): records every create request; nothing goes out."""
+    """Stands in for the MCP client in main(): records every create request; nothing goes out.
 
-    def __init__(self):
-        self.created = []
+    Its mailbox holds `messages` plus every draft it was asked to create, so a second run sees them (D4).
+    """
+
+    def __init__(self, messages=()):
+        self.created, self.messages, self.reads = [], [dict(m) for m in messages], []
 
     def _rpc(self, method, params):
         assert method == "tools/call" and params["name"] == drafts.DRAFT_TOOL, params
         self.created.append(params["arguments"])
+        self.messages.append({**params["arguments"], "id": f"m{len(self.created)}", "deleted_at": None})
         return {"structuredContent": {"id": f"m{len(self.created)}"}}
+
+    def list_all(self, entity, filters=None):
+        assert entity == "EmailMessage", entity
+        self.reads.append(filters)
+        return [dict(m) for m in self.messages if all(m.get(k) == v for k, v in (filters or {}).items())]
 
 
 def proposal(accounts_to="ar@x.example"):
@@ -541,10 +550,10 @@ def proposal(accounts_to="ar@x.example"):
 class CreateFlow(unittest.TestCase):
     """main() --create, end to end with mocked input (B2): what is saved, what is asked, what is refused."""
 
-    def run_main(self, *args, answer="save drafts", prop=None, mailbox=MAILBOX):
+    def run_main(self, *args, answer="save drafts", prop=None, mailbox=MAILBOX, client=None):
         import contextlib, io, tempfile
         from unittest import mock
-        client = FakeDraftClient()
+        client = client or FakeDraftClient()
         out, asked = io.StringIO(), []
 
         def fake_input(prompt):
@@ -603,3 +612,44 @@ class CreateFlow(unittest.TestCase):
         r = self.run_main("--create", mailbox=None)
         self.assertEqual(r["exit"], "this login has no mailbox; nothing created")
         self.assertEqual((r["asked"], r["client"].created), ([], []))
+
+
+class NoDuplicateDrafts(unittest.TestCase):
+    """Bug hunt D4 (19 Nov): --create run twice must not save the same drafts twice."""
+
+    run_main = CreateFlow.run_main
+
+    def test_second_run_saves_nothing_new(self):
+        client = FakeDraftClient()
+        first = self.run_main("--create", "--only", "overdue_reminder", client=client)
+        self.assertEqual(len(client.created), 2)
+        second = self.run_main("--create", "--only", "overdue_reminder", client=client)
+        self.assertEqual(len(client.created), 2)   # nothing new saved
+        self.assertIn("not saved (already in the mailbox as an unsent draft): reminder acme", second["out"])
+        self.assertEqual(second["exit"], "every overdue_reminder draft is already in the mailbox as an unsent draft; nothing created")
+        self.assertEqual(second["asked"], [])     # no question when there is nothing to save
+        self.assertEqual(client.reads[-1], {"mailbox_id": "MB"})
+        self.assertIsNone(first["exit"])
+
+    def test_only_the_missing_drafts_are_saved(self):
+        client = FakeDraftClient([{"to": "AP@Acme.example ", "subject": "reminder  acme", "is_draft": True,
+                                   "folder": "drafts", "mailbox_id": "MB", "deleted_at": None}])
+        r = self.run_main("--create", "--only", "overdue_reminder", client=client)
+        self.assertEqual([c["to"] for c in client.created], ["ar@beta.example"])
+        self.assertIn("addressed to beta.example (1)", r["out"])
+
+    def test_sent_deleted_or_other_mailbox_messages_do_not_count(self):
+        base = {"to": "ap@acme.example", "subject": "reminder acme", "mailbox_id": "MB", "deleted_at": None}
+        for msg in (dict(base, is_draft=False, folder="sent"),                       # already sent: a new reminder is fine
+                    dict(base, is_draft=True, folder="drafts", deleted_at="2026-11-19T10:00:00Z"),
+                    dict(base, is_draft=True, folder="drafts", mailbox_id="OTHER")):
+            with self.subTest(msg=msg):
+                client = FakeDraftClient([msg])
+                self.run_main("--create", "--only", "overdue_reminder", client=client)
+                self.assertEqual([c["to"] for c in client.created], ["ap@acme.example", "ar@beta.example"])
+
+    def test_duplicates_within_one_batch(self):
+        dup = [{"to": "ap@acme.example", "subject": "s"}, {"to": "AP@acme.example", "subject": "s "},
+               {"to": "ap@acme.example", "subject": "other"}]
+        new, duplicates = drafts.without_duplicates(dup, set())
+        self.assertEqual(([d["subject"] for d in new], len(duplicates)), (["s", "other"], 1))

@@ -530,6 +530,36 @@ def drafts_to_save(prop, only=None):
     return ready, skipped
 
 
+def _draft_key(to, subject):
+    """What makes two drafts the same draft: the recipient (case ignored) and the subject."""
+    return str(to or "").strip().lower(), " ".join(str(subject or "").split())
+
+
+def existing_drafts(client, mailbox):
+    """Keys of the unsent drafts already in this mailbox (bug hunt D4, 19 Nov). Read-only.
+
+    A message that was sent, or deleted, does not count: a new reminder after it is legitimate.
+    """
+    box = (mailbox or {}).get("id")
+    keys = set()
+    for m in client.list_all("EmailMessage", {"mailbox_id": box} if box else None):
+        if m.get("deleted_at") or (box and m.get("mailbox_id") not in (None, box)):
+            continue
+        if m.get("is_draft") is True or m.get("folder") == "drafts":
+            keys.add(_draft_key(m.get("to"), m.get("subject")))
+    return keys
+
+
+def without_duplicates(ready, existing):
+    """(new, duplicates): drafts not already in the mailbox, and not repeated within this batch."""
+    seen, new, duplicates = set(existing), [], []
+    for d in ready:
+        key = _draft_key(d["to"], d["subject"])
+        (duplicates if key in seen else new).append(d)
+        seen.add(key)
+    return new, duplicates
+
+
 def recipient_domains(ready):
     """'example.com (2), x.example (1)': where the drafts would be addressed, for the confirmation."""
     counts = {}
@@ -589,6 +619,15 @@ def main():
         print(f"not saved ({reason}): {d['subject']}")
     if not ready:
         raise SystemExit(f"no {kind} draft to save; nothing created")
+    # D4: running --create again (a retry after a crash, a second person) must not save the same drafts twice.
+    try:
+        ready, duplicates = without_duplicates(ready, existing_drafts(client, mailbox))
+    except McpError as e:
+        platform_failure("o2c.drafts", e)
+    for d in duplicates:
+        print(f"not saved (already in the mailbox as an unsent draft): {d['subject']}")
+    if not ready:
+        raise SystemExit(f"every {kind} draft is already in the mailbox as an unsent draft; nothing created")
     print(f"About to save {len(ready)} {kind} draft(s) in mailbox {mailbox.get('id')}, "
           f"addressed to {recipient_domains(ready)}. They stay unsent.")
     if input("Type 'save drafts' to confirm: ").strip() != "save drafts":

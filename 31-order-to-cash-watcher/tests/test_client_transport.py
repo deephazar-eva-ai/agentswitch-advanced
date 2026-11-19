@@ -213,6 +213,9 @@ class OneLineErrors(unittest.TestCase):
                 if self.n == 2:
                     raise PlatformUnavailable("tools/call EmailMessage.create: no answer before the timeout")
                 return {"structuredContent": {"id": f"m{self.n}"}}
+
+            def list_all(self, entity, filters=None):
+                return []   # an empty mailbox: no duplicate drafts (D4)
         prop = {"instance": "t", "report_date": "2026-11-19", "matched_against": "invoices", "matches": [],
                 "match_summary": {"payments": 0, "with_candidates": 0, "with_exact_match": 0},
                 "overdue_reminders": "ok", "skipped": [],
