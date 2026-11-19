@@ -1,5 +1,6 @@
 """Unit tests for matching and reminder drafts, on made-up rows (no platform data)."""
 import unittest
+from pathlib import Path
 
 from o2c import drafts, matching
 from o2c.client import WriteBlocked
@@ -510,3 +511,95 @@ class RecordTextInDrafts(unittest.TestCase):
             self.assertEqual(skipped[0]["reason"], "the customer record's email is not a single plain address")
         made, _ = self.reminder("Acme Ltd", email=" ap.accounts+ar@acme.co.in ")
         self.assertEqual(made[0]["to"], "ap.accounts+ar@acme.co.in")
+
+
+class FakeDraftClient:
+    """Stands in for the MCP client in main(): records every create request; nothing goes out."""
+
+    def __init__(self):
+        self.created = []
+
+    def _rpc(self, method, params):
+        assert method == "tools/call" and params["name"] == drafts.DRAFT_TOOL, params
+        self.created.append(params["arguments"])
+        return {"structuredContent": {"id": f"m{len(self.created)}"}}
+
+
+def proposal(accounts_to="ar@x.example"):
+    def draft(kind, to, subject, fixture=False):
+        return {"kind": kind, "to": to, "subject": subject, "body_text": "b", "fixture": fixture,
+                "refs": [], "status": "proposed"}
+    return {"instance": "t", "report_date": "2026-11-19", "days": 7, "matched_against": "invoices",
+            "match_summary": {"payments": 0, "with_candidates": 0, "with_exact_match": 0}, "matches": [],
+            "overdue_reminders": "ok", "skipped": [],
+            "drafts": [draft("accounts_digest", accounts_to, "digest"),
+                       draft("overdue_reminder", "ap@acme.example", "reminder acme"),
+                       draft("overdue_reminder", "ar@beta.example", "reminder beta"),
+                       draft("overdue_reminder", "ap@test.example", "reminder test", fixture=True)]}
+
+
+class CreateFlow(unittest.TestCase):
+    """main() --create, end to end with mocked input (B2): what is saved, what is asked, what is refused."""
+
+    def run_main(self, *args, answer="save drafts", prop=None, mailbox=MAILBOX):
+        import contextlib, io, tempfile
+        from unittest import mock
+        client = FakeDraftClient()
+        out, asked = io.StringIO(), []
+
+        def fake_input(prompt):
+            asked.append(prompt)
+            return answer
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(drafts, "Client", return_value=client), \
+                mock.patch.object(drafts, "propose", return_value=prop or proposal()), \
+                mock.patch.object(drafts, "find_mailbox", return_value=mailbox) as find, \
+                mock.patch("builtins.input", fake_input), \
+                mock.patch("sys.argv", ["o2c.drafts", "--instance", "t", "--out", tmp, *args]), \
+                contextlib.redirect_stdout(out):
+            exit_msg = None
+            try:
+                drafts.main()
+            except SystemExit as e:
+                exit_msg = str(e)
+            written = sorted(p.name for p in Path(tmp).iterdir())
+        return {"client": client, "out": out.getvalue(), "asked": asked, "exit": exit_msg,
+                "found_mailbox": find.called, "written": written}
+
+    def test_without_create_nothing_is_asked_or_saved(self):
+        r = self.run_main()
+        self.assertEqual((r["asked"], r["client"].created, r["found_mailbox"], r["exit"]), ([], [], False, None))
+        self.assertEqual(r["written"], ["t-2026-11-19-drafts.json", "t-2026-11-19-drafts.md"])
+
+    def test_create_without_only_saves_the_digest_alone(self):
+        r = self.run_main("--create")
+        self.assertEqual([c["to"] for c in r["client"].created], ["ar@x.example"])
+        self.assertTrue(all(c["folder"] == "drafts" and c["is_draft"] is True for c in r["client"].created))
+        self.assertIn("3 customer reminder(s) are not saved", r["out"])
+        self.assertIn("--only overdue_reminder", r["out"])
+        self.assertIn("About to save 1 accounts_digest draft(s) in mailbox MB, addressed to x.example (1).", r["out"])
+        self.assertEqual(len(r["asked"]), 1)
+
+    def test_create_only_reminders_names_domains_and_skips_test_data(self):
+        r = self.run_main("--create", "--only", "overdue_reminder")
+        self.assertEqual([c["to"] for c in r["client"].created], ["ap@acme.example", "ar@beta.example"])
+        self.assertIn("not saved (built on test data): reminder test", r["out"])
+        self.assertIn("addressed to acme.example (1), beta.example (1)", r["out"])
+        self.assertNotIn("customer reminder(s) are not saved", r["out"])
+
+    def test_wrong_answer_saves_nothing(self):
+        for answer in ("", "y", "yes", "save draft", "SAVE DRAFTS"):
+            r = self.run_main("--create", "--only", "overdue_reminder", answer=answer)
+            self.assertEqual(r["exit"], "not confirmed; nothing created", answer)
+            self.assertEqual(r["client"].created, [], answer)
+
+    def test_digest_without_accounts_address_is_never_asked(self):
+        r = self.run_main("--create", prop=proposal(accounts_to=drafts.ACCOUNTS_PLACEHOLDER))
+        self.assertEqual(r["exit"], "no accounts_digest draft to save; nothing created")
+        self.assertIn("not saved (no recipient yet (set --accounts-email)): digest", r["out"])
+        self.assertEqual((r["asked"], r["client"].created), ([], []))
+
+    def test_no_mailbox_saves_nothing(self):
+        r = self.run_main("--create", mailbox=None)
+        self.assertEqual(r["exit"], "this login has no mailbox; nothing created")
+        self.assertEqual((r["asked"], r["client"].created), ([], []))
