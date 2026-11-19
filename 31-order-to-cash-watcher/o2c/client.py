@@ -14,7 +14,9 @@ import urllib.request
 
 READ_SUFFIXES = (".list", ".get")
 READ_TOOLS = {"tools.list", "tools.search", "tools.describe", "endpoint.make.thread"}
-PAGE_SIZE = 500
+# The platform's maximum (19 Nov: limit 1000 accepted, 1001 refused). Bigger pages mean fewer
+# multi-page reads, which are the only reads that can see the data change half-way (D5).
+PAGE_SIZE = 1000
 # A broken endpoint must not keep the report fetching indefinitely.
 MAX_PAGES = 1000
 # Bug hunt D1 (19 Nov): a read is retried after a transient failure, with backoff. Writes are
@@ -127,15 +129,32 @@ class Client:
         return tool_result(self._rpc("tools/call", {"name": name, "arguments": args or {}}), name)
 
     def list_all(self, entity, filters=None, max_pages=MAX_PAGES):
-        """Retry an unstable read twice from offset zero; never expose partial rows."""
+        """Retry an unstable read twice from offset zero; never expose partial rows.
+
+        Bug hunt D5 (19 Nov): if another login deletes one record behind our cursor and adds one
+        ahead of it between two pages, the total stays the same and nothing repeats, so a
+        multi-page read could return a full-length list that misses a record. A read that took
+        more than one page is therefore read again, and the two lists of record ids must match;
+        otherwise the read restarts (at most three attempts in all).
+        """
         for attempt in range(3):
             try:
-                return self._list_all_once(entity, filters, max_pages)
+                rows, pages = self._read_pages(entity, filters, max_pages)
+                if pages > 1:
+                    again, _ = self._read_pages(entity, filters, max_pages)
+                    if _identity(rows) != _identity(again):
+                        raise UnstablePaginationError(
+                            f"{entity}.list pagination incomplete: records changed during a multi-page read")
+                return rows
             except UnstablePaginationError:
                 if attempt == 2:
                     raise
 
     def _list_all_once(self, entity, filters=None, max_pages=MAX_PAGES):
+        """One complete read (all pages), without the D5 re-read. Returns the rows."""
+        return self._read_pages(entity, filters, max_pages)[0]
+
+    def _read_pages(self, entity, filters=None, max_pages=MAX_PAGES):
         """Return rows only after all pages satisfy the advertised integer total.
 
         Every page must carry data and a consistent nonnegative total. Missing
@@ -149,7 +168,7 @@ class Client:
         """
         if isinstance(max_pages, bool) or not isinstance(max_pages, int) or max_pages <= 0:
             raise ValueError("max_pages must be a positive integer")
-        rows, offset = [], 0
+        rows, offset, pages = [], 0, 0
         expected_total = None
         seen_ids, seen_pages = set(), set()
 
@@ -205,10 +224,11 @@ class Client:
             # row count because a server may return less than the requested limit.
             rows.extend(data)
             offset += len(data)
+            pages += 1
             # Equality, not a short page, is our completion condition. The valid
             # empty-table case (zero rows, total zero) also completes here.
             if offset == total:
-                return rows
+                return rows, pages
         invalid("page limit reached before total was reached")
 
 
@@ -221,6 +241,13 @@ def platform_failure(prog, error):
     import sys
     print(f"{prog}: could not complete: {error}", file=sys.stderr)
     raise SystemExit(EXIT_PLATFORM)
+
+
+def _identity(rows):
+    """What two reads of a list must agree on (D5): the record ids in order, or the rows
+    themselves for records without an id."""
+    return [json.dumps(r.get("id"), sort_keys=True) if r.get("id") is not None
+            else hashlib.sha256(json.dumps(r, sort_keys=True, default=str).encode("utf-8")).hexdigest() for r in rows]
 
 
 def _retry_after(headers):

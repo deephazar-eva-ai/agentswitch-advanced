@@ -108,7 +108,7 @@ One file per finding in `findings/`, in the course format (`BUG_REPORT_FORMAT.md
 | [BUG-31-002](findings/BUG-31-002.md) | Login `team31a` has no mailbox, so reminder drafts cannot be saved | Both | Medium | Closed | Fixed by the instructor (10 Nov); verified 11 Nov: one mailbox per system |
 
 ### Bugs in our own code
-B1–B6: read-only bug hunt of 12 Nov (code and both systems); C1–C2: second bug hunt of 19 Nov (seat 31 and the seats that use its output); D1–D3: corner-case hunt of 19 Nov (fuzzing, fault injection, races). The platform itself came out clean both times.
+B1–B6: read-only bug hunt of 12 Nov (code and both systems); C1–C2: second bug hunt of 19 Nov (seat 31 and the seats that use its output); D1–D5: corner-case hunt of 19 Nov (fuzzing, fault injection, races). The platform itself came out clean both times.
 
 | ID | Bug | Severity | Owner | Status | Resolution |
 |---|---|---|---|---|---|
@@ -123,6 +123,7 @@ B1–B6: read-only bug hunt of 12 Nov (code and both systems); C1–C2: second b
 | D1 | One transient server error (rate limit, 5xx, timeout, dropped connection) failed the whole run | Medium | Deepak | Fixed | Reads are retried up to three times with backoff (1, 2, 4 s; a server's Retry-After is honoured, capped at 30 s; 90 s budget per request). Writes are never retried, so a draft can't be saved twice |
 | D2 | Server errors ended in a raw Python traceback | Low–medium | Deepak | Fixed | The report, drafts and task commands print one line ("could not complete: …", e.g. "HTTP 401, the token was rejected") and exit 3. A failed draft save says how many were saved and to check the mailbox before trying again. The token is never printed |
 | D3 | A notification after the server's response, an error with no message, or a reply with no result crashed the client | Low–medium | Deepak | Fixed | The client uses the reply whose id matches the request and skips notifications; other odd replies become a short error |
+| D5 | If another login deleted one record and added one between two pages of a list, the read returned a full-length list that missed a record, with no error | Medium (latent) | Deepak | Fixed | Pages of 1,000 (the platform's maximum), so today every list is one page. A list that takes more than one page is read twice and the record ids must match, otherwise the read restarts (at most three attempts), then stops with a clear error |
 
 ## How to run the report
 Python 3.10+ standard library only; no installs.
