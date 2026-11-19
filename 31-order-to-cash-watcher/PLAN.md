@@ -108,7 +108,7 @@ One file per finding in `findings/`, in the course format (`BUG_REPORT_FORMAT.md
 | [BUG-31-002](findings/BUG-31-002.md) | Login `team31a` has no mailbox, so reminder drafts cannot be saved | Both | Medium | Closed | Fixed by the instructor (10 Nov); verified 11 Nov: one mailbox per system |
 
 ### Bugs in our own code
-B1–B6: read-only bug hunt of 12 Nov (code and both systems); C1–C2: second bug hunt of 19 Nov (seat 31 and the seats that use its output). The platform itself came out clean both times.
+B1–B6: read-only bug hunt of 12 Nov (code and both systems); C1–C2: second bug hunt of 19 Nov (seat 31 and the seats that use its output); D1–D3: corner-case hunt of 19 Nov (fuzzing, fault injection, races). The platform itself came out clean both times.
 
 | ID | Bug | Severity | Owner | Status | Resolution |
 |---|---|---|---|---|---|
@@ -120,6 +120,9 @@ B1–B6: read-only bug hunt of 12 Nov (code and both systems); C1–C2: second b
 | B6 | A dot in `--instance` broke the drafts file names | Low | Sunil | Closed | Fixed in #29 (safe instance label and file stem) |
 | C1 | Record text reached customer reminders: a customer name with line breaks or instruction text was copied into the draft, and could close the review file's code fence (seat 33 case O01) | Medium | Deepak | Fixed | A name is used only if it is one plain line (no markup, URL, address or instruction-like words, at most 80 characters); otherwise "Dear customer" and a note for the reviewer. Record numbers are kept on one line, the email must be one plain address, and the review file's fence cannot be closed by record text |
 | C2 | The test-data check missed seat 33's `[RT33]` records and matched "test" inside words | Low | Deepak | Fixed | Whole-word match, `rt33` added; checked on both systems: only other seats' tagged test records are flagged |
+| D1 | One transient server error (rate limit, 5xx, timeout, dropped connection) failed the whole run | Medium | Deepak | Fixed | Reads are retried up to three times with backoff (1, 2, 4 s; a server's Retry-After is honoured, capped at 30 s; 90 s budget per request). Writes are never retried, so a draft can't be saved twice |
+| D2 | Server errors ended in a raw Python traceback | Low–medium | Deepak | Fixed | The report, drafts and task commands print one line ("could not complete: …", e.g. "HTTP 401, the token was rejected") and exit 3. A failed draft save says how many were saved and to check the mailbox before trying again. The token is never printed |
+| D3 | A notification after the server's response, an error with no message, or a reply with no result crashed the client | Low–medium | Deepak | Fixed | The client uses the reply whose id matches the request and skips notifications; other odd replies become a short error |
 
 ## How to run the report
 Python 3.10+ standard library only; no installs.

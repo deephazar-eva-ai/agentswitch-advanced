@@ -163,8 +163,10 @@ class ReportCompleteness(unittest.TestCase):
                       [{"data": [self.order("SO-1")], "total": 2}, {"data": [], "total": 2}]):
             with self.subTest(pages=pages), tempfile.TemporaryDirectory() as tmp:
                 target = Path(tmp) / "reports"
-                with self.assertRaises(McpError):
+                # D2: the CLI stops with one line and exit 3 instead of a traceback.
+                with self.assertRaises(SystemExit) as stop:
                     self.run_cli(pages, target)
+                self.assertEqual(stop.exception.code, 3)
                 self.assertFalse(target.exists())
 
     def test_complete_pages_publish_matching_json_and_markdown(self):
@@ -192,8 +194,9 @@ class ReportCompleteness(unittest.TestCase):
             paths = [target / "synthetic-2026-11-15.json", target / "synthetic-2026-11-15.md"]
             for p in paths:
                 p.write_text("previous complete output", encoding="utf-8")
-            with self.assertRaises(McpError):
+            with self.assertRaises(SystemExit) as stop:
                 self.run_cli(pages, target)
+            self.assertEqual(stop.exception.code, 3)
             self.assertEqual([p.read_text(encoding="utf-8") for p in paths], ["previous complete output"] * 2)
 
 

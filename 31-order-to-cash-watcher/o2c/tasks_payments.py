@@ -20,7 +20,7 @@ from decimal import Decimal
 from .values import business_date, currency_code, money, money_number
 
 from . import drafts, report
-from .client import Client, WriteBlocked, is_read_tool
+from .client import Client, McpError, WriteBlocked, is_read_tool, platform_failure
 
 SEND_TOOLS = ("endpoint.email.messages.send", "EmailMessage.send_email", "EmailMessage.record_sent", "EmailCampaign.send")
 SEND_FAMILIES = ("EmailMessage.", "EmailCampaign.", "endpoint.email.")
@@ -378,7 +378,11 @@ def main():
     ap.add_argument("--out", help="write results JSON here")
     args = ap.parse_args()
 
-    ctx = Ctx(Client(), args.instance, args.date, args.days, mailbox_id=args.mailbox_id,
+    try:
+        client = Client()
+    except McpError as e:
+        platform_failure("o2c.tasks_payments", e)
+    ctx = Ctx(client, args.instance, args.date, args.days, mailbox_id=args.mailbox_id,
               accounts_email=os.environ.get("O2C_ACCOUNTS_EMAIL"),
               allow_writes=args.allow_writes or bool(os.environ.get("AGENTSWITCH_RUN_ID")))
     results = run(ctx)

@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 
 from . import report
-from .client import Client
+from .client import Client, McpError, platform_failure
 from .output import instance_label, report_stem, write_pair
 
 
@@ -50,7 +50,10 @@ def main():
     except ValueError as e:
         ap.error(str(e))
 
-    rep = report.build(Client(), report_date=args.date, days=args.days, instance=args.instance)
+    try:
+        rep = report.build(Client(), report_date=args.date, days=args.days, instance=args.instance)
+    except McpError as e:
+        platform_failure("o2c", e)
     md = report.to_markdown(rep)
     if args.out:
         stem = write_report(rep, md, args.out, args.instance)

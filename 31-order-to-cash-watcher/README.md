@@ -72,6 +72,8 @@ python3 -m o2c --instance suryodaya --date 2026-11-15 --days 14  # prints Markdo
 | `--out FOLDER` | Write `<instance>-<date>.json` and `.md` there; without it, Markdown goes to stdout |
 | `--prompt TEXT` | See [`--prompt`](#--prompt) |
 
+**Exit codes:** `0` the report was produced; `2` bad options; `3` the platform could not be read (for example a rejected token, or a server that kept failing after retries), with one line saying why. Reads are retried up to three times after a transient error (rate limit, server error, timeout or dropped connection); a draft is never re-sent automatically.
+
 Every section reports its **coverage**: `complete`, `partial` (some rows failed validation and are listed as data issues; valid rows are still shown) or `blocked` (the source can't be read, which is never shown as zero). How each section is built and validated: [docs/report-details.md](docs/report-details.md).
 
 ## Reminder drafts

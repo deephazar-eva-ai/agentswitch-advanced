@@ -25,7 +25,7 @@ from datetime import date
 from pathlib import Path
 
 from . import matching, report
-from .client import Client, McpError, WriteBlocked
+from .client import Client, McpError, WriteBlocked, platform_failure, tool_result
 from .values import money, money_sum, money_text
 from .output import instance_label, report_stem, write_pair
 
@@ -415,10 +415,8 @@ class DraftWriter:
             raise WriteBlocked("refused: the draft has no recipient yet; a person must fill it in")
         if not args.get("from_email") or not args.get("company_id"):
             raise WriteBlocked("refused: the draft needs the mailbox's address and company (from_email, company_id)")
-        result = self.client._rpc("tools/call", {"name": name, "arguments": args})
-        if result.get("isError"):
-            raise McpError(result["content"][0]["text"])
-        return result.get("structuredContent") or json.loads(result["content"][0]["text"])
+        # Never retried by the client: a retried create could save the same draft twice.
+        return tool_result(self.client._rpc("tools/call", {"name": name, "arguments": args}), name)
 
     def create(self, draft):
         return self.call(DRAFT_TOOL, to_payload(draft, self.mailbox))
@@ -560,8 +558,11 @@ def main():
     except ValueError as e:
         ap.error(str(e))
 
-    client = Client()
-    prop = propose(client, report_date=args.date, days=args.days, instance=args.instance, accounts_email=args.accounts_email)
+    try:
+        client = Client()
+        prop = propose(client, report_date=args.date, days=args.days, instance=args.instance, accounts_email=args.accounts_email)
+    except McpError as e:
+        platform_failure("o2c.drafts", e)
     basename = report_stem(args.instance, prop["report_date"], "-drafts")
     write_pair(args.out, basename, json.dumps(prop, indent=2, allow_nan=False), to_markdown(prop))
     stem = args.out / basename
@@ -574,6 +575,8 @@ def main():
         mailbox = find_mailbox(client, args.mailbox_id)
     except NoMailbox as e:
         raise SystemExit(str(e))
+    except McpError as e:
+        platform_failure("o2c.drafts", e)
     if not mailbox:
         raise SystemExit("this login has no mailbox; nothing created")
     writer = DraftWriter(client, mailbox)
@@ -590,9 +593,14 @@ def main():
           f"addressed to {recipient_domains(ready)}. They stay unsent.")
     if input("Type 'save drafts' to confirm: ").strip() != "save drafts":
         raise SystemExit("not confirmed; nothing created")
-    for d in ready:
-        created = writer.create(d)
-        print(f"saved draft {created.get('id')}: {d['subject']}")
+    for i, d in enumerate(ready):
+        try:
+            created = writer.create(d)
+        except McpError as e:
+            # The create may have reached the platform before the failure: say so, never retry blindly.
+            platform_failure("o2c.drafts", f"{e}. Saved {i} of {len(ready)} drafts before this. The failed one may "
+                                           "still have been created: check the mailbox before running --create again")
+        print(f"saved draft {created.get('id') if isinstance(created, dict) else '?'}: {d['subject']}")
 
 
 if __name__ == "__main__":
