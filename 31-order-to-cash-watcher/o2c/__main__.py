@@ -12,7 +12,7 @@ from pathlib import Path
 
 from . import report
 from .client import Client, McpError, platform_failure
-from .output import instance_label, report_stem, write_pair
+from .output import instance_label, report_stem, safe_console, write_pair
 
 
 def nonnegative_days(value):
@@ -45,6 +45,7 @@ def main():
     # report accepts it for compatibility; it must not interpret instructions.
     ap.add_argument("--prompt", help="Seat 34 compatibility: accepted and ignored; no model is called")
     args = ap.parse_args()
+    safe_console()
     try:
         instance_label(args.instance)
     except ValueError as e:

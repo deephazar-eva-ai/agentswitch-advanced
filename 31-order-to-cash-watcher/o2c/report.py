@@ -631,7 +631,7 @@ def _payment_tables(sec):
                 f"{_money(r['unallocated'])} {cell(_cur(r))} | {cell(r['status'])}"
                 f"{cell(' (' + '; '.join(r['notes']) + ')') if r.get('notes') else ''} |")
         if show_hist:
-            same = f" {cell(', '.join(r['same_amount_receipts']))}" if r.get("same_amount_receipts") else ""
+            same = f" {cell(', '.join(map(str, r['same_amount_receipts'])))}" if r.get("same_amount_receipts") else ""
             paid_label = "verified paid" if hist.get("coverage") == "partial" else "paid"
             line += f" {HINT_LABELS.get(r.get('hint'), '')}{same} ({r.get('receipts_paid', 0)} {paid_label}) |"
         lines.append(line + f" {'fixture' if r['fixture'] else ''} |")

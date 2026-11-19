@@ -27,7 +27,7 @@ from pathlib import Path
 from . import matching, report
 from .client import Client, McpError, WriteBlocked, platform_failure, tool_result
 from .values import money, money_sum, money_text
-from .output import instance_label, report_stem, write_pair
+from .output import instance_label, report_stem, safe_console, write_pair
 
 DRAFT_TOOL = "EmailMessage.create"
 ACCOUNTS_PLACEHOLDER = "(accounts address: a person fills this in)"
@@ -129,8 +129,8 @@ def accounts_digest(rep, matches, accounts_email=None):
         if held:
             lines += [f"Reminders held back ({len(held)}): these customers have overdue invoices, but we also hold a "
                       "payment from them that is not applied yet. Please apply it first, then decide whether a reminder is needed.", ""]
-            for party_id, pays in sorted(held.items(), key=lambda kv: kv[1][0].get("customer") or ""):
-                invs = [r["number"] for r in inv_rows if r.get("party_id") == party_id]
+            for party_id, pays in sorted(held.items(), key=lambda kv: str(kv[1][0].get("customer") or "")):
+                invs = [_ref(r.get("number")) for r in inv_rows if r.get("party_id") == party_id]
                 lines.append(f"- {_plain(pays[0].get('customer') or 'unknown customer', CUSTOMER_WIDTH)}: "
                              f"payment {', '.join(_payment_text(p) for p in pays)}; overdue {', '.join(invs)}")
             lines.append("")
@@ -154,7 +154,7 @@ def accounts_digest(rep, matches, accounts_email=None):
             match = ", ".join(f"{c['kind']} {c['number']} ({_amount(c['amount'], c.get('currency'))}"
                               f"{', same amount' if c['exact'] else ''})" for c in cands) or "no candidate found"
             if r.get("hint") == "same_amount":   # receipt history (PaymentReceived), when readable
-                match += f"; CHECK: same amount already recorded as applied receipt {', '.join(r['same_amount_receipts'])}"
+                match += f"; CHECK: same amount already recorded as applied receipt {', '.join(map(str, r['same_amount_receipts']))}"
             elif r.get("hint") == "has_history":
                 match += f"; customer has {r['receipts_paid']} applied receipts"
             rows.append([r["number"], _plain(r["customer"] or "unknown customer", CUSTOMER_WIDTH), r["payment_date"] or "?",
@@ -307,7 +307,8 @@ def overdue_reminders(invoice_rows, parties_by_id, payment_rows=()):
         by_party.setdefault(r.get("party_id"), []).append(r)
     held = held_customers(invoice_rows, payment_rows)
     drafts, skipped = [], []
-    for party_id, rows in sorted(by_party.items(), key=lambda kv: kv[1][0]["customer"] or ""):
+    # str(): a record value of another type must not break the sort (bug hunt D7).
+    for party_id, rows in sorted(by_party.items(), key=lambda kv: str(kv[1][0].get("customer") or "")):
         party = parties_by_id.get(party_id) or {}
         raw_email = party.get("email")
         email = safe_email(raw_email)
@@ -438,7 +439,7 @@ def propose(client, report_date=None, days=7, instance=None, accounts_email=None
     if digest:
         drafts.append(digest)
     if inv["status"] == "ok" and inv["rows"]:
-        parties = {p["id"]: p for p in client.list_all("Party")}
+        parties = {p.get("id"): p for p in client.list_all("Party") if p.get("id") is not None}   # D7
         reminders, skipped = overdue_reminders(inv["rows"], parties, pay_rows)
         drafts += reminders
     return {
@@ -597,6 +598,7 @@ def main():
     write_pair(args.out, basename, json.dumps(prop, indent=2, allow_nan=False), to_markdown(prop))
     stem = args.out / basename
     s = prop["match_summary"]
+    safe_console()
     print(f"wrote {stem}.md ({len(prop['drafts'])} drafts proposed; {s['with_candidates']}/{s['payments']} payments with a candidate)")
 
     if not args.create:

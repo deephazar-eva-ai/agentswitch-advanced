@@ -400,3 +400,27 @@ class Runner(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MalformedRecords(unittest.TestCase):
+    """Bug hunt D7 (19 Nov): a malformed record is a mismatch or a diagnostic, never a crashed verifier."""
+
+    def test_unreadable_balance_agrees_with_the_report_instead_of_crashing(self):
+        bad = [dict(inv("X1", "2026-10-01", 5.0), outstanding=" "), dict(inv("X2", "2026-10-01", 5.0), outstanding="lots")]
+        r = by_id(T.run(ctx({"Invoice": INVOICES + bad}, tools={"Invoice.list"})))
+        for task in ("overdue_invoices", "overdue_ageing"):
+            self.assertNotIn("infrastructure", r[task]["evidence"], r[task]["evidence"])
+        # The report leaves both out (with a diagnostic) and so does the recount.
+        self.assertTrue(r["overdue_invoices"]["passed"], r["overdue_invoices"]["evidence"])
+
+    def test_invalid_due_date_is_not_a_crash(self):
+        bad = dict(inv("X3", "2026-02-30", 5.0))
+        r = by_id(T.run(ctx({"Invoice": INVOICES + [bad]}, tools={"Invoice.list"})))
+        self.assertNotIn("infrastructure", r["overdue_ageing"]["evidence"], r["overdue_ageing"]["evidence"])
+
+    def test_missing_ids_and_numbers_are_not_a_crash(self):
+        no_id = {k: v for k, v in inv("X4", "2026-10-01", 5.0).items() if k != "id"}
+        no_number = {k: v for k, v in pay("R9").items() if k != "number"}
+        r = by_id(T.run(ctx({"Invoice": INVOICES + [no_id], "Payment": PAYMENTS + [no_number]}, tools={"Invoice.list"})))
+        for task in ("overdue_invoices", "overdue_ageing", "unapplied_payments", "unapplied_excludes_outgoing"):
+            self.assertNotIn("infrastructure", r[task]["evidence"], f"{task}: {r[task]['evidence']}")

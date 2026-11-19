@@ -8,6 +8,20 @@ import tempfile
 from .values import business_date, DATE
 
 
+def safe_console():
+    """Bug hunt D6 (19 Nov): on a console that isn't UTF-8 (e.g. Windows cp1252), a non-Latin
+    customer name must not crash the report. Characters the console can't show become "?".
+    Files written with --out are always UTF-8 and unaffected."""
+    import sys
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            try:
+                reconfigure(errors="replace")
+            except (ValueError, OSError):
+                pass
+
+
 def instance_label(value):
     """An omitted instance uses 'report'; explicitly blank/unsafe values fail."""
     if value is None:

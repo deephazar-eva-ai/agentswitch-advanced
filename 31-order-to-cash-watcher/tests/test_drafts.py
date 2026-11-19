@@ -1,5 +1,6 @@
 """Unit tests for matching and reminder drafts, on made-up rows (no platform data)."""
 import unittest
+from datetime import date
 from pathlib import Path
 
 from o2c import drafts, matching
@@ -653,3 +654,55 @@ class NoDuplicateDrafts(unittest.TestCase):
                {"to": "ap@acme.example", "subject": "other"}]
         new, duplicates = drafts.without_duplicates(dup, set())
         self.assertEqual(([d["subject"] for d in new], len(duplicates)), (["s", "other"], 1))
+
+
+class MalformedRecordsInDrafts(unittest.TestCase):
+    """Bug hunt D7 (19 Nov): odd record values must not crash the digest, reminders or propose()."""
+
+    def test_held_list_with_a_numberless_invoice(self):
+        inv = dict(inv_row("INV-1", 100.0), days_overdue=14, number=None)
+        body = drafts.accounts_digest(full_rep(inv_rows=[inv], pay_rows=[dict(pay_row("PAY1", 40.0), currency="INR")]), [])["body_text"]
+        self.assertIn("overdue ?", body)
+
+    def test_reminder_sort_with_mixed_customer_values(self):
+        rows = [dict(inv_row("INV-1", 10.0), customer=None), dict(inv_row("INV-2", 10.0, party="P2"), customer=42),
+                inv_row("INV-3", 10.0, party="P3", customer="Acme")]
+        made, _ = drafts.overdue_reminders(rows, {p: {"email": f"ap@{p.lower()}.example"} for p in ("P1", "P2", "P3")})
+        self.assertEqual(len(made), 3)
+
+    def test_numeric_receipt_labels_are_shown(self):
+        p = dict(pay_row("PAY1", 40.0), currency="INR", hint="same_amount", same_amount_receipts=[1001, "REC-2"],
+                 receipts_paid=2)
+        body = drafts.accounts_digest(full_rep(pay_rows=[p]), [])["body_text"]
+        self.assertIn("applied receipt 1001, REC-2", body)
+
+    def test_party_without_id_is_skipped(self):
+        class Fake:
+            def tool_names(self):
+                return {"SalesOrder.list", "Invoice.list", "Payment.list", "Party.list"}
+
+            def list_all(self, entity, filters=None):
+                return {"Party": [{"name": "no id"}, {"id": "P1", "email": "ap@acme.example", "currency_id": "INR"}],
+                        "Invoice": [{"id": "I1", "number": "INV-1", "docstatus": 1, "due_date": "2026-10-01",
+                                     "outstanding": 5.0, "amount_paid": 0.0, "party_id": "P1",
+                                     "_party_id_display": "Acme"}]}.get(entity, [])
+        prop = drafts.propose(Fake(), report_date=date(2026, 11, 19))
+        self.assertEqual([d["to"] for d in prop["drafts"] if d["kind"] == "overdue_reminder"], ["ap@acme.example"])
+
+
+class ConsoleEncoding(unittest.TestCase):
+    """Bug hunt D6 (19 Nov): a non-UTF-8 console must not crash on non-Latin names."""
+
+    def test_report_prints_on_an_ascii_console(self):
+        import io
+        from unittest import mock
+        from o2c import __main__ as M
+        raw = io.BytesIO()
+        console = io.TextIOWrapper(raw, encoding="ascii")
+        with mock.patch("sys.stdout", console), mock.patch.object(M, "Client", lambda: None), \
+                mock.patch.object(M.report, "build", return_value={}), \
+                mock.patch.object(M.report, "to_markdown", return_value="客户 शर्मा — Ünï"), \
+                mock.patch("sys.argv", ["o2c", "--date", "2026-11-19"]):
+            M.main()
+            console.flush()
+        self.assertEqual(raw.getvalue().decode("ascii"), "?? ????? ? ?n?\n")

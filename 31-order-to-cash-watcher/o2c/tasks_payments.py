@@ -21,6 +21,7 @@ from .values import business_date, currency_code, money, money_number
 
 from . import drafts, report
 from .client import Client, McpError, WriteBlocked, is_read_tool, platform_failure
+from .output import safe_console
 
 SEND_TOOLS = ("endpoint.email.messages.send", "EmailMessage.send_email", "EmailMessage.record_sent", "EmailCampaign.send")
 SEND_FAMILIES = ("EmailMessage.", "EmailCampaign.", "endpoint.email.")
@@ -84,7 +85,20 @@ def _diff(expected, got):
 
 
 def _money(v):
-    return round(float(v or 0), 2)
+    """An amount as the report reads it, or 0 when it is missing or unreadable (bug hunt D7):
+    the report diagnoses such a row and leaves it out, and the recount must agree, not crash."""
+    try:
+        value = money_number(v)
+    except (ValueError, TypeError):
+        return 0.0
+    return round(value or 0.0, 2)
+
+
+def _day(v):
+    try:
+        return business_date(v)
+    except (ValueError, TypeError):
+        return None
 
 
 # --- 5, 6: invoices overdue ------------------------------------------------------------
@@ -106,9 +120,9 @@ def overdue_invoices(ctx):
         return _blocked("Invoice.list not available to this login (BUG-31-001)")
     day = ctx.report_date.isoformat()
     submitted = [i for i in raw if i.get("docstatus") == 1 and _customer_invoice(i)]
-    expected = {i["id"] for i in submitted if i.get("due_date") and str(i["due_date"])[:10] < day and _money(i.get("outstanding")) > 0}
-    expected_no_due = {i["id"] for i in submitted if not i.get("due_date")}
-    bills = {i["id"] for i in raw if not _customer_invoice(i)}
+    expected = {i.get("id") for i in submitted if i.get("due_date") and str(i["due_date"])[:10] < day and _money(i.get("outstanding")) > 0}
+    expected_no_due = {i.get("id") for i in submitted if not i.get("due_date")}
+    bills = {i.get("id") for i in raw if not _customer_invoice(i)}
     sec = ctx.report()["sections"]["invoices_overdue"]
     got = {r["id"] for r in sec["rows"]}
     got_no_due = {r["id"] for r in sec.get("no_due_date", [])}
@@ -123,10 +137,10 @@ def overdue_ageing(ctx):
     raw = _invoices(ctx)
     if raw is None:
         return _blocked("Invoice.list not available to this login (BUG-31-001)")
-    due = {i["id"]: str(i.get("due_date") or "")[:10] for i in raw if _customer_invoice(i)}
+    due = {i.get("id"): _day(i.get("due_date")) for i in raw if _customer_invoice(i)}
     rows = ctx.report()["sections"]["invoices_overdue"]["rows"]
-    wrong = [r["number"] for r in rows
-             if not due.get(r["id"]) or r["days_overdue"] != (ctx.report_date - date.fromisoformat(due[r["id"]])).days
+    wrong = [r.get("number") for r in rows
+             if not due.get(r.get("id")) or r["days_overdue"] != (ctx.report_date - due[r.get("id")]).days
              or r["days_overdue"] <= 0]
     ordered = all(a["days_overdue"] >= b["days_overdue"] for a, b in zip(rows, rows[1:]))
     return _ok(not wrong and ordered, f"verifier=ageing_from_due_date; rows={len(rows)}; wrong_age={wrong[:3]}; oldest_first={ordered}")
@@ -184,7 +198,7 @@ def unapplied_payments(ctx):
         age = (ctx.report_date - day).days if day else None
         bucket = ("unknown" if age is None else "future" if age < 0 else
                   "0-30" if age <= 30 else "31-60" if age <= 60 else "61-90" if age <= 90 else "90+")
-        expected[p["number"]] = amount, cur
+        expected[p.get("number")] = amount, cur
         party = p.get("party_id") or p.get("_party_id_display") or "unknown"
         for name, key in (("by_currency", cur), ("by_age", (bucket, cur)),
                           ("by_status", (p.get("status") or "unknown", cur)), ("by_customer", (party, cur))):
@@ -228,7 +242,7 @@ def unapplied_payments(ctx):
 
 def unapplied_excludes_outgoing(ctx):
     raw = _payments(ctx)
-    other = {p["number"] for p in raw if p.get("type") != "receive"}
+    other = {p.get("number") for p in raw if p.get("type") != "receive"}
     got = {r["number"] for r in ctx.report()["sections"]["payments_not_applied"]["rows"]}
     leaked = sorted(got & other)
     note = "" if other else "; vacuous: this instance has no outgoing or transfer payments"
@@ -385,6 +399,7 @@ def main():
     ctx = Ctx(client, args.instance, args.date, args.days, mailbox_id=args.mailbox_id,
               accounts_email=os.environ.get("O2C_ACCOUNTS_EMAIL"),
               allow_writes=args.allow_writes or bool(os.environ.get("AGENTSWITCH_RUN_ID")))
+    safe_console()
     results = run(ctx)
     out = {"tasks": results, "summary": f"{args.instance}: {sum(r['passed'] for r in results)}/{len(results)} tasks passed"}
     if args.out:

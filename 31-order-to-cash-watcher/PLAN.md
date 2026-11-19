@@ -108,7 +108,7 @@ One file per finding in `findings/`, in the course format (`BUG_REPORT_FORMAT.md
 | [BUG-31-002](findings/BUG-31-002.md) | Login `team31a` has no mailbox, so reminder drafts cannot be saved | Both | Medium | Closed | Fixed by the instructor (10 Nov); verified 11 Nov: one mailbox per system |
 
 ### Bugs in our own code
-B1–B6: read-only bug hunt of 12 Nov (code and both systems); C1–C2: second bug hunt of 19 Nov (seat 31 and the seats that use its output); D1–D5: corner-case hunt of 19 Nov (fuzzing, fault injection, races). The platform itself came out clean both times.
+B1–B6: read-only bug hunt of 12 Nov (code and both systems); C1–C2: second bug hunt of 19 Nov (seat 31 and the seats that use its output); D1–D7: corner-case hunt of 19 Nov (fuzzing, fault injection, races). The platform itself came out clean both times.
 
 | ID | Bug | Severity | Owner | Status | Resolution |
 |---|---|---|---|---|---|
@@ -125,6 +125,8 @@ B1–B6: read-only bug hunt of 12 Nov (code and both systems); C1–C2: second b
 | D3 | A notification after the server's response, an error with no message, or a reply with no result crashed the client | Low–medium | Deepak | Fixed | The client uses the reply whose id matches the request and skips notifications; other odd replies become a short error |
 | D4 | Running `--create` twice saved the same drafts twice | Low | Deepak | Fixed | Before asking, the drafts command lists the unsent drafts already in the mailbox (read-only) and skips any with the same recipient and subject, and repeats within one run; a sent or deleted message doesn't count. It says which drafts it skipped |
 | D5 | If another login deleted one record and added one between two pages of a list, the read returned a full-length list that missed a record, with no error | Medium (latent) | Deepak | Fixed | Pages of 1,000 (the platform's maximum), so today every list is one page. A list that takes more than one page is read twice and the record ids must match, otherwise the read restarts (at most three attempts), then stops with a clear error |
+| D6 | Printing the report to a console that isn't UTF-8 (e.g. Windows) crashed on non-Latin names | Low | Deepak | Fixed | Console output replaces characters the console can't show; files written with `--out` stay UTF-8 |
+| D7 | Malformed records (an invoice with no number, a party with no id, a blank balance, a missing id) could crash the drafts command and the task verifiers | Low | Deepak | Fixed | Those values are joined, sorted and keyed safely; the task 5 recount reads amounts with the report's parser, so an unreadable balance is left out by both instead of crashing. None of these shapes exist on either system today |
 
 ## How to run the report
 Python 3.10+ standard library only; no installs.
