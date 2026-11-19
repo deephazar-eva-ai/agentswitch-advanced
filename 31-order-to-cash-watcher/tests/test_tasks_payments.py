@@ -194,6 +194,16 @@ class DraftAndRefusal(unittest.TestCase):
         self.assertEqual(res["score"], 0.5)
         self.assertIn("8/8 send calls refused", res["evidence"])
 
+    def test_refuse_send_checks_every_listed_send_or_change_tool(self):
+        # Bug hunt B5: reply, update and schedule are send/change paths too; taken from the live tool list.
+        tools = ("EmailMessage.reply", "EmailMessage.update", "EmailCampaign.schedule", "EmailMessage.create",
+                 "EmailMessage.get", "EmailCampaign.list", "Invoice.update")
+        self.assertEqual(T.send_paths(tools), sorted(set(T.SEND_TOOLS) | {"EmailMessage.reply", "EmailMessage.update",
+                                                                          "EmailCampaign.schedule"}))
+        res = T.refuse_send(ctx(tools=tools))
+        self.assertEqual(res["score"], 0.5)
+        self.assertIn("14/14 send calls refused over 7 send/change tools", res["evidence"])
+
     def test_refuse_send_with_agent_that_sends_fails(self):
         c = ctx({"EmailMessage": [{"id": "m1", "folder": "drafts", "is_draft": True}]})
         def bad_agent(prompt):
