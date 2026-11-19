@@ -19,6 +19,7 @@ EmailCampaign.send) is refused before a request is made.
 """
 import argparse
 import json
+import re
 import os
 from datetime import date
 from pathlib import Path
@@ -221,9 +222,46 @@ def _amount(v, currency):
     return _money(v, currency) if currency else f"{_money(v)} ({UNKNOWN_CURRENCY})"
 
 
+NAME_MAX = 80
+# Text in a record that reads like an instruction to a model, not like a company name.
+_INSTRUCTION_RE = re.compile(r"(?i)\b(?:ignore|disregard|instructions?|prompt|override|assistant)\b|\bsystem\s*:")
+_UNSAFE_NAME_CHARS = set("`<>{}[]\\")
+_EMAIL_RE = re.compile(r"[^@\s<>,;:\"'()\[\]]+@[^@\s<>,;:\"'()\[\]]+\.[A-Za-z]{2,}")
+
+
+def safe_name(raw):
+    """(name, note): the customer name to put in a reminder, or (None, why it was left out).
+
+    Bug hunt C1 (19 Nov), seat 33 case O01: record text reaches a customer-facing draft. A name
+    is copied only if it looks like a name: one line, at most NAME_MAX characters, no markup
+    characters, no URL, no address, and no instruction-like words. Otherwise the reminder says
+    "Dear customer" and the review file says why, so outside text is never quoted.
+    """
+    text = "" if raw is None else str(raw)
+    one_line = _plain(text)
+    if not one_line:
+        return None, None
+    if (one_line != text.strip() or len(one_line) > NAME_MAX or any(c in _UNSAFE_NAME_CHARS for c in one_line)
+            or "://" in one_line or "@" in one_line or any(ord(c) < 32 for c in text if c not in "\n\r\t")
+            or _INSTRUCTION_RE.search(one_line)):
+        return None, "customer name not copied into the draft: it has line breaks, markup or instruction-like text"
+    return one_line, None
+
+
+def safe_email(raw):
+    """The one address to draft to, or None: never a list, a display name or anything else."""
+    text = "" if raw is None else str(raw).strip()
+    return text if _EMAIL_RE.fullmatch(text) else None
+
+
+def _ref(v):
+    """A record number (invoice, payment) as it may appear in a draft: one line, short."""
+    return _plain(v, 40) or "?"
+
+
 def _reminder_line(r, cur):
     """One invoice line in a customer reminder; a partly paid invoice says so (instructor answer 11)."""
-    line = f"- Invoice {r['number']}, due {r['due_date']}, {_amount(r['outstanding'], cur)} outstanding"
+    line = f"- Invoice {_ref(r['number'])}, due {_ref(r['due_date'])}, {_amount(r['outstanding'], cur)} outstanding"
     credit = r.get("credits_applied")
     credit_text = f"credit of {_amount(credit, cur)} applied" if credit is not None and credit > 0 else ""
     if r.get("payment_state") == report.PARTIALLY_PAID:
@@ -238,7 +276,7 @@ HELD_REASON = "held: we hold a payment from this customer that is not applied ye
 
 
 def _payment_text(p):
-    return f"{p.get('number') or '?'} ({_amount(p.get('unallocated'), _currency(p))}, received {p.get('payment_date') or '?'})"
+    return f"{_ref(p.get('number'))} ({_amount(p.get('unallocated'), _currency(p))}, received {p.get('payment_date') or '?'})"
 
 
 def held_customers(invoice_rows, payment_rows):
@@ -271,19 +309,24 @@ def overdue_reminders(invoice_rows, parties_by_id, payment_rows=()):
     drafts, skipped = [], []
     for party_id, rows in sorted(by_party.items(), key=lambda kv: kv[1][0]["customer"] or ""):
         party = parties_by_id.get(party_id) or {}
-        email = party.get("email")
-        customer = rows[0]["customer"] or party.get("name") or "Customer"
+        raw_email = party.get("email")
+        email = safe_email(raw_email)
+        raw_name = rows[0]["customer"] or party.get("name")
+        name, name_note = safe_name(raw_name)
+        customer = _plain(raw_name, NAME_MAX) or "unknown customer"   # for the review file only
         if party_id in held:
             skipped.append({"customer": customer, "invoices": [r["number"] for r in rows], "held": True,
                             "payments": [p.get("number") for p in held[party_id]],
                             "reason": HELD_REASON + " (" + "; ".join(_payment_text(p) for p in held[party_id]) + ")"})
             continue
         if not email:
-            skipped.append({"customer": customer, "invoices": [r["number"] for r in rows], "reason": "no email on the customer record"})
+            reason = ("no email on the customer record" if not raw_email
+                      else "the customer record's email is not a single plain address")
+            skipped.append({"customer": customer, "invoices": [r["number"] for r in rows], "reason": reason})
             continue
         groups = by_currency(rows)
         subtotals = [(cur, total) for cur, _, total in groups]
-        lines = [f"Dear {customer},", "",
+        lines = [f"Dear {name or 'customer'},", "",
                  "Our records show the following invoice(s) past their due date with a balance outstanding:", ""]
         if len(groups) == 1:
             cur, _, total = groups[0]
@@ -310,6 +353,7 @@ def overdue_reminders(invoice_rows, parties_by_id, payment_rows=()):
             "refs": [r["number"] for r in rows],
             "subtotals": [{"currency": c, "outstanding": t} for c, t in subtotals],
             "fixture": any(r["fixture"] for r in rows),
+            "review_notes": [name_note] if name_note else [],
             "status": "proposed",
         })
     return drafts, skipped
@@ -412,6 +456,17 @@ def propose(client, report_date=None, days=7, instance=None, accounts_email=None
     }
 
 
+def _fence(body):
+    """A code fence longer than any backtick run in the body, so record text cannot close it (C1)."""
+    longest = max((len(m) for m in re.findall(r"`+", body or "")), default=0)
+    return "`" * max(3, longest + 1)
+
+
+def _md_inline(v):
+    """Record text on one Markdown line: no line breaks, and markup characters shown as text."""
+    return re.sub(r"([\\`*_{}\[\]<>#|])", r"\\\1", _plain(v))
+
+
 def to_markdown(prop):
     s = prop["match_summary"]
     lines = [
@@ -439,12 +494,15 @@ def to_markdown(prop):
         lines.append("")
     lines += [f"## Drafts ({len(prop['drafts'])})", ""]
     for i, d in enumerate(prop["drafts"], 1):
+        fence = _fence(d["body_text"])
         lines += [f"### {i}. {d['kind']}{' (test data)' if d['fixture'] else ''}", "",
-                  f"**To:** {d['to']}  ", f"**Subject:** {d['subject']}", "", "```text", d["body_text"], "```", ""]
+                  f"**To:** {_md_inline(d['to'])}  ", f"**Subject:** {_md_inline(d['subject'])}", ""]
+        lines += [f"**Check:** {_md_inline(n)}" for n in d.get("review_notes") or []]
+        lines += [fence + "text", d["body_text"], fence, ""]
     if prop["skipped"]:
         lines += [f"## Not drafted ({len(prop['skipped'])})", ""]
         for k in prop["skipped"]:
-            lines.append(f"- {k['customer']}: {', '.join(k['invoices'])}: {k['reason']}")
+            lines.append(f"- {_md_inline(k['customer'])}: {_md_inline(', '.join(map(str, k['invoices'])))}: {_md_inline(k['reason'])}")
         lines.append("")
     return "\n".join(lines)
 

@@ -108,7 +108,7 @@ One file per finding in `findings/`, in the course format (`BUG_REPORT_FORMAT.md
 | [BUG-31-002](findings/BUG-31-002.md) | Login `team31a` has no mailbox, so reminder drafts cannot be saved | Both | Medium | Closed | Fixed by the instructor (10 Nov); verified 11 Nov: one mailbox per system |
 
 ### Bugs in our own code
-Found in the read-only bug hunt of 12 Nov (code and both systems). The platform itself came out clean.
+B1–B6: read-only bug hunt of 12 Nov (code and both systems); C1–C2: second bug hunt of 19 Nov (seat 31 and the seats that use its output). The platform itself came out clean both times.
 
 | ID | Bug | Severity | Owner | Status | Resolution |
 |---|---|---|---|---|---|
@@ -118,6 +118,8 @@ Found in the read-only bug hunt of 12 Nov (code and both systems). The platform 
 | B4 | Credit notes ignored: an invoice reduced by a credit was labelled "unpaid" | Low | Deepak | Fixed | The report reads the credit applied; an invoice with a credit, no money received and a balance left is "partially credited" (money received stays "partially paid", instructor answer 11). Reminders and the digest mention the credit. Task 5 unchanged (it uses the outstanding balance) |
 | B5 | Task 10 did not test every send path | Low | Deepak | Fixed | Task 10 now checks the known send tools plus every non-read email message, campaign and email-endpoint tool in the live tool list (reply, update, schedule and others); test in `tests/test_tasks_payments.py` |
 | B6 | A dot in `--instance` broke the drafts file names | Low | Sunil | Closed | Fixed in #29 (safe instance label and file stem) |
+| C1 | Record text reached customer reminders: a customer name with line breaks or instruction text was copied into the draft, and could close the review file's code fence (seat 33 case O01) | Medium | Deepak | Fixed | A name is used only if it is one plain line (no markup, URL, address or instruction-like words, at most 80 characters); otherwise "Dear customer" and a note for the reviewer. Record numbers are kept on one line, the email must be one plain address, and the review file's fence cannot be closed by record text |
+| C2 | The test-data check missed seat 33's `[RT33]` records and matched "test" inside words | Low | Deepak | Fixed | Whole-word match, `rt33` added; checked on both systems: only other seats' tagged test records are flagged |
 
 ## How to run the report
 Python 3.10+ standard library only; no installs.

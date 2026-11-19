@@ -314,3 +314,17 @@ class CurrencyLookup(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class FixtureMarkers(unittest.TestCase):
+    """Bug hunt C2 (19 Nov): whole words only, and seat 33's [RT33] tag counts as test data."""
+
+    def test_whole_words_and_rt33(self):
+        flagged = {name: report.looks_like_fixture({"_party_id_display": name}) for name in (
+            "Greatest Traders", "Attestation Services", "Contest Pvt Ltd", "Acme",
+            "Test Corp", "acme testing ltd", "[RT33] Acme", "RT33-O01-7f2a", "harness co")}
+        self.assertEqual([n for n, f in flagged.items() if f],
+                         ["Test Corp", "acme testing ltd", "[RT33] Acme", "RT33-O01-7f2a", "harness co"])
+
+    def test_notes_are_checked_too(self):
+        self.assertTrue(report.looks_like_fixture({"_party_id_display": "Acme", "notes": "planted by [RT33]"}))

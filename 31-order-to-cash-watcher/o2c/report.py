@@ -2,6 +2,7 @@
 
 The rules are pure functions over rows so they can be tested without the platform.
 """
+import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from .values import business_date, money, money_number, money_text, money_sum, currency_code
@@ -17,7 +18,10 @@ PARTIALLY_PAID = "partially paid"
 # Bug hunt B4 (12 Nov): outstanding = grand_total - amount_paid - credits_applied on every live
 # invoice. One reduced by a credit note but with no money received is not "unpaid".
 PARTIALLY_CREDITED = "partially credited"
-FIXTURE_MARKERS = ("test", "harness", "fixture")
+FIXTURE_MARKERS = ("test", "tests", "testing", "harness", "fixture", "fixtures", "rt33")
+# Whole words only (bug hunt C2, 19 Nov): "Greatest Traders" is not test data, and seat 33 tags
+# every record it plants with "[RT33]".
+_FIXTURE_RE = re.compile(r"\b(?:" + "|".join(FIXTURE_MARKERS) + r")\b")
 ORDER_AGE_BUCKETS = ("0-7", "8-14", "15-30", "31-60", ">60")
 AGE_BUCKETS = (("future", None, -1), ("0-30", 0, 30), ("31-60", 31, 60), ("61-90", 61, 90), ("90+", 91, None))
 
@@ -28,7 +32,7 @@ def today_ist():
 
 def looks_like_fixture(row):
     text = " ".join(str(row.get(k) or "") for k in ("_party_id_display", "notes", "_deal_id_display")).lower()
-    return any(m in text for m in FIXTURE_MARKERS)
+    return bool(_FIXTURE_RE.search(text))
 
 
 UNKNOWN_CURRENCY = "currency not recorded"
