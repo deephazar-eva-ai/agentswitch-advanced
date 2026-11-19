@@ -2,7 +2,9 @@
 
     python -m o2c.drafts --instance suryodaya --out reports/            # propose: writes a review file, changes nothing
     python -m o2c.drafts --instance suryodaya --out reports/ --accounts-email <address> --create [--mailbox-id <id>]
-                                                                        # a person approves, then drafts are saved in their mailbox
+                                                                        # a person approves, then the accounts digest is saved in their mailbox
+    python -m o2c.drafts --instance suryodaya --out reports/ --create --only overdue_reminder
+                                                                        # customer reminders are saved only when asked for by name
 
 Two kinds of draft:
 - `accounts_digest`: one internal note to accounts listing orders not invoiced and payments
@@ -118,7 +120,17 @@ def accounts_digest(rep, matches, accounts_email=None):
             [[r["number"], _plain(r["customer"] or "unknown customer", CUSTOMER_WIDTH), r["due_date"], r["days_overdue"],
               _amount(r["outstanding"], r.get("currency")), r.get("payment_state") or "", test(r)] for r in inv_rows],
             right={3, 4})
-        lines += ["", "A reminder draft is proposed for each customer with an email address; a person reviews and sends it.", ""]
+        held = held_customers(inv_rows, pay_rows)
+        lines += ["", "A reminder draft is proposed for each customer with an email address"
+                  + (", except those held back below" if held else "") + "; a person reviews and sends it.", ""]
+        if held:
+            lines += [f"Reminders held back ({len(held)}): these customers have overdue invoices, but we also hold a "
+                      "payment from them that is not applied yet. Please apply it first, then decide whether a reminder is needed.", ""]
+            for party_id, pays in sorted(held.items(), key=lambda kv: kv[1][0].get("customer") or ""):
+                invs = [r["number"] for r in inv_rows if r.get("party_id") == party_id]
+                lines.append(f"- {_plain(pays[0].get('customer') or 'unknown customer', CUSTOMER_WIDTH)}: "
+                             f"payment {', '.join(_payment_text(p) for p in pays)}; overdue {', '.join(invs)}")
+            lines.append("")
     elif invoices["status"] == "ok":
         lines += ["None.", ""]
     else:
@@ -215,9 +227,32 @@ def _reminder_line(r, cur):
     return line
 
 
-def overdue_reminders(invoice_rows, parties_by_id):
-    """One reminder per customer with overdue invoices. Customers with no email are returned
-    as skipped, so a person can follow up another way.
+HELD_REASON = "held: we hold a payment from this customer that is not applied yet; apply it before sending a reminder"
+
+
+def _payment_text(p):
+    return f"{p.get('number') or '?'} ({_amount(p.get('unallocated'), _currency(p))}, received {p.get('payment_date') or '?'})"
+
+
+def held_customers(invoice_rows, payment_rows):
+    """party_id -> unapplied payment rows, for customers who have overdue invoices AND a payment
+    we have not applied yet (bug hunt B1, 12 Nov).
+
+    Their reminder is held back for a person: asking them to pay, or to "send the payment
+    details", is wrong while we hold their money. A payment with no customer is never matched.
+    """
+    overdue = {r.get("party_id") for r in invoice_rows if r.get("party_id")}
+    held = {}
+    for p in payment_rows or ():
+        if p.get("party_id") in overdue:
+            held.setdefault(p["party_id"], []).append(p)
+    return held
+
+
+def overdue_reminders(invoice_rows, parties_by_id, payment_rows=()):
+    """One reminder per customer with overdue invoices. Customers with no email, or with a
+    payment not applied yet (`payment_rows`, section 3), are returned as skipped, so a person
+    can follow up another way.
 
     A customer with invoices in more than one currency gets one section per currency, each
     with its own subtotal, and no grand total (review of #17: 100 INR + 50 USD is not 150 INR).
@@ -225,11 +260,17 @@ def overdue_reminders(invoice_rows, parties_by_id):
     by_party = {}
     for r in invoice_rows:
         by_party.setdefault(r.get("party_id"), []).append(r)
+    held = held_customers(invoice_rows, payment_rows)
     drafts, skipped = [], []
     for party_id, rows in sorted(by_party.items(), key=lambda kv: kv[1][0]["customer"] or ""):
         party = parties_by_id.get(party_id) or {}
         email = party.get("email")
         customer = rows[0]["customer"] or party.get("name") or "Customer"
+        if party_id in held:
+            skipped.append({"customer": customer, "invoices": [r["number"] for r in rows], "held": True,
+                            "payments": [p.get("number") for p in held[party_id]],
+                            "reason": HELD_REASON + " (" + "; ".join(_payment_text(p) for p in held[party_id]) + ")"})
+            continue
         if not email:
             skipped.append({"customer": customer, "invoices": [r["number"] for r in rows], "reason": "no email on the customer record"})
             continue
@@ -349,7 +390,7 @@ def propose(client, report_date=None, days=7, instance=None, accounts_email=None
         drafts.append(digest)
     if inv["status"] == "ok" and inv["rows"]:
         parties = {p["id"]: p for p in client.list_all("Party")}
-        reminders, skipped = overdue_reminders(inv["rows"], parties)
+        reminders, skipped = overdue_reminders(inv["rows"], parties, pay_rows)
         drafts += reminders
     return {
         "instance": instance,
@@ -405,14 +446,34 @@ DRAFT_KINDS = ("accounts_digest", "overdue_reminder")
 
 
 def drafts_to_save(prop, only=None):
-    """(ready, skipped_count): the proposed drafts --create would save, optionally one kind only.
+    """(ready, skipped): the proposed drafts --create would save, and [(draft, reason)] it won't.
 
-    Drafts without a recipient are never saved. `only="accounts_digest"` saves just the internal
-    note to accounts, so a first test does not put customer reminders into the shared data.
+    Without `only`, only the internal accounts digest is saved. Customer reminders are addressed
+    to the customer's own email, so saving them needs an explicit `only="overdue_reminder"`
+    (bug hunt B2, 12 Nov). Drafts without a recipient, and drafts built on rows that look like
+    other seats' test data, are never saved.
     """
-    chosen = [d for d in prop["drafts"] if only is None or d["kind"] == only]
-    ready = [d for d in chosen if d["to"] != ACCOUNTS_PLACEHOLDER]
-    return ready, len(chosen) - len(ready)
+    kind = only or "accounts_digest"
+    ready, skipped = [], []
+    for d in prop["drafts"]:
+        if d["kind"] != kind:
+            continue
+        if d["to"] == ACCOUNTS_PLACEHOLDER:
+            skipped.append((d, "no recipient yet (set --accounts-email)"))
+        elif d.get("fixture"):
+            skipped.append((d, "built on test data"))
+        else:
+            ready.append(d)
+    return ready, skipped
+
+
+def recipient_domains(ready):
+    """'example.com (2), x.example (1)': where the drafts would be addressed, for the confirmation."""
+    counts = {}
+    for d in ready:
+        domain = str(d["to"]).rpartition("@")[2].lower() or "?"
+        counts[domain] = counts.get(domain, 0) + 1
+    return ", ".join(f"{k} ({n})" for k, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
 
 
 def main():
@@ -424,7 +485,8 @@ def main():
     ap.add_argument("--accounts-email", default=os.environ.get("O2C_ACCOUNTS_EMAIL"))
     ap.add_argument("--create", action="store_true", help="after a person confirms, save the drafts in the mailbox (never sends)")
     ap.add_argument("--only", choices=DRAFT_KINDS,
-                    help="with --create, save only this kind of draft (e.g. accounts_digest for a first test)")
+                    help="with --create, the kind of draft to save (default accounts_digest); customer "
+                         "reminders are saved only with --only overdue_reminder")
     ap.add_argument("--mailbox-id", default=os.environ.get("O2C_MAILBOX_ID"),
                     help="only needed if this login has several mailboxes and no default one")
     args = ap.parse_args()
@@ -450,12 +512,17 @@ def main():
     if not mailbox:
         raise SystemExit("this login has no mailbox; nothing created")
     writer = DraftWriter(client, mailbox)
-    ready, skipped = drafts_to_save(prop, args.only)
+    kind = args.only or "accounts_digest"
+    ready, skipped = drafts_to_save(prop, kind)
+    reminders = sum(d["kind"] == "overdue_reminder" for d in prop["drafts"])
+    if kind != "overdue_reminder" and reminders:
+        print(f"{reminders} customer reminder(s) are not saved; review them in {stem}.md and use --only overdue_reminder to save them.")
+    for d, reason in skipped:
+        print(f"not saved ({reason}): {d['subject']}")
     if not ready:
-        raise SystemExit("no draft to save" + (f" of kind {args.only}" if args.only else "") + "; nothing created")
-    print(f"About to save {len(ready)} draft(s){' (' + args.only + ' only)' if args.only else ''} "
-          f"in mailbox {mailbox.get('id')}. They stay unsent."
-          + (f" {skipped} draft(s) have no recipient yet (set --accounts-email) and are not saved." if skipped else ""))
+        raise SystemExit(f"no {kind} draft to save; nothing created")
+    print(f"About to save {len(ready)} {kind} draft(s) in mailbox {mailbox.get('id')}, "
+          f"addressed to {recipient_domains(ready)}. They stay unsent.")
     if input("Type 'save drafts' to confirm: ").strip() != "save drafts":
         raise SystemExit("not confirmed; nothing created")
     for d in ready:

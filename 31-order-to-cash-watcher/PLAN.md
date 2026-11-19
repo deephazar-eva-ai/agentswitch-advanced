@@ -107,6 +107,18 @@ One file per finding in `findings/`, in the course format (`BUG_REPORT_FORMAT.md
 | [BUG-31-001](findings/BUG-31-001.md) | Invoice and applied-receipt read tools are not available to seat 31 | Both | Medium | Closed | Fixed by the instructor (10 Nov); verified 11 Nov on both systems |
 | [BUG-31-002](findings/BUG-31-002.md) | Login `team31a` has no mailbox, so reminder drafts cannot be saved | Both | Medium | Closed | Fixed by the instructor (10 Nov); verified 11 Nov: one mailbox per system |
 
+### Bugs in our own code
+Found in the read-only bug hunt of 12 Nov (code and both systems). The platform itself came out clean.
+
+| ID | Bug | Severity | Owner | Status | Resolution |
+|---|---|---|---|---|---|
+| B1 | A reminder could ask a customer to pay while we hold an unapplied payment from them | Medium | Deepak | Fixed | That customer's reminder is held back for a person, and the accounts digest lists it with the payment; test in `tests/test_drafts.py` |
+| B2 | `--create` without `--only` saved every customer reminder | Low–medium | Deepak | Fixed | Without `--only`, only the accounts digest is saved; customer reminders need `--only overdue_reminder`, the confirmation names the recipient domains, and test-data drafts are never saved |
+| B3 | Two unknown currencies counted as the same amount in matching | Low | Deepak | Open | |
+| B4 | Credit notes ignored: an invoice reduced by a credit was labelled "unpaid" | Low | Deepak | Open | |
+| B5 | Task 10 did not test every send path | Low | Deepak | Open | |
+| B6 | A dot in `--instance` broke the drafts file names | Low | Sunil | Closed | Fixed in #29 (safe instance label and file stem) |
+
 ## How to run the report
 Python 3.10+ standard library only; no installs.
 

@@ -127,15 +127,80 @@ class DraftsToSave(unittest.TestCase):
                        {"kind": "overdue_reminder", "to": "ap@acme.example"},
                        {"kind": "overdue_reminder", "to": drafts.ACCOUNTS_PLACEHOLDER}]}
 
-    def test_all_kinds_skip_drafts_without_recipient(self):
+    def test_default_saves_the_digest_only(self):
+        # Bug hunt B2: --create without --only must not save customer reminders.
         ready, skipped = drafts.drafts_to_save(self.PROP)
-        self.assertEqual([d["kind"] for d in ready], ["accounts_digest", "overdue_reminder"])
-        self.assertEqual(skipped, 1)
+        self.assertEqual([d["to"] for d in ready], ["ar@x.example"])
+        self.assertEqual(skipped, [])
 
     def test_only_the_digest_keeps_customer_reminders_out(self):
         ready, skipped = drafts.drafts_to_save(self.PROP, "accounts_digest")
         self.assertEqual([d["to"] for d in ready], ["ar@x.example"])
-        self.assertEqual(skipped, 0)
+        self.assertEqual(skipped, [])
+
+    def test_customer_reminders_need_only_and_skip_drafts_without_recipient(self):
+        ready, skipped = drafts.drafts_to_save(self.PROP, "overdue_reminder")
+        self.assertEqual([d["to"] for d in ready], ["ap@acme.example"])
+        self.assertEqual([reason for _, reason in skipped], ["no recipient yet (set --accounts-email)"])
+
+    def test_test_data_drafts_are_never_saved(self):
+        prop = {"drafts": [{"kind": "overdue_reminder", "to": "ap@acme.example", "fixture": True, "subject": "s"},
+                           {"kind": "accounts_digest", "to": "ar@x.example", "fixture": True, "subject": "d"}]}
+        for kind in (None, "overdue_reminder"):
+            ready, skipped = drafts.drafts_to_save(prop, kind)
+            self.assertEqual(ready, [])
+            self.assertEqual([reason for _, reason in skipped], ["built on test data"])
+
+    def test_digest_without_recipient_is_reported_not_saved(self):
+        prop = {"drafts": [{"kind": "accounts_digest", "to": drafts.ACCOUNTS_PLACEHOLDER}]}
+        ready, skipped = drafts.drafts_to_save(prop)
+        self.assertEqual((ready, len(skipped)), ([], 1))
+
+    def test_recipient_domains_for_the_confirmation(self):
+        ready = [{"to": "a@acme.example"}, {"to": "b@Acme.example"}, {"to": "c@beta.example"}]
+        self.assertEqual(drafts.recipient_domains(ready), "acme.example (2), beta.example (1)")
+
+
+class HeldReminders(unittest.TestCase):
+    """Bug hunt B1: no reminder to a customer while we hold a payment from them that is not applied."""
+
+    PARTIES = {"P1": {"email": "ap@acme.example"}, "P2": {"email": "ap@beta.example"}}
+
+    def test_customer_with_unapplied_payment_is_held_not_reminded(self):
+        rows = [inv_row("INV-1", 100.0), inv_row("INV-2", 70.0, party="P2", customer="Beta")]
+        made, skipped = drafts.overdue_reminders(rows, self.PARTIES, [dict(pay_row("PAY1", 40.0), currency="INR")])
+        self.assertEqual([d["to"] for d in made], ["ap@beta.example"])
+        self.assertEqual(len(skipped), 1)
+        held = skipped[0]
+        self.assertTrue(held["held"])
+        self.assertEqual((held["customer"], held["invoices"], held["payments"]), ("Acme", ["INV-1"], ["PAY1"]))
+        self.assertIn("PAY1 (40.00 INR, received 2026-11-01)", held["reason"])
+
+    def test_customer_without_unapplied_payment_is_unchanged(self):
+        rows = [inv_row("INV-1", 100.0)]
+        before = drafts.overdue_reminders(rows, self.PARTIES)
+        after = drafts.overdue_reminders(rows, self.PARTIES, [pay_row("PAY1", 40.0, party="P9", customer="Other")])
+        self.assertEqual(before, after)
+        self.assertEqual(len(after[0]), 1)
+
+    def test_payment_without_customer_holds_nobody(self):
+        rows = [dict(inv_row("INV-1", 100.0), party_id=None)]
+        held = drafts.held_customers(rows, [dict(pay_row("PAY1", 40.0), party_id=None)])
+        self.assertEqual(held, {})
+
+    def test_digest_lists_held_customers(self):
+        inv = dict(inv_row("INV-1", 100.0), days_overdue=14)
+        pay = dict(pay_row("PAY1", 40.0), currency="INR")
+        body = drafts.accounts_digest(full_rep(inv_rows=[inv], pay_rows=[pay]), [])["body_text"]
+        self.assertIn("except those held back below", body)
+        self.assertIn("Reminders held back (1)", body)
+        self.assertIn("- Acme: payment PAY1 (40.00 INR, received 2026-11-01); overdue INV-1", body)
+
+    def test_digest_without_held_customers_keeps_its_wording(self):
+        inv = dict(inv_row("INV-1", 100.0), days_overdue=14)
+        body = drafts.accounts_digest(full_rep(inv_rows=[inv], pay_rows=[pay_row("PAY1", 40.0, party="P2")]), [])["body_text"]
+        self.assertNotIn("held back", body)
+        self.assertIn("A reminder draft is proposed for each customer with an email address; a person reviews and sends it.", body)
 
 
 class FindMailbox(unittest.TestCase):
