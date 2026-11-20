@@ -191,6 +191,65 @@ def accounts_digest(rep, matches, accounts_email=None):
 
 UNKNOWN_CURRENCY = report.UNKNOWN_CURRENCY
 
+# Live test F1 (20 Nov): the platform refuses a message body over 10,000 characters ("Body Text is too
+# long (max 10000 chars)"); the limit is not in the tool schema. Suryodaya's digest was 17,209
+# characters, so it could never be saved. A longer draft is split into numbered parts.
+BODY_MAX = 10000
+_PART_MARGIN = 200        # room for the "(Part i of n.)" and "(continued)" lines
+_RULE_RE = re.compile(r"-+(?:  +-+)*")
+_HEADING_RE = re.compile(r"\d+\. \S|Invoices in \S+:|Data validation warnings")
+
+
+def _pack(lines, budget):
+    """Line chunks of at most `budget` characters (newlines counted). A cut prefers the last blank
+    line in the second half of a chunk; a cut inside a text table repeats its header lines."""
+    chunks, cur, size, header = [], [], 0, None
+    for i, line in enumerate(lines):
+        if i + 1 < len(lines) and _RULE_RE.fullmatch(lines[i + 1].strip() or "x"):
+            header = None       # a new table starts here; its header is set on the rule line
+        if _RULE_RE.fullmatch(line.strip() or "x") and i > 0:
+            header = [lines[i - 1], line]
+        elif not line.strip():
+            header = None if cur and cur[-1].strip() == "" else header
+        while len(line) > budget:           # one line longer than a part (never seen): hard cut
+            chunks.append(cur + [line[:budget]]) if not cur else chunks.extend([cur, [line[:budget]]])
+            cur, size, line = [], 0, line[budget:]
+        if cur and size + len(line) + 1 > budget:
+            blanks = [j for j, l in enumerate(cur) if not l.strip() and j >= len(cur) // 2]
+            # Best: just before a section heading ("2. Invoices overdue", "Invoices in USD:"), so a
+            # heading never ends a part with its table in the next one.
+            before_heading = [j for j in blanks if j + 1 < len(cur) and _HEADING_RE.match(cur[j + 1])]
+            if not before_heading and _HEADING_RE.match(line) and cur[-1].strip() == "":
+                before_heading = [len(cur) - 1]
+            blanks = before_heading or blanks
+            cut = blanks[-1] + 1 if blanks else len(cur)
+            chunks.append(cur[:cut])
+            cur = cur[cut:]
+            if header and not blanks and line.strip():
+                cur = [header[0] + " (continued)", header[1]] + cur
+            size = sum(len(l) + 1 for l in cur)
+        cur.append(line)
+        size += len(line) + 1
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+def fit_body(draft, limit=BODY_MAX):
+    """[draft], or the draft as numbered parts that each fit the platform's body limit (F1).
+    Every part keeps the recipient; the subject says "(part i of n)", so D4 sees each part once."""
+    if len(draft["body_text"]) <= limit:
+        return [draft]
+    chunks = _pack(draft["body_text"].split("\n"), limit - _PART_MARGIN)
+    n = len(chunks)
+    parts = []
+    for i, chunk in enumerate(chunks, 1):
+        while chunk and not chunk[0].strip():
+            chunk = chunk[1:]
+        body = "\n".join([f"(Part {i} of {n}.)", ""] + chunk).rstrip()
+        parts.append({**draft, "subject": f"{draft['subject']} (part {i} of {n})", "body_text": body, "part": [i, n]})
+    return parts
+
 
 def _currency(row):
     """The row's currency code, or None if the record has none. Never guessed."""
@@ -427,6 +486,8 @@ class DraftWriter:
             raise WriteBlocked("refused: the draft has no recipient yet; a person must fill it in")
         if not args.get("from_email") or not args.get("company_id"):
             raise WriteBlocked("refused: the draft needs the mailbox's address and company (from_email, company_id)")
+        if len(args.get("body_text") or "") > BODY_MAX:   # F1: the platform would refuse it anyway
+            raise WriteBlocked(f"refused: the body is over {BODY_MAX} characters; split it with fit_body()")
         # Never retried by the client: a retried create could save the same draft twice.
         return tool_result(self.client._rpc("tools/call", {"name": name, "arguments": args}), name)
 
@@ -448,11 +509,11 @@ def propose(client, report_date=None, days=7, instance=None, accounts_email=None
     drafts, skipped = [], []
     digest = accounts_digest(rep, matches, accounts_email)
     if digest:
-        drafts.append(digest)
+        drafts += fit_body(digest)
     if inv["status"] == "ok" and inv["rows"]:
         parties = {p.get("id"): p for p in client.list_all("Party") if p.get("id") is not None}   # D7
         reminders, skipped = overdue_reminders(inv["rows"], parties, pay_rows)
-        drafts += reminders
+        drafts += [part for r in reminders for part in fit_body(r)]
     return {
         "instance": instance,
         "report_date": rep["report_date"],
