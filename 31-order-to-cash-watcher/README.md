@@ -137,3 +137,4 @@ Seat 34's harness adds `--prompt "<text>"` to every seat command.
 | [docs/report-details.md](docs/report-details.md) | How the report builds, sorts and validates each section, and how it writes files |
 | [docs/p2-review-fixes.md](docs/p2-review-fixes.md) | The receipt-currency and task-7 fixes from the #35 review |
 | [docs/daily-points.md](docs/daily-points.md) | Working guidelines and the module ownership split |
+| [docs/handover-deepak.md](docs/handover-deepak.md) | What Deepak finished, what is left and whose it is, how to run, things that will bite |
