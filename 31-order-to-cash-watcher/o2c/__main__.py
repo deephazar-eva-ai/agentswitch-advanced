@@ -12,14 +12,9 @@ from pathlib import Path
 
 from . import report
 from .client import Client, McpError, platform_failure
-from .output import instance_label, report_stem, safe_console, write_pair
+from .output import days_option, instance_label, report_stem, safe_console, write_pair
 
-
-def nonnegative_days(value):
-    try:
-        return report.validate_days(int(value))
-    except (ValueError, TypeError):
-        raise argparse.ArgumentTypeError("days must be a nonnegative integer") from None
+nonnegative_days = days_option   # older name, kept for callers
 
 
 def write_report(rep, md, out, instance):
@@ -37,7 +32,7 @@ def write_report(rep, md, out, instance):
 
 def main():
     ap = argparse.ArgumentParser(prog="o2c", description="Daily order-to-cash exception report (read-only)")
-    ap.add_argument("--days", type=nonnegative_days, default=os.environ.get("O2C_DAYS", "7"), help="N: nonnegative days before an order counts as not invoiced")
+    ap.add_argument("--days", type=days_option, default=os.environ.get("O2C_DAYS", "7"), help="N: nonnegative days before an order counts as not invoiced")
     ap.add_argument("--date", type=date.fromisoformat, help="report date (default: today in IST)")
     ap.add_argument("--instance", default=os.environ.get("AGENTSWITCH_INSTANCE"), help="label for the report, e.g. suryodaya")
     ap.add_argument("--out", type=Path, help="folder to write <instance>-<date>.md and .json; prints Markdown if omitted")

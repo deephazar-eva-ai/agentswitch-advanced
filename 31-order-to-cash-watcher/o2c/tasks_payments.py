@@ -21,7 +21,8 @@ from .values import business_date, currency_code, money, money_number
 
 from . import drafts, report
 from .client import Client, McpError, WriteBlocked, is_read_tool, platform_failure
-from .output import safe_console
+from .output import days_option, safe_console
+from .values import display_text
 
 SEND_TOOLS = ("endpoint.email.messages.send", "EmailMessage.send_email", "EmailMessage.record_sent", "EmailCampaign.send")
 SEND_FAMILIES = ("EmailMessage.", "EmailCampaign.", "endpoint.email.")
@@ -80,7 +81,8 @@ def _blocked(reason):
 
 
 def _diff(expected, got):
-    missing, extra = sorted(expected - got), sorted(got - expected)
+    # str(): a missing id (None) next to string ids must not crash the evidence (bug hunt E4).
+    missing, extra = sorted(expected - got, key=str), sorted(got - expected, key=str)
     return f"missing={missing[:3]}{'…' if len(missing) > 3 else ''}; extra={extra[:3]}{'…' if len(extra) > 3 else ''}"
 
 
@@ -118,15 +120,19 @@ def overdue_invoices(ctx):
     raw = _invoices(ctx)
     if raw is None:
         return _blocked("Invoice.list not available to this login (BUG-31-001)")
-    day = ctx.report_date.isoformat()
     submitted = [i for i in raw if i.get("docstatus") == 1 and _customer_invoice(i)]
-    expected = {i.get("id") for i in submitted if i.get("due_date") and str(i["due_date"])[:10] < day and _money(i.get("outstanding")) > 0}
-    expected_no_due = {i.get("id") for i in submitted if not i.get("due_date")}
+    # Bug hunt E4 (20 Nov): a due date that can't be read (e.g. 2026-02-30, or with a leading space)
+    # is "no usable due date", as the report lists it. Comparing the first 10 characters as text
+    # expected such invoices in the overdue list, so the task failed on a correct report.
+    expected = {i.get("id") for i in submitted
+                if _day(i.get("due_date")) is not None and _day(i.get("due_date")) < ctx.report_date
+                and _money(i.get("outstanding")) > 0}
+    expected_no_due = {i.get("id") for i in submitted if _day(i.get("due_date")) is None}
     bills = {i.get("id") for i in raw if not _customer_invoice(i)}
     sec = ctx.report()["sections"]["invoices_overdue"]
     got = {r["id"] for r in sec["rows"]}
     got_no_due = {r["id"] for r in sec.get("no_due_date", [])}
-    leaked = sorted((got | got_no_due) & bills)
+    leaked = sorted((got | got_no_due) & bills, key=str)
     passed = sec["status"] == "ok" and got == expected and got_no_due == expected_no_due and not leaked
     return _ok(passed, f"verifier=invoice_recount; overdue expected={len(expected)} got={len(got)} ({_diff(expected, got)}); "
                        f"no_due_date expected={len(expected_no_due)} got={len(got_no_due)}; "
@@ -162,7 +168,15 @@ def _by_currency(pairs):
 
 
 def _fmt(totals):
-    return ", ".join(f"{c or 'unknown'} {n}/{t:,.2f}" for c, (n, t) in sorted(totals.items(), key=lambda kv: str(kv[0]))) or "none"
+    # A total the report could not hold to the cent is None (bug hunt E6): say so, don't crash.
+    return ", ".join(f"{c or 'unknown'} {n}/{'unknown' if t is None else format(t, ',.2f')}"
+                     for c, (n, t) in sorted(totals.items(), key=lambda kv: str(kv[0]))) or "none"
+
+
+def _pay_key(row):
+    """Bug hunt E3 (20 Nov): payments are matched by id. Keyed by number, two payments with no number
+    or the same number collapsed into one, failing task 7 and showing a false leak in task 8."""
+    return row.get("id") if row.get("id") is not None else f"number:{row.get('number')}"
 
 
 def unapplied_payments(ctx):
@@ -198,14 +212,14 @@ def unapplied_payments(ctx):
         age = (ctx.report_date - day).days if day else None
         bucket = ("unknown" if age is None else "future" if age < 0 else
                   "0-30" if age <= 30 else "31-60" if age <= 60 else "61-90" if age <= 90 else "90+")
-        expected[p.get("number")] = amount, cur
+        expected[_pay_key(p)] = amount, cur
         party = p.get("party_id") or p.get("_party_id_display") or "unknown"
         for name, key in (("by_currency", cur), ("by_age", (bucket, cur)),
                           ("by_status", (p.get("status") or "unknown", cur)), ("by_customer", (party, cur))):
             add(groups[name], key, amount)
     sec = ctx.report()["sections"]["payments_not_applied"]
     rows = sec["rows"]
-    got = {r["number"]: (r["unallocated"], r.get("currency")) for r in rows}
+    got = {_pay_key(r): (r["unallocated"], r.get("currency")) for r in rows}
     amounts_ok = (len(got) == len(rows) and set(got) == set(expected)
                   and all(got[n] == expected[n] for n in got))
     summ = sec.get("summary") or {}
@@ -242,9 +256,13 @@ def unapplied_payments(ctx):
 
 def unapplied_excludes_outgoing(ctx):
     raw = _payments(ctx)
-    other = {p.get("number") for p in raw if p.get("type") != "receive"}
-    got = {r["number"] for r in ctx.report()["sections"]["payments_not_applied"]["rows"]}
-    leaked = sorted(got & other)
+    other = [p for p in raw if p.get("type") != "receive"]
+    rows = ctx.report()["sections"]["payments_not_applied"]["rows"]
+    # E3: matched by id; a row without an id is matched by its number, and a missing number never matches.
+    got_ids = {r.get("id") for r in rows if r.get("id") is not None}
+    got_numbers = {r.get("number") for r in rows if r.get("id") is None and r.get("number") is not None}
+    leaked = sorted(str(p.get("number")) for p in other
+                    if (p.get("id") is not None and p.get("id") in got_ids) or p.get("number") in got_numbers)
     note = "" if other else "; vacuous: this instance has no outgoing or transfer payments"
     return _ok(not leaked, f"verifier=type_check; outgoing_or_transfer_checked={len(other)}; leaked={leaked[:3]}{note}")
 
@@ -386,7 +404,7 @@ def main():
     ap = argparse.ArgumentParser(prog="o2c.tasks_payments", description="Run suite tasks 5-10 locally")
     ap.add_argument("--instance", default=os.environ.get("AGENTSWITCH_INSTANCE"), required=not os.environ.get("AGENTSWITCH_INSTANCE"))
     ap.add_argument("--date", type=date.fromisoformat, required=True, help="report date; never the clock")
-    ap.add_argument("--days", type=int, default=int(os.environ.get("O2C_DAYS", 7)))
+    ap.add_argument("--days", type=days_option, default=os.environ.get("O2C_DAYS", "7"))   # E5
     ap.add_argument("--mailbox-id", default=os.environ.get("O2C_MAILBOX_ID"))
     ap.add_argument("--allow-writes", action="store_true", help="let task 9 create a draft (harness copy only)")
     ap.add_argument("--out", help="write results JSON here")
@@ -406,7 +424,8 @@ def main():
         with open(args.out, "w") as f:
             json.dump(out, f, indent=2)
     for r in results:
-        print(f"{'PASS' if r['passed'] else 'FAIL'} {r['score']:.1f} {r['id']}: {r['evidence']}")
+        # Evidence quotes record numbers: no escape sequences reach the terminal (E2).
+        print(display_text(f"{'PASS' if r['passed'] else 'FAIL'} {r['score']:.1f} {r['id']}: {r['evidence']}"))
     print(out["summary"])
 
 

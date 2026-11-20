@@ -76,9 +76,10 @@ def candidate_matches(payment_rows, documents, limit=3, tolerance=0.01):
             # Bug hunt B3: an unknown currency never equals another unknown currency.
             return cur is not None and d.get("currency") == cur and abs(d["amount"] - amount) <= tolerance
 
-        ranked = sorted(docs, key=lambda d: (not exact(d), d.get("currency") != cur, abs(d["amount"] - amount), d["number"] or ""))
+        ranked = sorted(docs, key=lambda d: (not exact(d), d.get("currency") != cur, abs(d["amount"] - amount), str(d["number"] or "")))
         out.append({
             "payment": p["number"],
+            "payment_id": p.get("id"),   # bug hunt E3: the key; numbers can be missing or repeated
             "customer": p.get("customer"),
             "unallocated": amount,
             "currency": cur,

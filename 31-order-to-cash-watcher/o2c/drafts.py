@@ -18,6 +18,7 @@ folder="drafts" and is_draft=true. It never updates, deletes or sends. Every sen
 EmailCampaign.send) is refused before a request is made.
 """
 import argparse
+from collections import Counter
 import json
 import re
 import os
@@ -26,8 +27,8 @@ from pathlib import Path
 
 from . import matching, report
 from .client import Client, McpError, WriteBlocked, platform_failure, tool_result
-from .values import money, money_sum, money_text
-from .output import instance_label, report_stem, safe_console, write_pair
+from .values import display_text, has_unsafe_text, money, money_sum, money_text
+from .output import days_option, instance_label, report_stem, safe_console, write_pair
 
 DRAFT_TOOL = "EmailMessage.create"
 ACCOUNTS_PLACEHOLDER = "(accounts address: a person fills this in)"
@@ -39,7 +40,7 @@ def _money(v, currency=None):
 
 def _plain(v, width=None):
     """Record text for a plain-text table cell: one line, optionally cut to `width` characters."""
-    text = " ".join(str(v if v is not None else "").split())
+    text = " ".join(display_text(v if v is not None else "").split())   # E2: no control characters
     return text if width is None or len(text) <= width else text[:width - 1] + "…"
 
 
@@ -83,7 +84,15 @@ def accounts_digest(rep, matches, accounts_email=None):
     diagnostics = [r for sec in secs.values() for r in sec.get("data_issues", [])]
     if not order_rows and not inv_rows and not pay_rows and not no_due and not diagnostics:
         return None
-    by_payment = {m["payment"]: m for m in matches}
+    # Bug hunt E3 (20 Nov): look a payment's matches up by its id. Keyed by number, two payments with
+    # no number (or the same one) shared one entry, so one customer's payment showed another
+    # customer's invoice as "same amount". A number is used only when it is unique.
+    by_id = {m["payment_id"]: m for m in matches if m.get("payment_id") is not None}
+    numbers = Counter(m.get("payment") for m in matches)
+    by_number = {m["payment"]: m for m in matches if m.get("payment") is not None and numbers[m["payment"]] == 1}
+
+    def match_for(r):
+        return (by_id.get(r.get("id")) if r.get("id") is not None else None) or by_number.get(r.get("number"))
     partly = sum(1 for r in inv_rows if r.get("payment_state") == report.PARTIALLY_PAID)
     credited = sum(1 for r in inv_rows if r.get("payment_state") == report.PARTIALLY_CREDITED)
     inv_count = str(len(inv_rows)) if invoices["status"] == "ok" else "not available"
@@ -150,7 +159,7 @@ def accounts_digest(rep, matches, accounts_email=None):
     if pay_rows:
         rows = []
         for r in pay_rows:
-            cands = (by_payment.get(r["number"]) or {}).get("candidates") or []
+            cands = (match_for(r) or {}).get("candidates") or []
             match = ", ".join(f"{c['kind']} {c['number']} ({_amount(c['amount'], c.get('currency'))}"
                               f"{', same amount' if c['exact'] else ''})" for c in cands) or "no candidate found"
             if r.get("hint") == "same_amount":   # receipt history (PaymentReceived), when readable
@@ -243,6 +252,7 @@ def safe_name(raw):
         return None, None
     if (one_line != text.strip() or len(one_line) > NAME_MAX or any(c in _UNSAFE_NAME_CHARS for c in one_line)
             or "://" in one_line or "@" in one_line or any(ord(c) < 32 for c in text if c not in "\n\r\t")
+            or has_unsafe_text(text)   # E2: direction overrides, zero-width marks, C1 controls
             or _INSTRUCTION_RE.search(one_line)):
         return None, "customer name not copied into the draft: it has line breaks, markup or instruction-like text"
     return one_line, None
@@ -251,7 +261,8 @@ def safe_name(raw):
 def safe_email(raw):
     """The one address to draft to, or None: never a list, a display name or anything else."""
     text = "" if raw is None else str(raw).strip()
-    return text if _EMAIL_RE.fullmatch(text) else None
+    # E2: an address with invisible or control characters is not a plain address.
+    return text if _EMAIL_RE.fullmatch(text) and not has_unsafe_text(text) else None
 
 
 def _ref(v):
@@ -572,7 +583,7 @@ def recipient_domains(ready):
 
 def main():
     ap = argparse.ArgumentParser(prog="o2c.drafts", description="Propose reminder drafts (never sends)")
-    ap.add_argument("--days", type=int, default=int(os.environ.get("O2C_DAYS", 7)))
+    ap.add_argument("--days", type=days_option, default=os.environ.get("O2C_DAYS", "7"))   # E5
     ap.add_argument("--date", type=date.fromisoformat)
     ap.add_argument("--instance", default=os.environ.get("AGENTSWITCH_INSTANCE"))
     ap.add_argument("--out", type=Path, required=True, help="folder for <instance>-<date>-drafts.md/.json (gitignored)")
@@ -632,7 +643,11 @@ def main():
         raise SystemExit(f"every {kind} draft is already in the mailbox as an unsent draft; nothing created")
     print(f"About to save {len(ready)} {kind} draft(s) in mailbox {mailbox.get('id')}, "
           f"addressed to {recipient_domains(ready)}. They stay unsent.")
-    if input("Type 'save drafts' to confirm: ").strip() != "save drafts":
+    try:
+        answer = input("Type 'save drafts' to confirm: ")
+    except (EOFError, KeyboardInterrupt):   # E5: no input, or Ctrl-C, is "not confirmed"
+        answer = ""
+    if answer.strip() != "save drafts":
         raise SystemExit("not confirmed; nothing created")
     for i, d in enumerate(ready):
         try:

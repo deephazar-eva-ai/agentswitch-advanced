@@ -5,7 +5,7 @@ The rules are pure functions over rows so they can be tested without the platfor
 import re
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
-from .values import business_date, money, money_number, money_text, money_sum, currency_code
+from .values import business_date, display_text, money, money_number, money_text, money_sum, currency_code
 
 from . import receipts as receipts_mod
 
@@ -292,7 +292,14 @@ def payments_summary(rows):
     def add(table, key, row):
         t = table.setdefault(key, {"count": 0, "unallocated": 0.0})
         t["count"] += 1
-        t["unallocated"] = money_sum([money(t["unallocated"]), money(row["unallocated"])])
+        if t["unallocated"] is None:
+            return
+        try:
+            t["unallocated"] = money_sum([money(t["unallocated"]), money(row["unallocated"])])
+        except ValueError:
+            # Bug hunt E6: a sum beyond what a JSON number holds to the cent is unknown, never rounded
+            # or a crash. build() lists it as a data issue.
+            t["unallocated"] = None
 
     totals, buckets, statuses, customers = {}, {}, {}, {}
     for r in rows:
@@ -314,7 +321,8 @@ def payments_summary(rows):
         "by_status": [{"status": st, "currency": c, **v} for (st, c), v in
                       sorted(statuses.items(), key=lambda kv: (kv[0][0], rank[kv[0][1]]))],
         "by_customer": sorted(({"party_id": p, "currency": c, **v} for (p, c), v in customers.items()),
-                              key=lambda x: (rank[x["currency"]], -x["unallocated"], x.get("customer") or "")),
+                              key=lambda x: (rank[x["currency"]], x["unallocated"] is None,
+                                              -(x["unallocated"] or 0), str(x.get("customer") or ""))),
     }
 
 
@@ -504,11 +512,15 @@ def build(client, report_date=None, days=7, instance=None, currencies=None):
     else:
         history = {"status": "blocked",
                    "reason": "this login has no PaymentReceived read tool, so receipt history is not shown. Tracked as BUG-31-001"}
+    summary = payments_summary(pay_rows)
+    if any(t["unallocated"] is None for t in summary["by_currency"]):
+        payment_issues.append({"id": None, "number": None, "field": "summary",
+                               "reason": "a total is too large to show exactly; shown as unknown"})
     sections["payments_not_applied"] = {
         "status": "ok",
         "rule": "incoming (receive), not cancelled, unallocated > 0",
         "rows": pay_rows,
-        "summary": payments_summary(pay_rows),
+        "summary": summary,
         "receipt_history": history,
         "note": None if payments else "no incoming payments on this instance (expected, instructor 7 Nov)",
         "data_issues": payment_issues,
@@ -560,8 +572,9 @@ def cell(v):
     """
     if v is None:
         return ""
-    text = str(v).replace("\\", "\\\\").replace("|", "\\|")
-    return " ".join(text.replace("\r\n", "\n").replace("\r", "\n").split("\n")).strip()
+    # E2: control and invisible formatting characters from a record never reach the file or console.
+    text = display_text(v).replace("\\", "\\\\").replace("|", "\\|")
+    return " ".join(text.replace("\r\n", "\n").replace("\r", "\n").replace("\x85", "\n").replace("\t", " ").split("\n")).strip()
 
 
 def _invoice_rows(rows):

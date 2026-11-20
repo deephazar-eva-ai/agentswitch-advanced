@@ -10,7 +10,10 @@ import os
 import socket
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+
+from .values import display_text, reject_json_constant
 
 READ_SUFFIXES = (".list", ".get")
 READ_TOOLS = {"tools.list", "tools.search", "tools.describe", "endpoint.make.thread"}
@@ -57,8 +60,17 @@ class Client:
         for name, value in (("AGENTSWITCH_BASE_URL", base_url), ("AGENTSWITCH_TOKEN", token)):
             if not (value or os.environ.get(name)):
                 raise McpError(f"{name} is not set")
-        self.base_url = (base_url or os.environ["AGENTSWITCH_BASE_URL"]).rstrip("/")
-        self.token = token or os.environ["AGENTSWITCH_TOKEN"]
+        # Bug hunt E1 (20 Nov): a token with a stray carriage return (a .env saved with Windows line
+        # endings) made urllib raise a traceback that printed the whole token. Settings are checked
+        # here, and the error names the setting, never its value.
+        self.base_url = (base_url or os.environ["AGENTSWITCH_BASE_URL"]).strip().rstrip("/")
+        self.token = (token or os.environ["AGENTSWITCH_TOKEN"]).strip()
+        if not self.token or any(ord(c) < 33 or ord(c) == 127 for c in self.token):
+            raise McpError("AGENTSWITCH_TOKEN contains spaces or control characters "
+                           "(check the .env file for Windows line endings)")
+        parts = urllib.parse.urlsplit(self.base_url)
+        if parts.scheme not in ("http", "https") or not parts.netloc or any(ord(c) < 33 for c in self.base_url):
+            raise McpError("AGENTSWITCH_BASE_URL must be an http:// or https:// address")
         self.timeout = timeout
         self._id = 0
         self._sleep = time.sleep
@@ -239,7 +251,8 @@ def platform_failure(prog, error):
     """One line on stderr and exit 3, instead of a traceback (bug hunt D2). Seat 34's harness
     shows the last output line as the reason."""
     import sys
-    print(f"{prog}: could not complete: {error}", file=sys.stderr)
+    # The server's message is outside text: no escape sequences reach the terminal (E2).
+    print(f"{prog}: could not complete: {display_text(error)}", file=sys.stderr)
     raise SystemExit(EXIT_PLATFORM)
 
 
@@ -274,7 +287,7 @@ def _response_message(raw, ctype, status, request_id, what):
     messages = []
     for text in candidates:
         try:
-            messages.append(json.loads(text))
+            messages.append(json.loads(text, parse_constant=reject_json_constant))
         except ValueError:
             continue
     if not messages:
@@ -297,6 +310,6 @@ def tool_result(result, name="tool"):
     if text is None:
         raise McpError(f"{name}: the result has no data")
     try:
-        return json.loads(text)
+        return json.loads(text, parse_constant=reject_json_constant)
     except ValueError:
         raise McpError(f"{name}: the result is not JSON") from None
