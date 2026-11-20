@@ -90,6 +90,15 @@ class Task12(unittest.TestCase):
         self.assertFalse(res["passed"])
         self.assertIn("unknown (strict)", res["evidence"])
 
+    def test_a_mailbox_lookup_that_fails_makes_the_task_strict(self):
+        # Several mailboxes and no default (G1), or a failed read: our login is unknown, so any change counts.
+        fake = platform()
+        fake.mailboxes = [{"id": "M1", "user_id": ME}, {"id": "M2", "user_id": ME}]
+        self._during_build(fake, lambda f: f.data["Payment"][1].update(notes="edit", updated_by="U-30"))
+        res = T.report_read_only(T.Ctx(fake, "x", D))
+        self.assertFalse(res["passed"])
+        self.assertIn("unknown (strict)", res["evidence"])
+
     def test_a_non_read_call_by_the_report_fails(self):
         fake = platform()
         real = report.build
@@ -106,6 +115,22 @@ class Task12(unittest.TestCase):
         res = T.report_read_only(T.Ctx(fake, "x", D))
         self.assertFalse(res["passed"])
         self.assertIn("Payment.update", res["evidence"])
+
+    def test_a_raw_request_that_bypasses_the_read_tools_fails(self):
+        # The recorder logs anything other than tool_names/list_all/call (e.g. a raw _rpc) as unknown, and an
+        # unknown call is not a read: the task must fail even though no record changed.
+        fake = platform()
+        real = report.build
+
+        def build(client, **kw):
+            client._rpc          # reaching for the raw request is enough to be recorded
+            return real(client, **kw)
+
+        report.build = build
+        self.addCleanup(lambda: setattr(report, "build", real))
+        res = T.report_read_only(T.Ctx(fake, "x", D))
+        self.assertFalse(res["passed"])
+        self.assertIn("<_rpc>", res["evidence"])
 
     def test_registered_as_a_suite_task(self):
         self.assertEqual(T.TASKS[-1][0], "report_read_only")

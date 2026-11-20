@@ -192,8 +192,8 @@ def accounts_digest(rep, matches, accounts_email=None):
 UNKNOWN_CURRENCY = report.UNKNOWN_CURRENCY
 
 # Live test F1 (20 Nov): the platform refuses a message body over 10,000 characters ("Body Text is too
-# long (max 10000 chars)"); the limit is not in the tool schema. Suryodaya's digest was 17,209
-# characters, so it could never be saved. A longer draft is split into numbered parts.
+# long (max 10000 chars)"); the limit is not in the tool schema. Suryodaya's digest was well over
+# it, so it could never be saved. A longer draft is split into numbered parts.
 BODY_MAX = 10000
 _PART_MARGIN = 200        # room for the "(Part i of n.)" and "(continued)" lines
 _RULE_RE = re.compile(r"-+(?:  +-+)*")
@@ -636,20 +636,24 @@ def existing_drafts(client, mailbox):
 
 
 _FAMILY_RE = re.compile(r"(Payment reminder|Order-to-cash exceptions)\b")
+SUBJECT_FAMILY = {"accounts_digest": "Order-to-cash exceptions", "overdue_reminder": "Payment reminder"}
 
 
-def older_drafts(ready, existing):
-    """Unsent drafts already in the mailbox to the same recipient and of the same kind as a draft about to be
-    saved, but with a different subject: an earlier day's reminder, or a digest whose figures (or number of
-    parts) have changed since. They are not touched; the person is told to check them (review of #54)."""
-    out = set()
-    for d in ready:
-        to, subject = _draft_key(d["to"], d["subject"])
-        family = _FAMILY_RE.match(subject)
-        for e_to, e_subject in existing:
-            if e_to == to and e_subject != subject and family and e_subject.startswith(family.group(1)):
-                out.add((e_to, e_subject))
-    return sorted(out)
+def older_drafts(current, existing, kind=None):
+    """Unsent drafts of this kind already in the mailbox that are not one of this run's drafts: an earlier day's
+    reminder or digest, a digest whose figures or number of parts changed, or a reminder to a customer who gets
+    none today (paid since, or now held back because we hold their payment, B1). They are not touched; the
+    person is told to check them before sending (review of #54).
+
+    `current` is every draft this run would save, including those already in the mailbox (D4 duplicates).
+    Comparing against all of them, not one at a time, means the parts of one split draft never count as
+    "older" than each other (second review of #54: after a failed save, the rerun named the saved part 1).
+    Any recipient counts, not only this run's: a stale reminder to a customer who has since paid is the one
+    that must not go out."""
+    mine = {_draft_key(d["to"], d["subject"]) for d in current}
+    families = ({SUBJECT_FAMILY[kind]} if kind in SUBJECT_FAMILY
+                else {m.group(1) for _, subject in mine if (m := _FAMILY_RE.match(subject))})
+    return sorted(key for key in existing if key not in mine and any(key[1].startswith(f) for f in families))
 
 
 def without_duplicates(ready, existing):
@@ -725,12 +729,13 @@ def main():
     # D4: running --create again (a retry after a crash, a second person) must not save the same drafts twice.
     try:
         existing = existing_drafts(client, mailbox)
+        current = list(ready)
         ready, duplicates = without_duplicates(ready, existing)
     except McpError as e:
         platform_failure("o2c.drafts", e)
     for d in duplicates:
         print(f"not saved (already in the mailbox as an unsent draft): {d['subject']}")
-    for to, subject in older_drafts(ready, existing):
+    for to, subject in older_drafts(current, existing, kind):
         print(f"check: an older unsent draft to {to.rpartition('@')[2] or '?'} is still in the mailbox "
               f"({subject!r}); delete it or check it before sending")
     if not ready:
