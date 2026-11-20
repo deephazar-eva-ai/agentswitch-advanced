@@ -410,7 +410,14 @@ def invoices_overdue(invoices, report_date, issues=None):
     """
     overdue, no_due = [], []
     for inv in invoices:
-        if inv.get("docstatus") != SUBMITTED or inv.get("direction", RECEIVABLE) != RECEIVABLE:
+        if inv.get("docstatus") != SUBMITTED:
+            continue
+        direction = inv.get("direction", RECEIVABLE)
+        if direction != RECEIVABLE:
+            # Bug hunt G2 (20 Nov): supplier bills ("payable") are left out by design; any other value
+            # (empty, "Receivable", a typo) is left out too, but said so, never silently.
+            if direction != "payable":
+                _issue(issues, inv, "direction", "unknown invoice direction; left out (expected receivable or payable)")
             continue
         outstanding = _amount_value(inv, "outstanding", issues)
         paid = _amount_value(inv, "amount_paid", issues)

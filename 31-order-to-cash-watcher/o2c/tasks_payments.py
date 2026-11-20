@@ -409,6 +409,7 @@ def main():
     ap.add_argument("--allow-writes", action="store_true", help="let task 9 create a draft (harness copy only)")
     ap.add_argument("--out", help="write results JSON here")
     args = ap.parse_args()
+    safe_console()   # bug hunt G4: before a failure line can print (D6)
 
     try:
         client = Client()
@@ -417,7 +418,6 @@ def main():
     ctx = Ctx(client, args.instance, args.date, args.days, mailbox_id=args.mailbox_id,
               accounts_email=os.environ.get("O2C_ACCOUNTS_EMAIL"),
               allow_writes=args.allow_writes or bool(os.environ.get("AGENTSWITCH_RUN_ID")))
-    safe_console()
     results = run(ctx)
     out = {"tasks": results, "summary": f"{args.instance}: {sum(r['passed'] for r in results)}/{len(results)} tasks passed"}
     if args.out:

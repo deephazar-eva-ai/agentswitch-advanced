@@ -442,9 +442,18 @@ def find_mailbox(client, mailbox_id=None):
     otherwise a person must pick one with --mailbox-id.
     """
     if mailbox_id:
-        return client.call("Mailbox.get", {"id": mailbox_id})
-    boxes = [b for b in client.call("Mailbox.list", {"limit": 20}).get("data", [])
-             if b.get("is_active", True) is not False and not b.get("deleted_at")]
+        box = client.call("Mailbox.get", {"id": mailbox_id})
+        # Bug hunt G1 (20 Nov): a named mailbox must still be usable; drafts in a closed one are lost.
+        if not isinstance(box, dict) or box.get("is_active") is False or box.get("deleted_at"):
+            raise NoMailbox(f"mailbox {mailbox_id} is inactive or deleted; choose another with --mailbox-id")
+        return box
+    page = client.call("Mailbox.list", {"limit": 20})
+    page = page if isinstance(page, dict) else {}
+    listed = [b for b in page.get("data") or [] if isinstance(b, dict)]
+    if isinstance(page.get("total"), int) and page["total"] > len(listed):
+        # G1: more mailboxes than one page; picking from a partial list could pick the wrong one.
+        raise NoMailbox(f"{page['total']} mailboxes, more than one page; choose one with --mailbox-id")
+    boxes = [b for b in listed if b.get("is_active", True) is not False and not b.get("deleted_at")]
     if len(boxes) <= 1:
         return boxes[0] if boxes else None
     default = [b for b in boxes if b.get("is_default")]
@@ -656,6 +665,7 @@ def main():
     ap.add_argument("--mailbox-id", default=os.environ.get("O2C_MAILBOX_ID"),
                     help="only needed if this login has several mailboxes and no default one")
     args = ap.parse_args()
+    safe_console()   # bug hunt G4: before anything can print a failure (D6)
     try:
         instance_label(args.instance)
     except ValueError as e:
@@ -670,7 +680,6 @@ def main():
     write_pair(args.out, basename, json.dumps(prop, indent=2, allow_nan=False), to_markdown(prop))
     stem = args.out / basename
     s = prop["match_summary"]
-    safe_console()
     print(f"wrote {stem}.md ({len(prop['drafts'])} drafts proposed; {s['with_candidates']}/{s['payments']} payments with a candidate)")
 
     if not args.create:

@@ -282,7 +282,14 @@ def _transport_reason(e):
 def _response_message(raw, ctype, status, request_id, what):
     """The JSON-RPC message answering `request_id`. An event stream may carry notifications
     before or after the response; they are skipped (bug hunt D3)."""
-    payloads = [line[5:].strip() for line in raw.splitlines() if line.startswith("data:")]
+    # An event's data may span several "data:" lines, joined with newlines (SSE rules; bug hunt G3).
+    payloads, current = [], []
+    for line in raw.splitlines() + [""]:
+        if line.startswith("data:"):
+            current.append(line[5:].lstrip(" ") if line[5:6] == " " else line[5:])
+        elif not line.strip() and current:
+            payloads.append("\n".join(current).strip())
+            current = []
     candidates = payloads if payloads else [raw]
     messages = []
     for text in candidates:
