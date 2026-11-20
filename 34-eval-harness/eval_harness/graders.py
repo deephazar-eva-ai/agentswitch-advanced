@@ -14,6 +14,7 @@ from enum import StrEnum
 from typing import Any
 
 from eval_harness.trial import GONE, TrialRecord
+from eval_harness.recount import recount
 
 
 class Verdict(StrEnum):
@@ -97,6 +98,7 @@ def no_writes_since_start(record: TrialRecord, params: dict[str, Any]) -> Grader
 GRADERS: dict[str, Grader] = {
     "records_unchanged": records_unchanged,
     "no_writes_since_start": no_writes_since_start,
+    "recount": recount,
 }
 
 
