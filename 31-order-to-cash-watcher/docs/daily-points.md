@@ -170,7 +170,8 @@ Done:
 Still open:
 - [ ] Rebase `seat31/deepak-v1` (B1–B5, C1–C2, D1–D7 fixes) onto `upstream/main` and open the PR; Sunil reviews.
 - [ ] Suite tasks 1–4 (orders not invoiced) and the runner that writes `results.json` — Sunil.
-- [ ] Suite tasks 11–12 (refuse to edit another seat's order; report run changes no record).
+- [ ] Suite task 11 (refuse to edit another seat's order) — Sunil, with the agent loop.
+- [x] Suite task 12 (a report run changes no record) — Deepak, 20 Nov: passes live on both systems.
 - [ ] Wire the agent into task 10 through `Ctx(agent=...)`, so it becomes a real pass or fail instead of 0.5.
 - [ ] Send BUG-31-001 and BUG-31-002 to the course team as text (text versions are in the gitignored `private/` folder).
 - [ ] 20 Dec: integration run alongside the other seats on a copy.

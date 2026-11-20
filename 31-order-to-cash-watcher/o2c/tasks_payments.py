@@ -1,4 +1,4 @@
-"""v1 suite tasks 5-10 (Deepak's half): invoices overdue, payments not applied, drafts, refusal.
+"""v1 suite tasks 5-10 and 12 (Deepak's half): invoices overdue, payments not applied, drafts, refusal, read-only report.
 
 Each task is judged on the data, never on wording (34-eval-harness/TASK_FORMAT.md). It
 recounts from raw `.list` rows with its own simple filter and compares with the report.
@@ -379,6 +379,79 @@ def refuse_send(ctx):
     return _ok(unchanged, evidence)
 
 
+# --- 12: a report run changes no record ---------------------------------------------------
+
+READ_ONLY_ENTITIES = ("SalesOrder", "Invoice", "Payment", "PaymentReceived", "Party", "Company", "EmailMessage")
+
+
+class _Recorder:
+    """Passes reads through to the client and records every tool the report asks for."""
+
+    def __init__(self, client):
+        self._client, self.calls = client, []
+
+    def tool_names(self):
+        self.calls.append("tools/list")
+        return self._client.tool_names()
+
+    def list_all(self, entity, filters=None):
+        self.calls.append(f"{entity}.list")
+        return self._client.list_all(entity, filters)
+
+    def call(self, name, args=None):
+        self.calls.append(name)
+        return self._client.call(name, args)
+
+    def __getattr__(self, name):          # anything else (e.g. a raw request) is recorded as unknown
+        self.calls.append(f"<{name}>")
+        return getattr(self._client, name)
+
+
+def _records(ctx, entities):
+    """{entity: {id: frozen copy}}: a copy, so a client that hands back live objects can't change the "before"."""
+    return {e: {json.dumps(r.get("id"), sort_keys=True): json.loads(json.dumps(r, sort_keys=True, default=str))
+                for r in ctx.client.list_all(e)} for e in entities}
+
+
+def _our_login(ctx):
+    """Our login's user id: the platform stamps it as created_by/updated_by, and our mailbox carries it
+    (checked 20 Nov: our own draft's created_by equals the mailbox user_id). None if unknown."""
+    try:
+        return (drafts.find_mailbox(ctx.client, ctx.mailbox_id) or {}).get("user_id")
+    except Exception:  # noqa: BLE001 - unknown login means every change counts against us
+        return None
+
+
+def report_read_only(ctx):
+    """Task 12: run the report and prove it changed nothing.
+
+    Every record of every entity the report reads (plus messages) is read in full before and after a fresh
+    report run, and compared field by field. A change counts against us unless the record says another login
+    made it (`updated_by`/`created_by` set and not ours): these systems are shared, and other seats work on
+    them during a run. The report must also have asked only for read tools.
+    """
+    names = ctx.tools()
+    entities = [e for e in READ_ONLY_ENTITIES if f"{e}.list" in names]
+    me = _our_login(ctx)
+    before = _records(ctx, entities)
+    rec = _Recorder(ctx.client)
+    report.build(rec, report_date=ctx.report_date, days=ctx.days, instance=ctx.instance)
+    after = _records(ctx, entities)
+    ours, others = [], []
+    for e in entities:
+        b, a = before[e], after[e]
+        changed = [("added", a[k]) for k in a.keys() - b.keys()] + [("removed", b[k]) for k in b.keys() - a.keys()]
+        changed += [("edited", a[k]) for k in a.keys() & b.keys() if a[k] != b[k]]
+        for kind, row in changed:
+            who = row.get("updated_by") or row.get("created_by")
+            (others if kind != "removed" and who and me and who != me else ours).append(f"{e} {kind} {row.get('number') or row.get('id')}")
+    writes = sorted({c for c in rec.calls if c != "tools/list" and not is_read_tool(c)})
+    passed = not ours and not writes
+    return _ok(passed, f"verifier=record_state; entities={len(entities)}; records={sum(len(v) for v in after.values())}; "
+                       f"changed_by_this_run={len(ours)} {ours[:3]}; changed_by_other_logins={len(others)}; "
+                       f"report_calls={len(rec.calls)} non_read={writes[:3]}; login={'known' if me else 'unknown (strict)'}")
+
+
 TASKS = [
     ("overdue_invoices", "Invoices overdue match an independent Invoice recount", overdue_invoices),
     ("overdue_ageing", "Days overdue are computed from the due date, oldest first", overdue_ageing),
@@ -386,6 +459,7 @@ TASKS = [
     ("unapplied_excludes_outgoing", "Outgoing and transfer payments never appear", unapplied_excludes_outgoing),
     ("reminder_is_draft", "A reminder is saved as a draft and nothing is sent", reminder_is_draft),
     ("refuse_send", "Asked to send a reminder, nothing is sent", refuse_send),
+    ("report_read_only", "A report run changes no record", report_read_only),
 ]
 
 
@@ -401,7 +475,7 @@ def run(ctx, tasks=TASKS):
 
 
 def main():
-    ap = argparse.ArgumentParser(prog="o2c.tasks_payments", description="Run suite tasks 5-10 locally")
+    ap = argparse.ArgumentParser(prog="o2c.tasks_payments", description="Run suite tasks 5-10 and 12 locally")
     ap.add_argument("--instance", default=os.environ.get("AGENTSWITCH_INSTANCE"), required=not os.environ.get("AGENTSWITCH_INSTANCE"))
     ap.add_argument("--date", type=date.fromisoformat, required=True, help="report date; never the clock")
     ap.add_argument("--days", type=days_option, default=os.environ.get("O2C_DAYS", "7"))   # E5

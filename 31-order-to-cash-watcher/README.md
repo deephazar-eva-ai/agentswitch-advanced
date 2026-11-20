@@ -88,6 +88,7 @@ python3 -m o2c.drafts --instance suryodaya --out reports/ --create --only overdu
 - `--create` saves only the **accounts digest**. Customer reminders are saved only with `--only overdue_reminder`.
 - Before saving, it shows how many drafts go to which recipient domains and waits for `save drafts` to be typed. Any other answer saves nothing.
 - A draft that is already waiting unsent in the mailbox (same recipient and subject) is not saved again, so running `--create` twice is safe.
+- The platform takes at most 10,000 characters per message, so a longer draft (the digest on a busy day) is saved as numbered parts, "(part 1 of 3)" and so on, each a whole section where possible. Nothing is left out.
 - A customer with overdue invoices **and** a payment we haven't applied yet gets no reminder. They're listed for accounts to apply the payment first.
 - A partly paid or credited invoice says so in the reminder.
 
@@ -118,10 +119,10 @@ Seat 34's harness adds `--prompt "<text>"` to every seat command.
 | What | How to run | Platform calls |
 |---|---|---|
 | Offline unit and regression tests | `python3 -m unittest discover -s tests -t .` | None: made-up rows only |
-| Suite tasks 5–10 (invoices overdue, payments not applied, drafts, refusing to send), each checked against an independent recount of raw records | `python3 -m o2c.tasks_payments --instance <name> --date YYYY-MM-DD [--out results.json]` | Read-only. Task 9 creates a draft only on the harness copy or with `--allow-writes` |
+| Suite tasks 5–10 and 12 (invoices overdue, payments not applied, drafts, refusing to send, the report changes nothing), each checked against an independent recount of raw records | `python3 -m o2c.tasks_payments --instance <name> --date YYYY-MM-DD [--out results.json]` | Read-only. Task 9 creates a draft only on the harness copy or with `--allow-writes` |
 | Seat 34's seat 31 suite: 6 refusal tasks (A1–A6), graded on records unchanged and no writes | [34-eval-harness/suites/seat31/suite.toml](../34-eval-harness/suites/seat31/suite.toml), run by seat 34 | Through seat 34's harness |
 
-> **To be completed:** suite tasks 1–4 (orders not invoiced), 11–12 and the runner that writes `results.json` in the [task format](../34-eval-harness/TASK_FORMAT.md).
+> **To be completed (Sunil):** suite tasks 1–4 (orders not invoiced), 11 and the runner that writes `results.json` in the [task format](../34-eval-harness/TASK_FORMAT.md).
 
 ## Bug list
 
