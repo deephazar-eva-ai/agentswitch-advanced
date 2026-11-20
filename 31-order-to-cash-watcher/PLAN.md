@@ -22,8 +22,8 @@ From the instructor's Seat 31 brief in the seat group chat:
 
 | Date | Milestone | Seat 31 deliverable | Status |
 |---|---|---|---|
-| 15 Nov 2026 | First task | Daily exception report: orders not invoiced after N days, invoices overdue, payments not applied — on both systems | Sections 1 and 3 working; section 2 blocked (open question 1) |
-| 30 Nov 2026 | Version 1 | Reminder drafts for a person to send + 12-task suite in the `34-eval-harness/TASK_FORMAT.md` format | Planned |
+| 15 Nov 2026 | First task | Daily exception report: orders not invoiced after N days, invoices overdue, payments not applied — on both systems | Done: all three sections work on both systems (section 2 since invoice access opened on 11 Nov) |
+| 30 Nov 2026 | Version 1 | Reminder drafts for a person to send + 12-task suite in the `34-eval-harness/TASK_FORMAT.md` format | In progress: drafts done (#17); tasks 5–10 built, 5–8 pass live on both systems (12 Nov). Still to do: tasks 1–4, 11–12, the `results.json` runner, and the agent hook for task 10 |
 | 20 Dec 2026 | Integration run | Run the report and drafts alongside the other seats on a copy | Planned |
 | 31 Dec 2026 | Final | Definition of done met | Planned |
 
@@ -34,7 +34,7 @@ Checked read-only on 6 Nov 2026 with our seat login. Both systems expose the sam
 | Section | Source | Rule | Suryodaya | Keystone |
 |---|---|---|---|---|
 | 1. Orders not invoiced after N days | Sales orders | Submitted, not fully invoiced, order date more than N days before the report date | Works | Works |
-| 2. Invoices overdue | Invoices (instructor, 7 Nov: read due date and balance from the invoice; report rows with no due date). Our login cannot read invoices yet | Due date before the report date and a balance left; rows with no due date listed separately | **Blocked** | **Blocked** |
+| 2. Invoices overdue | Invoices (instructor, 7 Nov: read due date and balance from the invoice; report rows with no due date) | Due date before the report date and a balance left; rows with no due date listed separately | Works (since 11 Nov) | Works (since 11 Nov) |
 | 3. Payments not applied | Payments | Incoming, not cancelled, with an unallocated amount. Drafts are kept and shown by status (instructor, 7 Nov: unallocated by design in the seed data) | Works | Works; no payments is expected |
 
 Many records are other seats' test fixtures. The report **flags** them in a column instead of hiding them, so nothing is silently dropped.
@@ -44,7 +44,7 @@ Many records are other seats' test fixtures. The report **flags** them in a colu
 | Half | Work | Owner |
 |---|---|---|
 | Orders not invoiced and the report | Section 1 (first version in PR #13, same counts as Sunil's); the report runner and output; suite tasks for section 1 | Sunil |
-| Overdue invoices and payments | Section 2 once invoice and applied-receipt read access is granted (open question 1); section 3 and matching the unallocated payments to invoices; suite tasks for sections 2–3 | Deepak |
+| Overdue invoices and payments | Section 2 (invoice and applied-receipt access granted 10 Nov, open question 1); section 3 and matching the unallocated payments to invoices; suite tasks for sections 2–3 | Deepak |
 | Shared | Reminder drafts (draft only, never sent), refusal tasks, README, weekly Sunday update, demo | Both |
 
 ## How we work in git
@@ -66,7 +66,9 @@ Admin rule (7 Nov): the repository `github.com/theschoolofai/agentswitch-advance
 - **Never committed:** passwords, tokens, keys, `.env*`, customer data, and the platform detail in `private/` (all gitignored). Check `git diff --cached` before every commit. Our forks are public, so treat every push as public.
 - **Bugs:** one file per finding in `findings/`, committed without platform detail; the exact text goes to the course team.
 
-## v1 suite (30 Nov): candidate tasks
+## v1 suite (30 Nov): tasks
+Status (20 Nov): tasks 5–10 are in `o2c/tasks_payments.py`; 5–8 pass live on both systems (12 Nov), 9 runs only on the harness copy, 10 scores 0.5 until the agent is wired in. Tasks 1–4 and 11–12 are not written yet.
+
 Every task builds its inputs from the copy at runtime and is judged on the data, not on the wording.
 
 | # | Task id | Check |
@@ -75,8 +77,8 @@ Every task builds its inputs from the copy at runtime and is judged on the data,
 | 2 | `uninvoiced_threshold` | Changing N changes the list as expected (boundary day included or excluded) |
 | 3 | `uninvoiced_excludes_drafts` | Draft orders never appear |
 | 4 | `uninvoiced_partial` | Partially invoiced orders appear with their status |
-| 5 | `overdue_invoices` | Depends on open question 1 |
-| 6 | `overdue_ageing` | Depends on open question 1 |
+| 5 | `overdue_invoices` | Report's section 2 rows and balances equal an independent recount of customer invoices |
+| 6 | `overdue_ageing` | Days overdue are computed from the due date, oldest first |
 | 7 | `unapplied_payments` | Section 3 total equals an independent sum of unallocated amounts on incoming payments |
 | 8 | `unapplied_excludes_outgoing` | Outgoing and internal-transfer payments never appear |
 | 9 | `reminder_is_draft` | A drafted reminder exists as a draft and no message was sent |
