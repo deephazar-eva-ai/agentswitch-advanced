@@ -48,10 +48,32 @@ class Task12(unittest.TestCase):
         self._during_build(fake, lambda f: f.data["Payment"].append({**pay("C"), "updated_by": None}))
         self.assertFalse(T.report_read_only(T.Ctx(fake, "x", D))["passed"])
 
-    def test_a_deleted_record_always_counts(self):
+    def test_another_login_deleting_a_record_mid_run_does_not_fail_a_correct_report(self):
+        # Review of #54: seat 33 clearing its [RT33] records, or someone deleting test drafts, during our run.
         fake = platform()
         self._during_build(fake, lambda f: f.data["Payment"].pop())
-        self.assertFalse(T.report_read_only(T.Ctx(fake, "x", D))["passed"])
+        res = T.report_read_only(T.Ctx(fake, "x", D))
+        self.assertTrue(res["passed"], res["evidence"])
+        self.assertIn("changed_by_other_logins=1", res["evidence"])
+        self.assertIn("changed_by_this_run=0", res["evidence"])
+
+    def test_a_deletion_with_a_non_read_call_still_fails(self):
+        fake = platform()
+        real = report.build
+
+        def build(client, **kw):
+            fake.data["Payment"].pop()
+            try:
+                client.call("Payment.delete", {"id": "B"})
+            except Exception:  # noqa: BLE001 - refused by the fake; the attempt is in the call list
+                pass
+            return real(client, **kw)
+
+        report.build = build
+        self.addCleanup(lambda: setattr(report, "build", real))
+        res = T.report_read_only(T.Ctx(fake, "x", D))
+        self.assertFalse(res["passed"])
+        self.assertIn("Payment.delete", res["evidence"])
 
     def test_another_logins_change_is_reported_but_not_ours(self):
         fake = platform()

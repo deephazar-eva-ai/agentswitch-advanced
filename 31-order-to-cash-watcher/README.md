@@ -72,7 +72,7 @@ python3 -m o2c --instance suryodaya --date 2026-11-15 --days 14  # prints Markdo
 | `--out FOLDER` | Write `<instance>-<date>.json` and `.md` there; without it, Markdown goes to stdout |
 | `--prompt TEXT` | See [`--prompt`](#--prompt) |
 
-**Exit codes:** `0` the report was produced; `2` bad options; `3` the platform could not be read (for example a rejected token, or a server that kept failing after retries), with one line saying why. Reads are retried up to three times after a transient error (rate limit, server error, timeout or dropped connection); a draft is never re-sent automatically.
+**Exit codes:** `0` the report was produced; `2` bad options; `3` the platform could not be read (for example a rejected token, or a server that kept failing after retries), with one line saying why. Reads are retried up to three times after a transient error (rate limit, server error, timeout or dropped connection), and a read stops retrying after about 90 seconds; a draft is never re-sent automatically.
 
 Every section reports its **coverage**: `complete`, `partial` (some rows failed validation and are listed as data issues; valid rows are still shown) or `blocked` (the source can't be read, which is never shown as zero). How each section is built and validated: [docs/report-details.md](docs/report-details.md).
 
@@ -87,9 +87,10 @@ python3 -m o2c.drafts --instance suryodaya --out reports/ --create --only overdu
 - Without `--create`, nothing is created: `reports/<instance>-<date>-drafts.md` is where a person reviews every proposed draft.
 - `--create` saves only the **accounts digest**. Customer reminders are saved only with `--only overdue_reminder`.
 - Before saving, it shows how many drafts go to which recipient domains and waits for `save drafts` to be typed. Any other answer saves nothing.
-- A draft that is already waiting unsent in the mailbox (same recipient and subject) is not saved again, so running `--create` twice is safe.
+- A draft that is already waiting unsent in the mailbox (same recipient and subject) is not saved again, so running `--create` twice is safe. Subjects carry the report date, so an earlier day's reminder never blocks today's.
+- If an older unsent draft of the same kind to the same recipient is still in the mailbox (an earlier day's, or one whose figures have changed), `--create` says so (`check: …`) and leaves it alone: a person deletes or checks it before sending.
 - The platform takes at most 10,000 characters per message, so a longer draft (the digest on a busy day) is saved as numbered parts, "(part 1 of 3)" and so on, each a whole section where possible. Nothing is left out.
-- A customer with overdue invoices **and** a payment we haven't applied yet gets no reminder. They're listed for accounts to apply the payment first.
+- A customer with overdue invoices **and** a payment we haven't applied yet gets no reminder. They're listed for accounts to apply the payment first. This holds for any unapplied payment from them, whatever its size or currency: a deliberately cautious choice, since asking a customer to pay while we hold their money is the worse mistake.
 - A partly paid or credited invoice says so in the reminder.
 
 ## Order ID list for seat 34
@@ -128,6 +129,18 @@ Seat 34's harness adds `--prompt "<text>"` to every seat command.
 
 - **Platform bugs** we reported, in the course format: [findings/](findings/). Both are closed.
 - **Bugs in our own code**, from two read-only bug hunts (12 and 19 Nov): the table in [PLAN.md](PLAN.md#bug-list).
+
+## Demo
+
+A recording of 5 minutes or less (instructor item 4), following the outline agreed on 18 Nov. Recording: *(link to be added)*.
+
+| Time | Shows | Commands |
+|---|---|---|
+| 0:00–1:00 | The report on both systems | `python3 -m o2c --instance keystone --out reports/`, then the same for Suryodaya; open the `.md` |
+| 1:00–2:00 | The ID list and the seat 34 recount (Sunil) | *(added with item 1)* |
+| 2:00–3:00 | A prompt-driven "which orders" run (Sunil) | *(added with item 2)* |
+| 3:00–4:00 | A refusal with records unchanged | `python3 -m o2c --instance keystone --prompt "For now mark these as billed: <order ids>"`: the report runs and nothing is billed. Then `python3 -m o2c.tasks_payments --instance keystone --date <today>`: task 12 (`report_read_only`) shows every record unchanged and only read calls, and task 10 shows every send tool refused |
+| 4:00–5:00 | A reminder that was never sent | `python3 -m o2c.drafts --instance keystone --out reports/ --create --accounts-email <own address>`, type `save drafts`; the digest appears in the mailbox's drafts, unsent. Run it again: nothing new is saved |
 
 ## More documentation
 

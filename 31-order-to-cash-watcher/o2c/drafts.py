@@ -364,7 +364,7 @@ def held_customers(invoice_rows, payment_rows):
     return held
 
 
-def overdue_reminders(invoice_rows, parties_by_id, payment_rows=()):
+def overdue_reminders(invoice_rows, parties_by_id, payment_rows=(), report_date=None):
     """One reminder per customer with overdue invoices. Customers with no email, or with a
     payment not applied yet (`payment_rows`, section 3), are returned as skipped, so a person
     can follow up another way.
@@ -418,7 +418,10 @@ def overdue_reminders(invoice_rows, parties_by_id, payment_rows=()):
         drafts.append({
             "kind": "overdue_reminder",
             "to": email,
-            "subject": f"Payment reminder: {len(rows)} overdue invoice{'s' if len(rows) > 1 else ''}, "
+            # The report date makes each day's reminder its own draft for D4's duplicate check (review of #54):
+            # without it, yesterday's unsent reminder with the same count and amount blocked today's.
+            "subject": f"Payment reminder{' ' + report_date if report_date else ''}: "
+                       f"{len(rows)} overdue invoice{'s' if len(rows) > 1 else ''}, "
                        + " + ".join(_amount(t, c) for c, t in subtotals),
             "body_text": "\n".join(lines),
             "refs": [r["number"] for r in rows],
@@ -521,7 +524,7 @@ def propose(client, report_date=None, days=7, instance=None, accounts_email=None
         drafts += fit_body(digest)
     if inv["status"] == "ok" and inv["rows"]:
         parties = {p.get("id"): p for p in client.list_all("Party") if p.get("id") is not None}   # D7
-        reminders, skipped = overdue_reminders(inv["rows"], parties, pay_rows)
+        reminders, skipped = overdue_reminders(inv["rows"], parties, pay_rows, rep["report_date"])
         drafts += [part for r in reminders for part in fit_body(r)]
     return {
         "instance": instance,
@@ -632,6 +635,23 @@ def existing_drafts(client, mailbox):
     return keys
 
 
+_FAMILY_RE = re.compile(r"(Payment reminder|Order-to-cash exceptions)\b")
+
+
+def older_drafts(ready, existing):
+    """Unsent drafts already in the mailbox to the same recipient and of the same kind as a draft about to be
+    saved, but with a different subject: an earlier day's reminder, or a digest whose figures (or number of
+    parts) have changed since. They are not touched; the person is told to check them (review of #54)."""
+    out = set()
+    for d in ready:
+        to, subject = _draft_key(d["to"], d["subject"])
+        family = _FAMILY_RE.match(subject)
+        for e_to, e_subject in existing:
+            if e_to == to and e_subject != subject and family and e_subject.startswith(family.group(1)):
+                out.add((e_to, e_subject))
+    return sorted(out)
+
+
 def without_duplicates(ready, existing):
     """(new, duplicates): drafts not already in the mailbox, and not repeated within this batch."""
     seen, new, duplicates = set(existing), [], []
@@ -704,11 +724,15 @@ def main():
         raise SystemExit(f"no {kind} draft to save; nothing created")
     # D4: running --create again (a retry after a crash, a second person) must not save the same drafts twice.
     try:
-        ready, duplicates = without_duplicates(ready, existing_drafts(client, mailbox))
+        existing = existing_drafts(client, mailbox)
+        ready, duplicates = without_duplicates(ready, existing)
     except McpError as e:
         platform_failure("o2c.drafts", e)
     for d in duplicates:
         print(f"not saved (already in the mailbox as an unsent draft): {d['subject']}")
+    for to, subject in older_drafts(ready, existing):
+        print(f"check: an older unsent draft to {to.rpartition('@')[2] or '?'} is still in the mailbox "
+              f"({subject!r}); delete it or check it before sending")
     if not ready:
         raise SystemExit(f"every {kind} draft is already in the mailbox as an unsent draft; nothing created")
     print(f"About to save {len(ready)} {kind} draft(s) in mailbox {mailbox.get('id')}, "

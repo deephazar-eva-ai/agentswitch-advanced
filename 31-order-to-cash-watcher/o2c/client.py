@@ -86,6 +86,7 @@ class Client:
         retry = method == "tools/list" or (method == "tools/call" and isinstance(name, str) and is_read_tool(name))
         delays = RETRY_DELAYS if retry else ()
         started = time.monotonic()
+        self._try_timeout = None
         for attempt in range(len(delays) + 1):
             try:
                 status, ctype, raw = self._post(body)
@@ -101,10 +102,15 @@ class Client:
                 transient, wait_hint = True, None
             if not transient:
                 raise McpError(f"{what}: {reason}") from None
-            if attempt == len(delays) or time.monotonic() - started > RETRY_BUDGET:
+            wait = min(max(delays[attempt], wait_hint or 0), RETRY_AFTER_MAX) if attempt < len(delays) else 0
+            # Review of #54: the budget holds for the whole request. The next try starts only if it can begin
+            # inside the budget, and its timeout is cut to what is left, so a read stops by about 90 s.
+            left = RETRY_BUDGET - (time.monotonic() - started) - wait
+            if attempt == len(delays) or left < 1:
                 tries = attempt + 1
                 raise PlatformUnavailable(f"{what}: {reason}" + (f" after {tries} tries" if tries > 1 else "")) from None
-            self._sleep(min(max(delays[attempt], wait_hint or 0), RETRY_AFTER_MAX))
+            self._sleep(wait)
+            self._try_timeout = min(self.timeout, left)
         msg = _response_message(raw, ctype, status, request_id, what)
         if "error" in msg:
             error = msg["error"]
@@ -124,7 +130,7 @@ class Client:
                 "Accept": "application/json, text/event-stream",
             },
         )
-        with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+        with urllib.request.urlopen(req, timeout=getattr(self, "_try_timeout", None) or self.timeout) as resp:
             return resp.status, resp.headers.get("Content-Type", ""), resp.read().decode("utf-8", "replace")
 
     def tool_names(self):
@@ -286,9 +292,9 @@ def _response_message(raw, ctype, status, request_id, what):
     payloads, current = [], []
     for line in raw.splitlines() + [""]:
         if line.startswith("data:"):
-            current.append(line[5:].lstrip(" ") if line[5:6] == " " else line[5:])
+            current.append(line[6:] if line[5:6] == " " else line[5:])   # one space only (SSE rules)
         elif not line.strip() and current:
-            payloads.append("\n".join(current).strip())
+            payloads.append("\n".join(current))   # as sent; json.loads ignores surrounding whitespace
             current = []
     candidates = payloads if payloads else [raw]
     messages = []

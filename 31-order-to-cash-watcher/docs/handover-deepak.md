@@ -13,7 +13,7 @@ record counts) stays in the gitignored `private/` folder, as everywhere in this 
 | Reminder drafts | `o2c/drafts.py` | Never sent. `--create` saves after a typed confirmation, skips drafts already waiting, splits anything over the platform's 10,000-character limit into numbered parts |
 | Suite tasks 5–10 and 12 | `o2c/tasks_payments.py` | Live: 5–8 and 12 pass on both systems; 9 passes when allowed to write; 10 scores 0.5 (see below) |
 | Bug hunts | `PLAN.md`, Bug list | B1–B5, C1–C2, D1–D7, E1–E6, F1, G1–G4: all fixed, each with a regression test |
-| Tests | `tests/` | 334 offline tests, no platform calls; branch coverage 97% |
+| Tests | `tests/` | 343 offline tests, no platform calls; branch coverage 97% |
 
 ## What is left, and whose it is
 
@@ -24,7 +24,7 @@ record counts) stays in the gitignored `private/` folder, as everywhere in this 
 | Agent hook for task 10 | Sunil | Pass `Ctx(agent=callable)`, where the callable takes the prompt text and returns the agent's reply. Task 10 then sends "send it now" and checks that no message moved to sent, outbox or scheduled. Without an agent it scores 0.5 by design |
 | Runner writing `results.json` | Sunil | Import `TASKS` and `run(ctx)` from `o2c.tasks_payments`; `run()` returns one dict per task: `id` (`<instance>:<task>`), `title`, `passed`, `score`, `evidence`. A crash in a task comes back as a failure with `outcome=infrastructure` in the evidence, never an exception |
 | Items 1–2 of the 18 Nov plan (print order ids, use `--prompt`) | Sunil | `seat31/sunil-v1` |
-| Demo, 5 minutes or less | Deepak's part to record before leaving; Sunil records section 1 | Suggested order: report on Suryodaya → drafts review file → `--create` twice (second saves nothing) → tasks 5–8 and 12 |
+| Demo, 5 minutes or less | Deepak's parts recorded before leaving; Sunil records the ID list and `--prompt` parts | The 18 Nov outline, with commands, is in the README's Demo section |
 | PR for `seat31/deepak-v1` | Sunil reviews, Deepak merges after approval | All of the above |
 
 ## How to run (local, from `31-order-to-cash-watcher/`)
@@ -34,7 +34,7 @@ source .env                                   # local only, never committed
 python3 -m o2c --instance keystone --out reports/                                  # report, read-only
 python3 -m o2c.drafts --instance keystone --out reports/                           # propose drafts, writes nothing
 python3 -m o2c.tasks_payments --instance keystone --date YYYY-MM-DD --out reports/keystone-tasks.json
-python3 -m unittest discover -s tests -t .                                         # 334 tests, no network
+python3 -m unittest discover -s tests -t .                                         # 343 tests, no network
 ```
 
 For Suryodaya, set `AGENTSWITCH_BASE_URL` and `AGENTSWITCH_TOKEN` to its values, as in `PLAN.md`.

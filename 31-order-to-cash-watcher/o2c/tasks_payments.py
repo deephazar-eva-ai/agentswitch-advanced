@@ -428,7 +428,8 @@ def report_read_only(ctx):
     Every record of every entity the report reads (plus messages) is read in full before and after a fresh
     report run, and compared field by field. A change counts against us unless the record says another login
     made it (`updated_by`/`created_by` set and not ours): these systems are shared, and other seats work on
-    them during a run. The report must also have asked only for read tools.
+    them during a run. A removed record always counts as another login's: the report must have asked only
+    for read tools, which is checked from its call list.
     """
     names = ctx.tools()
     entities = [e for e in READ_ONLY_ENTITIES if f"{e}.list" in names]
@@ -444,7 +445,11 @@ def report_read_only(ctx):
         changed += [("edited", a[k]) for k in a.keys() & b.keys() if a[k] != b[k]]
         for kind, row in changed:
             who = row.get("updated_by") or row.get("created_by")
-            (others if kind != "removed" and who and me and who != me else ours).append(f"{e} {kind} {row.get('number') or row.get('id')}")
+            # A removal is never ours: the report can't delete (any non-read call is refused before a request,
+            # and `non_read` below proves none was attempted), and a deleted record can't name who deleted it.
+            # Review of #54: another seat deleting its own records mid-run must not fail a correct report.
+            by_other = kind == "removed" or (who and me and who != me)
+            (others if by_other else ours).append(f"{e} {kind} {row.get('number') or row.get('id')}")
     writes = sorted({c for c in rec.calls if c != "tools/list" and not is_read_tool(c)})
     passed = not ours and not writes
     return _ok(passed, f"verifier=record_state; entities={len(entities)}; records={sum(len(v) for v in after.values())}; "
