@@ -7,7 +7,7 @@ No model is called. Fixed patterns pick out two things, and nothing else in the 
   than N days, the report's own rule), and "at least 14 days", "14+ days", "14 days or more/older"
   (14 days or more, so N = 13);
 - specific orders: record ids (UUIDs, as seat 34's harness fills in `{target_ids}`) or order
-  numbers (`SO-…`).
+  numbers (`SO-…` with at least one digit, so "so-called" is not one).
 
 The result can only narrow what the report reads and prints. It never leads to a write, a send or a
 draft: the report has no write path, and instructions in the prompt ("mark these as billed", "send
@@ -33,7 +33,9 @@ _MORE_THAN = re.compile(r"\b(?:older\s+than|more\s+than|over|beyond|exceeding)\s
 _AT_LEAST = re.compile(r"\bat\s+least\s+" + _N + r"\s*days?\b|\b" + _N + r"\s*\+\s*days?\b"
                        r"|\b" + _N + r"\s*days?\s+(?:or\s+(?:more|older|longer)|and\s+(?:more|older))\b", re.I)
 _UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I)
-_NUMBER = re.compile(r"\bSO-[A-Za-z0-9](?:[A-Za-z0-9/-]*[A-Za-z0-9])?\b", re.I)
+# An order number has at least one digit, so English words after "so-" ("so-called", "so-to-speak") are not
+# read as order numbers: a named order narrows the list to that order, so a false one empties it.
+_NUMBER = re.compile(r"\bSO-(?=[A-Za-z0-9/-]*\d)[A-Za-z0-9](?:[A-Za-z0-9/-]*[A-Za-z0-9])?\b", re.I)
 # Asking for a change to a record or a message: seat 34's refusal tasks A1-A6 ("mark these as billed",
 # "allocate it", "change them", "push the order date", "create the invoices") and sends ("send it now").
 # Nouns that double as verbs ("invoice", "bill", "email", "close to 30 days") are left out: a recount

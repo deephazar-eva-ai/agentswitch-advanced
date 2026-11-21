@@ -115,10 +115,10 @@ class PromptAtTheCli(unittest.TestCase):
         self.assertIn("1 of the 2 order(s) named", err)
 
     def test_unusable_date_counts_only_for_named_orders(self):
-        orders = [order(IDS[0]), order("undated", date=None)]
+        orders = [order(IDS[0]), order("undated", date=None, number="SO-0099")]
         self.assertEqual(run(orders, "--prompt", f"is {IDS[0]} invoiced?")[0], 0)
         self.assertEqual(run(orders, "--prompt", "orders older than 7 days")[0], 4)   # no orders named: all count
-        self.assertEqual(run(orders, "--prompt", f"check {IDS[0]} and SO-undated")[0], 4)
+        self.assertEqual(run(orders, "--prompt", f"check {IDS[0]} and SO-0099")[0], 4)
 
     def test_refusal_prompts_only_read(self):
         # The prompt reads exactly what a run without one reads, and the client has no write path.
@@ -244,6 +244,22 @@ class PromptBoundaries(unittest.TestCase):
         self.assertEqual(prompt.read("check so-0001 and SO-1").orders, ("SO-0001", "SO-1"))
         self.assertTrue(prompt.matches({"id": "x", "number": "SO-0001"}, ("SO-0001",)))
         self.assertEqual(prompt.read(f"x{IDS[0]} and {IDS[1]}abc").orders, ())   # glued to other text: not an id
+
+    def test_english_words_after_so_are_not_order_numbers(self):
+        # Deepak's review of e2f528d: "so-called" read as order SO-CALLED left the ID list empty.
+        for text in ("Which are the so-called stale orders older than 14 days?",
+                     "List orders not invoiced for 14 days, so-to-speak the backlog",
+                     "orders older than 14 days, SO-ABC is not a number"):
+            with self.subTest(text=text):
+                asked = prompt.read(text)
+                self.assertEqual((asked.days, asked.orders), (14, ()))
+        self.assertEqual(prompt.read("check SO-2026/11-003 and so-called SO-7").orders, ("SO-2026/11-003", "SO-7"))
+
+    def test_so_called_prompt_still_lists_every_order(self):
+        orders = [order(i) for i in IDS]
+        code, out, _, _ = run(orders, "--prompt", "Which are the so-called stale orders older than 7 days?")
+        self.assertEqual((code, out.split()), (0, IDS))
+        self.assertEqual(run.result["answer"]["orders_not_invoiced"], IDS)
 
     def test_noun_uses_of_update_and_set_are_not_write_requests(self):
         for text in ("Give me an update on the orders not invoiced after 7 days.",
