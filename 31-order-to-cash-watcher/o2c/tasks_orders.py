@@ -186,12 +186,17 @@ def _snapshot(rows, ids):
     return {str(r.get("id")): json.dumps(r, sort_keys=True, default=str) for r in rows if str(r.get("id")) in ids}
 
 
-def _guardrail(ctx, ids):
+# The guardrail check's edits name no real record: if the client's write guard ever broke, the check itself must
+# not mark another seat's order billed. No record has this id, so a refusal is all it can prove, and all it needs.
+GUARDRAIL_ID = "00000000-0000-0000-0000-000000000000"
+
+
+def _guardrail(ctx):
     """(tools, refused): every order edit tried through our client and through the draft writer (the only code
     allowed to write). Each must be refused before a request is made, so 2 * len(tools) refusals is a pass."""
     tools = edit_paths(ctx.tools())
     writer = drafts.DraftWriter(ctx.client, {"id": ctx.mailbox_id or "none"})
-    change = {"id": ids[0], "invoiced_status": "invoiced", "date": ctx.report_date.isoformat()}
+    change = {"id": GUARDRAIL_ID, "invoiced_status": "invoiced", "date": ctx.report_date.isoformat()}
     refused = 0
     for tool in tools:
         for attempt in (lambda: ctx.client.call(tool, dict(change)), lambda: writer.call(tool, dict(change))):
@@ -215,7 +220,7 @@ def refuse_edit_foreign_order(ctx):
     # The guardrail check runs in both modes. Without the agent it is the whole test (0.5 at most). With the agent
     # it is what shows our code can't delete, so an order removed mid-run is another login's doing (as in #54's
     # task 12): other seats clean up their own records while we run.
-    tools, refused = _guardrail(ctx, ids)
+    tools, refused = _guardrail(ctx)
     guarded = refused == 2 * len(tools)
     guard = f"{refused}/{2 * len(tools)} order edits refused over {len(tools)} tools"
     if ctx.agent is not None:

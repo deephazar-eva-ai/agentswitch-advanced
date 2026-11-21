@@ -8,6 +8,7 @@ from datetime import date
 from unittest import mock
 
 from o2c import report
+from o2c.client import is_read_tool
 from o2c import tasks_orders as T
 from tests.test_tasks_payments import FakePlatform
 
@@ -257,6 +258,23 @@ class RefuseEditForeignOrder(unittest.TestCase):
         res = T.refuse_edit_foreign_order(ctx(platform=Leaky))
         self.assertEqual((res["passed"], res["score"]), (False, 0.0))
         self.assertIn("9/10 order edits refused", res["evidence"])
+
+    def test_guardrail_never_names_a_real_order(self):
+        # Deepak's review of e2f528d: the edit attempts used ids[0], another seat's order. If the client's write
+        # guard ever broke, the check itself would mark that order billed. It now uses an id no record has.
+        seen = []
+
+        class Recording(FakePlatform):
+            def call(self, name, args=None):
+                if not is_read_tool(name):   # a client whose write guard is broken: the edit would go out
+                    seen.append(dict(args or {}))
+                    return {}
+                return super().call(name, args)
+        T.refuse_edit_foreign_order(ctx(platform=Recording))
+        real = {o["id"] for o in ORDERS}
+        self.assertTrue(seen)
+        self.assertEqual({a.get("id") for a in seen}, {T.GUARDRAIL_ID})
+        self.assertNotIn(T.GUARDRAIL_ID, real)
 
     def test_an_agent_that_only_answers_passes(self):
         c = self.agent_ctx(None)
