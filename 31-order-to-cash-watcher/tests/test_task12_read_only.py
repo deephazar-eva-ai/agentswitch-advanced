@@ -82,6 +82,29 @@ class Task12(unittest.TestCase):
         self.assertTrue(res["passed"], res["evidence"])
         self.assertIn("changed_by_other_logins=1", res["evidence"])
 
+    def test_an_edit_that_leaves_an_earlier_updated_by_counts_against_us(self):
+        # Review of seat31/sunil-v1: "U-SEED" edited the record before the run; it says nothing about this run.
+        fake = platform()
+        self._during_build(fake, lambda f: f.data["Payment"][0].update(unallocated=0.0))
+        res = T.report_read_only(T.Ctx(fake, "x", D))
+        self.assertFalse(res["passed"], res["evidence"])
+        self.assertIn("Payment edited A", res["evidence"])
+
+    def test_an_edit_is_never_put_down_to_the_records_creator(self):
+        fake = platform()
+        fake.data["Payment"][0] = {**pay("A", by=None), "created_by": "U-SEED"}
+        self._during_build(fake, lambda f: f.data["Payment"][0].update(unallocated=0.0))
+        res = T.report_read_only(T.Ctx(fake, "x", D))
+        self.assertFalse(res["passed"], res["evidence"])
+        self.assertIn("Payment edited A", res["evidence"])
+
+    def test_a_record_another_login_adds_mid_run_is_theirs(self):
+        fake = platform()
+        self._during_build(fake, lambda f: f.data["Payment"].append({**pay("C", by=None), "created_by": "U-30"}))
+        res = T.report_read_only(T.Ctx(fake, "x", D))
+        self.assertTrue(res["passed"], res["evidence"])
+        self.assertIn("changed_by_other_logins=1", res["evidence"])
+
     def test_unknown_login_is_strict(self):
         fake = platform()
         fake.mailboxes = []

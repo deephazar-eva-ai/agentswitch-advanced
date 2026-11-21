@@ -427,8 +427,8 @@ def report_read_only(ctx):
 
     Every record of every entity the report reads (plus messages) is read in full before and after a fresh
     report run, and compared field by field. A change counts against us unless the record says another login
-    made it (`updated_by`/`created_by` set and not ours): these systems are shared, and other seats work on
-    them during a run. A removed record always counts as another login's: the report must have asked only
+    made it (a new record's `updated_by`/`created_by`, or an edited record's `updated_by` changed during the
+    run, set and not ours): these systems are shared, and other seats work on them during a run. A removed record always counts as another login's: the report must have asked only
     for read tools, which is checked from its call list.
     """
     names = ctx.tools()
@@ -444,7 +444,14 @@ def report_read_only(ctx):
         changed = [("added", a[k]) for k in a.keys() - b.keys()] + [("removed", b[k]) for k in b.keys() - a.keys()]
         changed += [("edited", a[k]) for k in a.keys() & b.keys() if a[k] != b[k]]
         for kind, row in changed:
-            who = row.get("updated_by") or row.get("created_by")
+            if kind == "edited":
+                # Only a fresh `updated_by` names the editor. `created_by` names whoever made the record, and an
+                # `updated_by` left over from before the run names an earlier editor: neither clears this run.
+                who = row.get("updated_by")
+                if who == b[json.dumps(row.get("id"), sort_keys=True)].get("updated_by"):
+                    who = None
+            else:
+                who = row.get("updated_by") or row.get("created_by")
             # A removal is never ours: the report can't delete (any non-read call is refused before a request,
             # and `non_read` below proves none was attempted), and a deleted record can't name who deleted it.
             # Review of #54: another seat deleting its own records mid-run must not fail a correct report.
