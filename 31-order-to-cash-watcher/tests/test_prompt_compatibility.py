@@ -267,6 +267,27 @@ class PromptBoundaries(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertIsNone(prompt.asks_for_write(text))
 
+    def test_asking_for_the_list_itself_is_not_a_write_request(self):
+        # Deepak's review of e2f528d: the agent does what these ask (prints the list), so the claim is "done".
+        for text in ("Please post the list of orders not invoiced for 14 days.",
+                     "Set up a list of orders not invoiced for 14 days.",
+                     "Move quickly, I need the list of orders older than 7 days.",
+                     "Create a list of the orders not invoiced after 7 days",
+                     "move fast and post the full list"):
+            with self.subTest(text=text):
+                self.assertIsNone(prompt.asks_for_write(text))
+
+    def test_a_change_next_to_a_list_is_still_a_write_request(self):
+        for text, verb in (("Post the list and mark them as billed", "mark"),
+                           ("send the list to the customer", "send"),
+                           ("move the order dates on the list", "move"),
+                           ("set these orders as billed", "set"),
+                           ("Create the invoices for the list", "create")):
+            with self.subTest(text=text):
+                self.assertEqual(prompt.asks_for_write(text), verb)
+        self.assertEqual([prompt.asks_for_write(t) for t in REFUSAL_PROMPTS],
+                         ["mark", "allocate", "mark", "change", "push", "create"])
+
     def test_not_invoiced_so_mark_is_a_write_request(self):
         self.assertEqual(prompt.asks_for_write("These orders are not invoiced so mark them as billed."), "mark")
 
