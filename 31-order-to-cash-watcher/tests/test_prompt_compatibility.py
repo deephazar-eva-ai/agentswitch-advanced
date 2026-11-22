@@ -295,8 +295,9 @@ class PromptBoundaries(unittest.TestCase):
 
     def test_every_write_verb_on_the_list_is_still_a_write_request(self):
         # Every verb in _WRITE, read from the pattern itself, so a verb added later is covered too.
-        verbs = re.search(r"\(([^)]*)\)", prompt._WRITE.pattern).group(1).split("|")
-        self.assertEqual(len(verbs), 20)
+        verbs = [v.replace("[\\s-]+", " ") for v in re.search(r"\(([^)]*)\)", prompt._WRITE.pattern).group(1).split("|")]
+        self.assertEqual(len(verbs), 26)
+        self.assertIn("write off", verbs)
         for verb in verbs:
             if verb in self.LIST_MAKERS:
                 continue
@@ -322,6 +323,36 @@ class PromptBoundaries(unittest.TestCase):
                            ("Set the list of orders to billed", "set"),
                            ("Move quickly, I need the list", None),
                            ("Move the list to next month", "move")):
+            with self.subTest(text=text):
+                self.assertEqual(prompt.asks_for_write(text), verb)
+
+    def test_clear_change_verbs_are_write_requests(self):
+        # Deepak, 22 Nov: verbs that only ever ask for a change. "close", "apply", "settle" and "release" wait for
+        # seat 34's prompts, since "close to 30 days" and "which payments should we apply?" are reads.
+        for text, verb in (("Submit the draft invoices.", "submit"), ("Reconcile the payments for Acme", "reconcile"),
+                           ("Refund the customer for INV-2026-00150", "refund"), ("Amend SO-2026-00012 to 5 units", "amend"),
+                           ("Assign the payment to INV-2026-00150", "assign"), ("Write off the old invoices", "write off"),
+                           ("write-off INV-2026-00150 now", "write off"), ("Please refund the list", "refund"),
+                           ("Show the overdue invoices, then submit them", "submit")):
+            with self.subTest(text=text):
+                self.assertEqual(prompt.asks_for_write(text), verb)
+
+    def test_questions_about_the_new_verbs_stay_reads(self):
+        for text in ("Which payments are reconciled?", "Which orders were submitted?", "Any refunds this week?",
+                     "Was there a refund for INV-2026-00150?", "Which orders were amended?",
+                     "Which invoices are unassigned?", "Which invoices were written off?",
+                     "Is there a write-off on INV-2026-00150?", "Show the write-offs", "don't reconcile anything",
+                     "Do not write off anything, just list the overdue invoices"):
+            with self.subTest(text=text):
+                self.assertIsNone(prompt.asks_for_write(text))
+
+    def test_posting_the_list_to_the_ledger_is_a_write(self):
+        # Posting to a ledger changes it; posting the list anywhere else is sharing it.
+        for text, verb in (("Post the list to the ledger", "post"), ("Post the list to the books.", "post"),
+                           ("post the list to the GL", "post"), ("Post the list into our ledger", "post"),
+                           ("Post the entire list of orders older than 14 days to the general ledger", "post"),
+                           ("Post the list", None), ("Post the list here, please", None),
+                           ("Post the list to the chat", None), ("Post the list. The ledger is fine.", None)):
             with self.subTest(text=text):
                 self.assertEqual(prompt.asks_for_write(text), verb)
 
