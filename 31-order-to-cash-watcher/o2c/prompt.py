@@ -49,10 +49,13 @@ _NEG = r"\b(?:don'?t|do\s+not|never|without|no\s+need\s+to|not)"
 # across one aside that starts right after it ("do not, under any circumstances, change"). It never crosses a
 # sentence end or clause turn ("not invoiced so mark", "not a bug; push"), and a comma after other words ends it.
 _NEGATED = re.compile(_NEG + r"(?:\s+[\w']+){0,3}\s+$|" + _NEG + r",[^,.?!;\n]{1,60},\s*(?:[\w']+\s+){0,2}$", re.I)
-# The list itself as the object ("post the list", "set up a list", "create a list") or "move quickly/fast": the agent
-# does what is asked, so it is not a request to change a record. "send" is left out: sending is never done.
-_LIST_OBJECT = re.compile(r"\s+(?:up\s+)?(?:the|a|an|this|that|our|my)\s+(?:(?:full|complete|whole|entire)\s+)?list\b",
-                          re.I)
+# Asking for the list itself: "post the list", "create a list", "set up a list", or "move quickly/fast". The agent does
+# what is asked, so it is not a request to change a record. Only verbs that make or share a list qualify ("set" only
+# as "set up"): every other write verb stays a write when its object is the list ("mark the list as billed", "delete
+# the list", "set the list to billed"), and so does "send", since sending is never done.
+_LIST_MAKERS = frozenset({"post", "create"})
+_LIST_OBJECT = re.compile(r"\s+(?:the|a|an|this|that|our|my)\s+(?:(?:full|complete|whole|entire)\s+)?list\b", re.I)
+_SET_UP_LIST = re.compile(r"\s+up" + _LIST_OBJECT.pattern, re.I)
 _MOVE_ON = re.compile(r"\s+(?:quickly|fast)\b", re.I)
 _SENTENCE_END = re.compile(r"[.?!;\n]|\b(?:so|but|then)\b", re.I)
 
@@ -80,7 +83,8 @@ def asks_for_write(text):
         if word == "set" and re.match(r"\s+of\b", source[m.end():m.end() + 8], re.I):
             continue
         after = source[m.end():m.end() + 40]
-        if (word != "send" and _LIST_OBJECT.match(after)) or (word == "move" and _MOVE_ON.match(after)):
+        if (word in _LIST_MAKERS and _LIST_OBJECT.match(after)) or (word == "set" and _SET_UP_LIST.match(after)) \
+                or (word == "move" and _MOVE_ON.match(after)):
             continue
         sentence = _SENTENCE_END.split(source[max(0, m.start() - 120):m.start()])[-1]
         if _NEGATED.search(sentence):

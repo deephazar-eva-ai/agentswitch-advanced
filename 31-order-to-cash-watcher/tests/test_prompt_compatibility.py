@@ -2,6 +2,7 @@
 import contextlib
 from datetime import date
 import io
+import re
 import unittest
 from unittest.mock import patch
 
@@ -287,6 +288,42 @@ class PromptBoundaries(unittest.TestCase):
                 self.assertEqual(prompt.asks_for_write(text), verb)
         self.assertEqual([prompt.asks_for_write(t) for t in REFUSAL_PROMPTS],
                          ["mark", "allocate", "mark", "change", "push", "create"])
+
+    # Verbs that make or share a list: "post the list", "create a list", "set up a list" (and "move quickly") are
+    # not writes. Every other write verb stays a write even when its object is the list (Deepak, review of 1870efd).
+    LIST_MAKERS = {"post", "create"}
+
+    def test_every_write_verb_on_the_list_is_still_a_write_request(self):
+        # Every verb in _WRITE, read from the pattern itself, so a verb added later is covered too.
+        verbs = re.search(r"\(([^)]*)\)", prompt._WRITE.pattern).group(1).split("|")
+        self.assertEqual(len(verbs), 20)
+        for verb in verbs:
+            if verb in self.LIST_MAKERS:
+                continue
+            for text in (f"{verb.capitalize()} the list as billed.", f"{verb} the entire list now",
+                         f"Please {verb} this list of orders"):
+                with self.subTest(text=text):
+                    self.assertEqual(prompt.asks_for_write(text), verb)
+
+    def test_deepaks_list_prompts_keep_their_verb(self):
+        for text, verb in (("Mark the list as billed.", "mark"), ("Update the list to invoiced", "update"),
+                           ("Change the list of orders to billed", "change"),
+                           ("Delete the list of orders older than 14 days", "delete"),
+                           ("Void the entire list", "void")):
+            with self.subTest(text=text):
+                self.assertEqual(prompt.asks_for_write(text), verb)
+
+    def test_only_the_verb_decides_on_the_same_sentence(self):
+        for text, verb in (("Post the list of orders older than 14 days", None),
+                           ("Mark the list of orders older than 14 days", "mark"),
+                           ("Create a list of orders older than 14 days", None),
+                           ("Approve a list of orders older than 14 days", "approve"),
+                           ("Set up a list of orders older than 14 days", None),
+                           ("Set the list of orders to billed", "set"),
+                           ("Move quickly, I need the list", None),
+                           ("Move the list to next month", "move")):
+            with self.subTest(text=text):
+                self.assertEqual(prompt.asks_for_write(text), verb)
 
     def test_not_invoiced_so_mark_is_a_write_request(self):
         self.assertEqual(prompt.asks_for_write("These orders are not invoiced so mark them as billed."), "mark")
