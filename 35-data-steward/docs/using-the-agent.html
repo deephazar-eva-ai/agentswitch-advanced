@@ -141,6 +141,12 @@ details.sec > div { padding: 0 0 12px 24px; font-size: 0.95rem; display: flex; f
 .p-quiet { background: var(--quiet-soft); color: var(--quiet); }
 .p-accent { background: var(--accent-soft); color: var(--accent); }
 
+/* numbered ladder */
+ol.ladder { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; counter-reset: l; }
+ol.ladder li { counter-increment: l; display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: start; font-size: 0.95rem; }
+ol.ladder li::before { content: counter(l); font-family: var(--display); font-weight: 700; background: var(--mark-soft); color: var(--ink);
+  border-radius: 50%; width: 26px; height: 26px; display: grid; place-items: center; font-size: 0.85rem; }
+
 /* labels json */
 .json { background: var(--term); color: var(--term-ink); border-radius: 10px; padding: 14px; font-family: var(--mono); font-size: 0.82rem; overflow-x: auto; margin: 0; line-height: 1.55; }
 .json .k { color: #93c5fd; } .json .s { color: #fcd34d; } .json .g { color: #86efac; } .json .r { color: #fca5a5; }
@@ -331,6 +337,16 @@ uv run python -m data_steward.dedupe --instance suryodaya</pre><button type="but
     <div class="stack">
       <h2>Ask it a question</h2>
       <p>The course harness runs the agent once per task with the request added as <code>--prompt</code>, and you can do the same. A request with <code>--prompt</code> writes nothing to <code>local/</code> and ignores <code>local/test-tags.txt</code> and <code>local/dedupe-labels.json</code>. Each sentence (ending in <code>.</code>, <code>!</code>, <code>?</code> or <code>;</code>) must match a recognised form as a whole; case, extra spaces and apostrophes do not matter.</p>
+
+      <h3>How a request is read</h3>
+      <p>The request is free text, but it is never run as code.</p>
+      <ol class="ladder">
+        <li><span><b>It arrives as one string.</b> The harness starts the agent with a list of arguments, not through a shell, and adds <code>--prompt</code> and the request text at the end. On your command line, the quotes keep the sentence together. Python's <code>argparse</code> stores it as a plain string; nothing evaluates it: no <code>eval</code>, no shell, no AI model.</span></li>
+        <li><span><b>The record ids are taken out first,</b> by their exact shape (8-4-4-4-12 hexadecimal characters).</span></li>
+        <li><span><b>The rest is tidied and split into sentences:</b> lower case, single spaces, apostrophes removed, split at <code>.</code> <code>!</code> <code>?</code> <code>;</code>.</span></li>
+        <li><span><b>Each sentence must match one known form in full.</b> "scan these six parties for duplicates" matches the scan form; "do not change any record" matches a safety form. One sentence that matches nothing refuses the whole request, before any setting, login or call.</span></li>
+        <li><span><b>Only a small, fixed choice comes out:</b> scan, recount or refuse; party or item; the ids; which question. That choice drives the code. The text is never printed back or sent to the platform; ids go out only as values in read-only list calls.</span></li>
+      </ol>
 
       <h3>Try some requests</h3>
       <p class="note">Tap a request to see what the agent does with it. Each verdict was checked against the agent on 23 Nov; this page only shows it. To use an example, replace each <code>&lt;id&gt;</code> with a full record id.</p>

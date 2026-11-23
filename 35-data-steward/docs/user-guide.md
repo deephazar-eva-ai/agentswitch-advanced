@@ -134,6 +134,23 @@ only the forms below; **anything else is refused before it reads a setting, logs
 deliberate: it can never be talked into acting. Case, extra spaces and apostrophes do not matter; each sentence
 (ending in `.`, `!`, `?` or `;`) must match one form as a whole.
 
+**How a request is read.** The request is free text, but it is never run as code:
+1. **It arrives as one string.** The harness starts the agent with a list of arguments, not through a shell, and
+   adds two items at the end: `--prompt` and the request text. On your own command line, the quotes keep the sentence
+   together as one argument. Python's `argparse` stores it as a plain string. Nothing evaluates it: no `eval`, no
+   shell, no AI model.
+2. **The record ids are taken out first,** by their exact shape (8-4-4-4-12 hexadecimal characters).
+3. **The rest is tidied and split into sentences:** lower case, single spaces, apostrophes removed, split at `.`,
+   `!`, `?` and `;`.
+4. **Each sentence must match one known form in full.** "scan these six parties for duplicates" matches the scan
+   form; "do not change any record" matches a safety form. One sentence that matches nothing (such as "Why not merge
+   each pair?") makes the whole request refused, before any setting is read, any login or any call.
+5. **Only a small, fixed choice comes out:** scan, recount or refuse; party or item; the list of ids; and which of
+   the four questions. That choice drives the code. The text itself is never printed back or sent to the platform;
+   the ids go to the platform only as values in read-only list calls.
+
+The patterns are in `data_steward/router.py`.
+
 **Scan named records for duplicates.** One read sentence, then the record ids at the end after a colon. Use the
 individual record ids (the 36-character ids with hyphens, as in the report's record lists or the platform), not a
 pair id, separated by commas, with no brackets or quotes. For example:
