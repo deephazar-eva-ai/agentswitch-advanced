@@ -18,8 +18,9 @@ crm, inventory, accounting (read)
 ## Working rules
 See the top-level README. Put your agent code, tests and notes in this folder; open a pull request for every change.
 
-**Using the agent:** see the [user guide](docs/user-guide.md): running the report, reviewing pairs, exporting the
-results file, the questions it answers, and what each answer and error means.
+**Using the agent:** see the [user guide](docs/user-guide.md), or its visual version,
+[docs/using-the-agent.html](docs/using-the-agent.html): running the report, reviewing pairs, exporting the results
+file, the questions it answers, and what each answer and error means.
 
 ## Setup
 ```bash

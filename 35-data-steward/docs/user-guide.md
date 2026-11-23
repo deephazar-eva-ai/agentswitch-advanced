@@ -1,7 +1,8 @@
 # User guide: the seat 35 Data Steward agent
 
-For a person on the seat, a reviewer, or course staff who wants to run the agent and read what it gives back. The
-rules for AI coding agents are in [AGENTS.md](../AGENTS.md).
+For a person on the seat, a reviewer, or course staff who wants to run the agent and read what it gives back. A
+visual, interactive version is [using-the-agent.html](using-the-agent.html). The rules for AI coding agents are in
+[AGENTS.md](../AGENTS.md).
 
 ## What the agent does, and never does
 
