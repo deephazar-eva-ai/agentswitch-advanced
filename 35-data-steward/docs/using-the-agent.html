@@ -573,13 +573,13 @@ uv run python -m data_steward.dedupe --instance suryodaya</pre><button type="but
   const R = (claim, extra) => `<span class="r">AGENT_RESULT ${JSON.stringify(Object.assign(extra || {}, {claim}))}</span>`;
   const outcomes = {
     "Refused": {
-      out: `refused: only recognised read requests are run; nothing was read or changed\n${R("refused")}`,
+      out: `refused: only supported read requests can run; nothing was read or changed\n${R("refused")}`,
       claim: ["refused", "quiet"], exit: 0, note: "Decided before any setting is read, any login or any call." },
     "Scan": {
       out: `{\n  "records_named": 2,\n  "request": "scan",\n  "sections": {\n    "party": { "excluded": 0, "pairs": { "propose": 1 }, "records": 2, "withheld_private": 0 }\n  }\n}\npairs are compared among the named records only; nothing was changed or recorded on the platform\n${R("done")}`,
       claim: ["done", "ok"], exit: 0, note: "Counts only: no names or ids (the counts here are an example). The scan checks for exactly one row per id, within 4 minutes; for \"records\" it tries parties first, then items." },
     "Asked to record a proposal": {
-      out: `{ counts as above, shortened here }\npairs are compared among the named records only; nothing was changed or recorded on the platform\na merge proposal was asked to be recorded; this agent records none, so that part was not done\n${R("failed")}`,
+      out: `{ counts as above, shortened here }\npairs are compared among the named records only; nothing was changed or recorded on the platform\nmerge proposal not recorded: the request asked to record one, but this agent does not record proposals\n${R("failed")}`,
       claim: ["failed", "warn"], exit: 0, note: "Only when the named records hold a pair. With no pair there is nothing to record, and the claim is done." },
     "A record can't be read": {
       out: `could not read exactly one row for every named record; no counts are given\n${R("failed")}`,

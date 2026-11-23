@@ -48,8 +48,8 @@ Our own check is `data_steward/checks.py`; it is tested against the same rows.
   agent refuse, and a refused recount fails the task. Once the task text is written, it is added word for word to
   our router tests.
 - **Fields:** the harness keeps only the rule's fields from its rows (`row.get(field)`); its REST rows carry
-  `privacy_state` (checked 23 Nov). Our agent treats "no party row carries `privacy_state`" as an error, never as an
-  empty answer.
+  `privacy_state` (checked 23 Nov). Our agent treats "`privacy_state` is missing from every party row" as an error,
+  never as an empty answer.
 
 ## Defaults while waiting for the instructor (23 Nov)
 

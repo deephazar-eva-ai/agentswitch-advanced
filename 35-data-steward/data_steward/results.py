@@ -64,9 +64,9 @@ def _check_pair(p) -> None:
           and all(isinstance(i, str) and i for i in p["ids"])
           and isinstance(p.get("signals"), list) and isinstance(p.get("caps"), list))
     if not ok:
-        raise ExportError("a pair in a report is malformed")
+        raise ExportError("a pair in a report has an invalid format")
     if p["band"] == "propose" and p["caps"]:
-        raise ExportError("a pair in a report is in propose although held at review")
+        raise ExportError("a pair in a report is marked propose even though it is held at review")
 
 
 def confidence(pair: dict) -> float:
@@ -94,7 +94,7 @@ def entries(saved: dict, labels: dict) -> tuple[list[dict], dict, set]:
     for kind in report.TABLES:
         listed = saved["sections"][kind]["proposals"]
         if not isinstance(listed, list):
-            raise ExportError("a report's pair list is malformed")
+            raise ExportError("a report's pair list has an invalid format")
         n = {"listed": len(listed), "left_out_rejected": 0, "written": 0, "written_test_records": 0}
         for p in listed:
             _check_pair(p)
@@ -119,7 +119,7 @@ def load_report(instance: str) -> dict:
     if not isinstance(saved, dict) or saved.get("system") != instance:
         raise ExportError(f"{path.name} is not the {instance} report")
     if saved.get("rules_version") != dedupe.RULES_VERSION:
-        raise ExportError(f"{path.name} was made with another rules version than {dedupe.RULES_VERSION}: scan again")
+        raise ExportError(f"{path.name} was made with a different rules version (expected {dedupe.RULES_VERSION}): run the scan again")
     try:
         dt.date.fromisoformat(saved.get("date"))
     except (TypeError, ValueError):
@@ -131,7 +131,7 @@ def load_report(instance: str) -> dict:
         raise ExportError(f"{path.name} does not hold both tables")
     cut = [kind for kind, s in sections.items() if s["table"]["cut_off"]]
     if cut:
-        raise ExportError(f"{path.name}: the {' and '.join(sorted(cut))} table was cut off, so pairs may be missing")
+        raise ExportError(f"{path.name}: the {' and '.join(sorted(cut))} table was incomplete, so pairs may be missing")
     return saved
 
 

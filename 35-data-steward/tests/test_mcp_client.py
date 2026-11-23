@@ -358,7 +358,7 @@ def test_an_ignored_offset_returning_a_changed_row_never_reads_as_a_whole_table(
     for third in ([{"id": "A", "updated_at": "3"}], [a]):
         c, _ = client(monkeypatch, [ok({"data": [a], "total": 2}), ok({"data": [changed], "total": 2}),
                                     ok({"data": third, "total": 2})])
-        with pytest.raises(McpError, match="past its reported total|repeated a page"):
+        with pytest.raises(McpError, match="more rows than its reported total|repeated a page"):
             c.list_all("Party", page=1)
 
 
@@ -369,7 +369,7 @@ def test_a_page_partly_repeating_known_ids_needs_an_empty_page_to_end(monkeypatc
              ok({"data": [{"id": "B", "v": 2}, {"id": "C"}], "total": 4}), ok({"data": after, "total": 4})]
     c, _ = client(monkeypatch, pages)
     if after:
-        with pytest.raises(McpError, match="past its reported total"):
+        with pytest.raises(McpError, match="more rows than its reported total"):
             c.list_all("Party", page=2)
     else:  # a server whose total counts both copies of B: all four rows, complete
         rows = c.list_all("Party", page=2)
@@ -391,5 +391,5 @@ def test_an_empty_tool_list_is_a_real_answer(monkeypatch):
 
 def test_a_list_reply_that_is_not_rows_is_an_error_not_an_empty_table(monkeypatch):
     c, _ = client(monkeypatch, [ok({"content": [{"type": "text", "text": '""'}]})])
-    with pytest.raises(McpError, match="no rows list"):
+    with pytest.raises(McpError, match="did not return a list of rows"):
         c.list_all("Party")

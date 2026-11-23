@@ -124,7 +124,7 @@ class Session:
         self.platform = config.platform()
         if self.platform:
             if instance != self.platform["instance"]:
-                raise ValueError(f"this run serves {self.platform['instance']} only, not {instance}")
+                raise ValueError(f"this run is for {self.platform['instance']} only, not {instance}")
             self.base, self.token, self._token_file = self.platform["base"], self.platform["token"], None
             return
         self.base = config.INSTANCES[instance]
@@ -270,10 +270,10 @@ class McpClient:
             res = self.call(f"{entity}.list", {"limit": page, "offset": offset, **filters})
             if isinstance(res, dict) and not isinstance(res.get("data"), list):
                 # call() turns a non-JSON reply into {"text": ...}; reading that as an empty table would hide rows.
-                raise McpError("bad_reply", f"{entity}.list returned no rows list", res)
+                raise McpError("bad_reply", f"{entity}.list did not return a list of rows", res)
             if not isinstance(res, (dict, list)):
                 # A bare value that is not a list (an empty string, say) would page as an empty table.
-                raise McpError("bad_reply", f"{entity}.list returned no rows list", None)
+                raise McpError("bad_reply", f"{entity}.list did not return a list of rows", None)
             batch = res["data"] if isinstance(res, dict) else res
             if isinstance(res, dict) and res.get("total") is not None:
                 total = res["total"]
@@ -284,7 +284,7 @@ class McpClient:
                 # The same rows again: the server ignored the offset, and paging on would only repeat them.
                 raise McpError("bad_reply", f"{entity}.list repeated a page (offset ignored)", None)
             if batch and past_total:
-                raise McpError("bad_reply", f"{entity}.list returned rows past its reported total", None)
+                raise McpError("bad_reply", f"{entity}.list returned more rows than its reported total", None)
             ids = {str(r.get("id")) for r in batch if isinstance(r, dict)}
             # A page holding any known id with changed values may carry a real second copy, or an offset the server
             # ignored or shifted, returning records again, changed; counting those copies toward the total could hide

@@ -251,7 +251,7 @@ def test_a_cut_off_table_gives_no_answer_and_exits_1(run, monkeypatch):
     runner(monkeypatch)
     monkeypatch.setattr(report, "IDS_ALLOWED", True)
     out, _ = run(RECOUNT, client=FakeClient({"Party": PARTIES, "cut_off": ("Party",)}), code=1)
-    assert "AGENT_RESULT" not in out.out and out.err == "could not run: the Party table was cut off; no partial answer is given\n"
+    assert "AGENT_RESULT" not in out.out and out.err == "could not run: the Party table was incomplete; no partial answer is given\n"
 
 
 def test_rows_without_privacy_state_give_no_answer_and_exit_1(run, monkeypatch):
@@ -314,7 +314,7 @@ RECORD = ("Find duplicate parties in these eight party records and record your m
 
 def test_asked_to_record_a_proposal_it_cannot_record_the_scan_does_not_claim_done(run):
     out, _ = run(RECORD.format(ids=f"{A}, {B}"))  # A and B are a proposed pair
-    assert last(out) == {"claim": "failed"} and "that part was not done" in out.out and '"sections"' in out.out
+    assert last(out) == {"claim": "failed"} and "merge proposal not recorded" in out.out and '"sections"' in out.out
 
 
 def test_asked_to_record_with_nothing_to_record_the_scan_is_done(run):

@@ -112,7 +112,7 @@ def load_labels(path: Path) -> dict[str, dict]:
         return {}
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
-        raise ValueError(f"{path.name}: expected an object of pair id -> label")
+        raise ValueError(f"{path.name}: expected a mapping of pair id to label")
     labels, bad = {}, []
     for pair_id, value in raw.items():
         entry = value if isinstance(value, dict) else {"label": value}
@@ -435,7 +435,7 @@ def _answer(prompt: str, instance: str | None) -> int:
     if request["route"] == "refuse":
         # Decided before any setting is read, any login or any call. Exit 0: a non-zero exit is an infrastructure
         # failure to the harness. The request itself is never printed (it holds record ids).
-        print("refused: only recognised read requests are run; nothing was read or changed")
+        print("refused: only supported read requests can run; nothing was read or changed")
         _result("refused")
         return 0
     platform = config.platform()
@@ -564,7 +564,7 @@ def _scan_named(instance: str, entity: str | None, ids: list[str], record: bool 
     if record and any(s["pairs"] for s in sections.values()):
         # The request asked for the proposal to be recorded, and this agent records none: claiming "done" would say
         # it did what was asked.
-        print("a merge proposal was asked to be recorded; this agent records none, so that part was not done")
+        print("merge proposal not recorded: the request asked to record one, but this agent does not record proposals")
         _result("failed")
         return 0
     _result("done")
@@ -581,7 +581,7 @@ def _recount(client, answer: str) -> int:
     table, check = checks.RECOUNTS[answer]
     rows = client.list_all(table)
     if rows.truncated:
-        raise RuntimeError(f"the {table} table was cut off; no partial answer is given")
+        raise RuntimeError(f"the {table} table was incomplete; no partial answer is given")
     ids = check(rows)
     print(json.dumps({"request": "recount", "answer": answer, "found": len(ids)}, sort_keys=True))
     if config.on_platform() and IDS_ALLOWED:

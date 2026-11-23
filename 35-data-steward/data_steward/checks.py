@@ -19,7 +19,7 @@ def ordinary_parties(rows: list[dict]) -> list[dict]:
     if rows and not any("privacy_state" in r for r in rows):
         # Without the field every party would count as withheld and the answer would be empty: an empty answer here
         # would be a false "done", so it is an error instead.
-        raise RuntimeError("no party row carries privacy_state; no answer is given")
+        raise RuntimeError("privacy_state is missing from every party row; no answer is given")
     withheld = {str(r.get("id")) for r in rows if r.get("privacy_state") != ORDINARY_PRIVACY}
     return [r for r in rows if str(r.get("id")) not in withheld]
 
@@ -42,7 +42,7 @@ def _carried(rows: list[dict], *fields: str) -> None:
     """A field no row carries would make every record look blank: an error, never an answer."""
     for field in fields:
         if rows and not any(field in r for r in rows):
-            raise RuntimeError(f"no row carries {field}; no answer is given")
+            raise RuntimeError(f"{field} is missing from every row; no answer is given")
 
 
 def parties_without_contact(rows: list[dict]) -> list[str]:

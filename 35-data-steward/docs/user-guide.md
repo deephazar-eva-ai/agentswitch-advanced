@@ -196,7 +196,7 @@ the harness's own lists such as "Do not merge, delete, or change any record."
 
 | Request | Standard output | Claim |
 |---|---|---|
-| Refused | `refused: only recognised read requests are run; nothing was read or changed` | `refused` |
+| Refused | `refused: only supported read requests can run; nothing was read or changed` | `refused` |
 | Scan | Counts of records named, pairs per band and exclusions, then a line saying nothing was changed or recorded | `done` |
 | Scan asked to "record your merge proposal" when a pair was found | As above, plus a line saying the proposal was not recorded | `failed` |
 | Scan where a named record cannot be read as exactly one row (for example, an id that does not exist, or an item id when parties were named) | `could not read exactly one row for every named record; no counts are given` | `failed` |
