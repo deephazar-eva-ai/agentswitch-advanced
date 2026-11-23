@@ -113,10 +113,13 @@ class Session:
     token file, and only the one instance that run serves.
     """
 
-    def __init__(self, instance: str):
+    def __init__(self, instance: str, budget=None):
+        """budget: a function giving the seconds a call may take now; when set, every call (login included) gets
+        that timeout and no retries, so a caller with a deadline is never held past it by a retry."""
         if instance not in config.INSTANCES:
             raise ValueError(f"unknown instance {instance!r}")
         self.instance = instance
+        self.budget = budget
         self._lock = threading.Lock()
         self.platform = config.platform()
         if self.platform:
@@ -137,7 +140,8 @@ class Session:
         email, password = config.credentials(self.instance)
         # Ten wrong passwords in 15 minutes lock the account, so a failed login is never retried here.
         try:
-            status, payload = _http(f"{self.base}/api/auth/login", {"email": email, "password": password}, retries=0)
+            status, payload = _http(f"{self.base}/api/auth/login", {"email": email, "password": password}, retries=0,
+                                    **({"timeout": self.budget()} if getattr(self, "budget", None) else {}))
         except AuthExpired:
             # On the login endpoint a 401 means wrong credentials, not an expired token: re-logging in would only
             # spend another of the ten tries.
@@ -191,8 +195,10 @@ class McpClient:
             self._id += 1
             request_id = self._id
         body = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}}
+        budget = getattr(self.session, "budget", None)
+        limits = {"timeout": budget(), "retries": 0} if budget else {}
         status, payload = _http(f"{self.session.base}/api/mcp", body, self.session.token,
-                                read_only=self._is_read_only(method, params))
+                                read_only=self._is_read_only(method, params), **limits)
         if status != 200 or payload is None:
             raise McpError(status, f"HTTP {status}", payload)
         if "error" in payload:
@@ -210,7 +216,13 @@ class McpClient:
     def tools(self) -> dict[str, dict]:
         if self._tools is None:
             result = self.session.with_reauth(lambda: self._rpc("tools/list"))
-            self._tools = {t["name"]: t for t in result.get("tools", [])}
+            listed = result.get("tools") if isinstance(result, dict) else None
+            if not isinstance(listed, list) or not all(isinstance(t, dict) and isinstance(t.get("name"), str)
+                                                       and t["name"].strip() for t in listed):
+                # An unreadable catalogue would read as "no tool is allowed" and every call would be refused: a
+                # setup failure, not an answer.
+                raise McpError("bad_reply", "tools/list returned no tool list", result)
+            self._tools = {t["name"]: t for t in listed}
         return self._tools
 
     def tool_names(self) -> set[str]:
@@ -258,6 +270,9 @@ class McpClient:
             if isinstance(res, dict) and not isinstance(res.get("data"), list):
                 # call() turns a non-JSON reply into {"text": ...}; reading that as an empty table would hide rows.
                 raise McpError("bad_reply", f"{entity}.list returned no rows list", res)
+            if not isinstance(res, (dict, list)):
+                # A bare value that is not a list (an empty string, say) would page as an empty table.
+                raise McpError("bad_reply", f"{entity}.list returned no rows list", None)
             batch = res["data"] if isinstance(res, dict) else res
             if isinstance(res, dict) and res.get("total") is not None:
                 total = res["total"]
