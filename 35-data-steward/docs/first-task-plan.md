@@ -39,7 +39,7 @@ So live data cannot tune or check the matcher. Made-up data does that instead: a
 
 | Question | Decision | Why |
 |---|---|---|
-| Where proposals live | Local JSON plus Markdown. No platform records for 15 Nov. From version 1: one approval request per proposal, assigned to a named person, alongside the report. | The instructor (10 Nov) plans to grade the first task with no writes, and recommends the approval request as the proposal record, since the platform has no proposal entity. Our login has no tool that creates one directly, so how to create it is asked; until answered nothing is written. Creating a shared record needs the person's approval, and the publish step gets its own reviewed write path. |
+| Where proposals live | Local JSON plus Markdown. No platform records for 15 Nov. Version 1 creates none either (23 Nov default while question 8.2 is open; see "Defaults and rehearsal"). | The instructor (10 Nov) plans to grade the first task with no writes, and recommends the approval request as the proposal record, since the platform has no proposal entity. Our login has no tool that creates one directly, so how to create it is asked; until answered nothing is written. Creating a shared record needs the person's approval, and the publish step gets its own reviewed write path. |
 | What a proposal is | Every listed pair, in the propose or the review band, gets a proposal in the report (survivor, differences). "Proposed merge" means the propose band only. | Which of the two become approval requests, and which the 15 Nov grader counts, is asked (see "Checks"). |
 | How matches are found | Rules only: normalize, group by shared keys, score. No model. | The same data always gives the same result, it costs no tokens, it works offline, and a verifier can recompute it. The instructor (10 Nov) allows a model, not requires one, to understand requests and explain proposals, as long as the scoring rules stay fixed so confidences repeat. Version 1 uses none: a model fallback for reading requests was reviewed on 23 Nov (two advisors) and rejected, since it gains nothing the suite grades and would reopen misroutes the allowlist router closes. Revisit for the final (a plain-language explanation of each proposal is the first candidate). |
 | What confidence means | A score from 0 to 1 with the signals that produced it, and one band. **Propose:** 0.9 or more, with no conflict and no cap. **Review:** 0.6 to below 0.9, or 0.9 or more with a conflict or a cap (a conflict between strong values, a role difference, or party names that are only near). **Dropped:** below 0.6, whatever the conflicts; counted in the report, not listed. The band is the confidence; a capped pair keeps its full score (a pair can score 1.0 and be in review), so the score alone overstates a held pair. | It is a rule score, not a probability, and the report says so. The held-back set of made-up data gives how many in each band were right (step 7). Those figures come from made-up data that holds many duplicates, so the report says they do not predict how often a live proposal is right. Whether the grader reads the band or the number is asked. |
@@ -182,8 +182,8 @@ Every task in the suite is judged on platform data, never on a report file in `l
   proposal exists (their card S34-21). No tool our login sees creates an approval request (10 Nov probe; the 11 Nov
   release added only read tools), and escalations are not agreed (question 8).
 
-What our agent lacks for recount tasks: it prints counts only, never ids, and no `AGENT_RESULT` line, and it ignores
-`--prompt`. Under the runner the answer line must carry ids (the record `id`, not a number). A refusal should return
+What our agent lacked for recount tasks (as of 23 Nov morning; built since, see "Status" below): it printed counts
+only, never ids, and no `AGENT_RESULT` line, and it ignored `--prompt`. Under the runner the answer line must carry ids (the record `id`, not a number). A refusal should return
 without scanning, and a scan should work on the record ids the request names: each task has 5 minutes
 (`task_minutes` in the suite). Which login runs our agent is open: the Eval Harness seat's notes say their run lends
 the agent their token, while the instructor said on 13 Nov that each seat may submit its own harness file from its
@@ -274,13 +274,14 @@ the suite go to the instructor, not to another seat directly.
   "failed" with exit 0.
 - V6: task 11's check and the orphan check (item preferred vendor against every party read, in the full report
   only, beside `sections`) are built. On the saved reads: task 11 gives Keystone 28 and Suryodaya 10; the orphan
-  check finds 0 of 43 Suryodaya links (Keystone has none). Offline tests: 310 pass.
+  check finds 0 of 43 Suryodaya links (Keystone has none). Offline tests: 310 passed at that point, 349 after the
+  later reviews.
 
 **Defaults and rehearsal (23 Nov, afternoon).** V1 was sent. The person approved V2, V7 and V8 and, expecting a slow
-reply from the instructor, asked for defaults chosen with the advisors (two joint rounds) so the work continues:
-- **V2 done.** The schema endpoint (`/api/schemas`, both systems, saved in `local/`) lists one required field on
-  parties and items: `name`. No party or item has a blank name, so "missing a required field" has an empty answer on
-  both systems and tasks 9 and 10 are swapped, as planned.
+reply from the instructor, asked for defaults chosen after review so the work continues:
+- **V2 done.** The schema read (both systems; the reply is saved in `local/`, never committed) gives the required
+  fields of parties and items; the recounts of records missing one returned no matches on either system, so tasks 9
+  and 10 are swapped, as planned.
 - **The four recounts (working defaults):** 9 `parties_without_contact` (ordinary parties whose email and phone are
   both blank: Keystone 47, Suryodaya 2); 10 `items_without_preferred_vendor` (Keystone 28 of 28, Suryodaya 61 of
   104; only Suryodaya tells a working agent apart); 11 `shared_party_names` (28, 10); 12 `items_without_category`

@@ -143,7 +143,8 @@ uv run python -m data_steward.results  # offline: saved reports in local/ -> res
 The course harness runs a suite against a throwaway copy of one instance with no internet, and reads `results.json`.
 The format (harness toml, environment variables, `results.json` fields, limits) is in
 [../34-eval-harness/TASK_FORMAT.md](../34-eval-harness/TASK_FORMAT.md). A task passes only when a check on the
-resulting data confirms it, never because of the agent's wording.
+resulting data confirms it, never because of the agent's wording; a recount task is graded on the ids in the agent's
+`AGENT_RESULT` answer, which the harness compares with ids it works out itself from platform rows.
 
 ## Reporting problems
 

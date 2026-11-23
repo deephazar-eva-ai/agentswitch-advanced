@@ -53,11 +53,10 @@ Our own check is `data_steward/checks.py`; it is tested against the same rows.
 
 ## Defaults while waiting for the instructor (23 Nov)
 
-The instructor has not yet answered question 8 or the task 12 scope question. Until then these are working defaults,
-chosen with two advisor reviews; each is easy to change:
-- **Tasks 9 and 10 ask about optional fields.** The schema read (23 Nov, both systems) found one required field on
-  parties and items, `name`, and no party or item has a blank name, so "missing a required field" has an empty
-  answer and cannot tell a working agent from none. Tasks 9, 10 and 12 are completeness questions: a blank optional
+The instructor has not yet answered question 8 or the task 12 scope question. Until then these are working defaults;
+each is easy to change:
+- **Tasks 9 and 10 ask about optional fields.** After the schema read (23 Nov, both systems), the proposed
+  required-field recounts returned no matches on either system, so they cannot tell a working agent from none. Tasks 9, 10 and 12 are completeness questions: a blank optional
   field breaks no schema rule.
 - **Task numbers and answer names** below are ours to propose; the Eval Harness seat may rename them.
 - **Wording:** a person on the Eval Harness seat writes the task text. Our agent matches whole sentences, so the
