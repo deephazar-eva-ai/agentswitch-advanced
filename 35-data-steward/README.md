@@ -18,6 +18,9 @@ crm, inventory, accounting (read)
 ## Working rules
 See the top-level README. Put your agent code, tests and notes in this folder; open a pull request for every change.
 
+**Using the agent:** see the [user guide](docs/user-guide.md): running the report, reviewing pairs, exporting the
+results file, the questions it answers, and what each answer and error means.
+
 ## Setup
 ```bash
 uv sync
@@ -48,7 +51,8 @@ writes nothing to `local/`:
 - **Scan:** a duplicate scan of the records the request names. Each is read with an id-filtered list call (and a
   second call to make sure it is the only row), within a 4-minute limit. Standard output is counts only.
 - **Recount:** a question answered from one whole table: parties with no email or phone, items with no preferred
-  vendor, parties sharing a name, items with no category. The rules are in [docs/recount-rules.md](docs/recount-rules.md). Record ids go on the last line only under the harness runner and
+  vendor, parties sharing a name, items with no category. The rules are in
+  [docs/recount-rules.md](docs/recount-rules.md). Record ids go on the last line only under the harness runner and
   never on a local run (`IDS_ALLOWED` in `report.py`, on since 23 Nov).
 
 The instructor scores `results/dedupe_pairs.json`, committed in a pull request. Make it from the saved reports,

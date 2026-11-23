@@ -70,6 +70,7 @@ description which pull request it builds on; until that one merges, the new one 
 | `results/dedupe_pairs.json` | committed: one entry per proposed pair, ids only (see "The repository is public") |
 | `docs/first-task-plan.md` | the first-task plan: decisions, signals, exclusions, build steps |
 | `docs/recount-rules.md` | the written recount rules handed to the Eval Harness seat, with the supported request wording |
+| `docs/user-guide.md` | for people using the agent: report, labels, export, the requests it answers, outputs and exit codes. Update it when behaviour changes |
 | `tests/` | offline tests; every network call is faked. `tests/data/dedupe_tuning.json` is the made-up tuning set; `dedupe_heldback*.json` are the held-back sets (see the plan); `recount_rows.json` holds made-up rows and expected ids for the recount rules |
 | `local/` | git-ignored platform-derived output: tool lists, reads, reports, test tags, labels |
 
