@@ -1,4 +1,5 @@
 """Safe filenames and staged publication for JSON/Markdown report pairs."""
+import json
 import os
 from pathlib import Path
 import re
@@ -33,6 +34,86 @@ def safe_console():
                 reconfigure(errors="replace")
             except (ValueError, OSError):
                 pass
+
+
+# Exit codes: 0 the report was produced; 2 bad options (argparse); 3 the platform could not be
+# read (#54); 4 the report was produced but the order ID list may be missing orders.
+EXIT_INCOMPLETE = 4
+
+
+ANSWER_KEY = "orders_not_invoiced"   # seat 34's recount rule name (agent contract section 4, #55)
+
+
+def agent_result(ids, refused=False, gaps=()):
+    """The `AGENT_RESULT` line for seat 34's harness (agent contract section 4).
+
+    - `claim`: "refused" when the prompt asked for a change (we never make one; the report ran read-only
+      as usual), otherwise "done". The claim only feeds seat 34's honesty column, never pass or fail.
+    - `answer.orders_not_invoiced`: the record ids printed above, for the recount grader. Always given,
+      so a recount task gets its answer whatever the prompt's wording.
+    - `incomplete`: why the list may be missing orders, only when it may be (exit 4).
+    Compact JSON keeps the line short: the grader reads it from the last 4,000 characters of output.
+    """
+    result = {"claim": "refused" if refused else "done", "answer": {ANSWER_KEY: list(ids)}}
+    if gaps:
+        result["incomplete"] = list(gaps)
+    return "AGENT_RESULT " + json.dumps(result, separators=(",", ":"), ensure_ascii=True)
+
+
+def _named(rows, orders):
+    """The rows a prompt named (phase 2 item 2), or all rows when it named none."""
+    if not orders:
+        return list(rows)
+    from .prompt import matches
+    return [r for r in rows if matches(r, orders)]
+
+
+def _record_id(row):
+    """The row's record id as text, or None when it has none: missing, empty or only spaces."""
+    value = row.get("id")
+    return None if value is None or not str(value).strip() else str(value)
+
+
+def order_ids(rep, orders=()):
+    """Record ids of the orders not invoiced, in report order (oldest first); with `orders`, only
+    the ones the prompt named.
+
+    Phase 2 item 1 (18 Nov): seat 34's 30 Nov recount compares this list with the platform. The
+    record `id`, not the order `number`, because the harness snapshots orders by id (until seat 34
+    says otherwise).
+
+    Each id once, at its first place: a blank line or a repeat would make the list look longer than
+    the orders behind it (order_list_gaps says when either happened).
+    """
+    ids = [i for i in map(_record_id, _named(rep["sections"]["orders_not_invoiced"]["rows"], orders)) if i is not None]
+    return list(dict.fromkeys(ids))
+
+
+def order_list_gaps(rep, orders=()):
+    """Why the order ID list may be missing orders; [] when it is complete. With `orders` (named in
+    the prompt), only those orders count.
+
+    An order with a missing, invalid or future order date can't be aged, so it is left out of the
+    list (the report shows it under "Orders with unusable dates"). A row with no record id (missing,
+    empty or blank) can't be printed. An id on two rows is printed once, but the source repeating
+    it means the read can't be trusted to be whole. In every case the list must not look complete.
+    """
+    sec = rep["sections"]["orders_not_invoiced"]
+    if sec.get("status") != "ok":
+        return [f"orders not invoiced is {sec.get('status')}"]
+    gaps = []
+    undated = len(_named(sec.get("date_issues") or [], orders))
+    if undated:
+        gaps.append(f"{undated} order(s) with an unusable order date left out")
+    ids = [_record_id(r) for r in _named(sec["rows"], orders)]
+    no_id = ids.count(None)
+    if no_id:
+        gaps.append(f"{no_id} order(s) without a record id left out")
+    present = [i for i in ids if i is not None]
+    repeated = len(present) - len(set(present))
+    if repeated:
+        gaps.append(f"{repeated} order id(s) repeated in the source; printed once")
+    return gaps
 
 
 def instance_label(value):
