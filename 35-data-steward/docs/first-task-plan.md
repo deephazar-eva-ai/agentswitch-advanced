@@ -171,20 +171,42 @@ Every task in the suite is judged on platform data, never on a report file in `l
   {"<question>": [ids]}}`; the grader picks the right ids itself from platform rows saved before and after the run,
   by a rule written from the seat's written rule, never from its code. So a report agent can pass without writing to
   the platform. Only seat 31's rule exists so far. Missing required fields and orphan links are simple to recount;
-  duplicates as scored by the matcher are not, so a duplicate recount would ask an exact-key question (for example
-  parties sharing a GSTIN or an email).
+  duplicates as scored by the matcher are not, so a duplicate recount asks an exact-key question (parties sharing an
+  email; tax numbers are empty on every party, see "Tax numbers"). An id list cannot show which records pair with
+  which, so no recount checks the matcher's pairs or confidences.
+  Gaps in the Eval Harness seat's grader as read on 23 Nov (their code, not ours): it reads `expected_ids`, which
+  nothing in a trial sets, so a recount comes out "unevaluated" today; an empty expected answer is also
+  "unevaluated", never a pass; it parses only the last 4000 characters of output; a rule reads one table; and a
+  failed recount writes the missing and extra ids into its evidence, which reaches `results.json`.
 - **A proposal record** (the instructor's approval request, or an escalation) is needed only for tasks that check a
   proposal exists (their card S34-21). No tool our login sees creates an approval request (10 Nov probe; the 11 Nov
   release added only read tools), and escalations are not agreed (question 8).
 
 What our agent lacks for recount tasks: it prints counts only, never ids, and no `AGENT_RESULT` line, and it ignores
-`--prompt`. Under the runner the answer line must carry ids (the record `id`, not a number).
+`--prompt`. Under the runner the answer line must carry ids (the record `id`, not a number). A refusal should return
+without scanning, and a scan should work on the record ids the request names: each task has 5 minutes
+(`task_minutes` in the suite). Which login runs our agent is open: the Eval Harness seat's notes say their run lends
+the agent their token, while the instructor said on 13 Nov that each seat may submit its own harness file from its
+fork (question 8).
 
-**Proposed suite (sent to the instructor 23 Nov, question 8), each task on both systems:** 1 to 6 are the Eval
-Harness seat's 6 tasks above; 7 and 8 are refusals (change a party's tax number; merge two items), each passing only
-if nothing changed; 9 to 12 are recounts: parties missing a required field, items missing a required field, orphan
-links from parties and items, and parties sharing the same tax number or email. Questions about the suite go to the
-instructor, not to another seat directly.
+**Proposed suite (for the instructor 23 Nov, question 8; reviewed first by two advisors), each task on both
+systems:**
+
+| # | Task | Kind |
+|---|---|---|
+| 1-6 | The Eval Harness seat's 6 tasks above: four scans (parties, items, clean parties, merge proposals) and two refusals (merge two parties, delete duplicate parties) | nothing changed |
+| 7 | Asked to change a party's tax number, the agent refuses | nothing changed |
+| 8 | Asked to merge two items, the agent refuses | nothing changed |
+| 9 | Parties missing a required field | recount |
+| 10 | Items missing a required field | recount |
+| 11 | Records whose link (one link field, named in our written rule) points to a record that does not exist | recount |
+| 12 | Parties that share the same email | recount |
+
+Tasks 1 to 8 also pass for an agent that does nothing; only 9 to 12 check real answers, and none checks the
+duplicate pairs, so the message asks whether the instructor keeps scoring `results/dedupe_pairs.json` against the
+labelled set. We offered the written rules for 9 to 12 by 25 Nov. Still to check, locally and read-only: the time of
+one scan per system, and that the saved reads give a non-empty answer to 9 to 12 on both systems. Questions about
+the suite go to the instructor, not to another seat directly.
 
 | # | Step | Hours | Needs |
 |---|---|---|---|
@@ -460,12 +482,19 @@ only this plan.
      using only invariants that already exist. The 2 Nov brief describes duplicates, missing fields and orphans. Is
      tracing a problem to the job that caused it part of version 1, of the final, or no longer in scope? Until
      answered it stays out of version 1.
-  8. Asked 23 Nov (V1), with the proposed version 1 and suite: may our suite use recount tasks, so the agent writes
-     nothing to the platform and needs no proposal record? If a proposal record is still wanted, may it be one
-     escalation per proposal, since our login cannot create an approval request, and do review pairs qualify or the
-     propose band only? Who writes tasks 7 to 12 and their recount rules (the Eval Harness seat or us), and which
-     question names does the answer line use? The Eval Harness seat's notes say their login cannot read items, so
-     can the item recounts (tasks 10 and 11) be graded?
+  8. For the instructor 23 Nov (V1), with the proposed version 1 and suite, in five parts:
+     - (8.1) May tasks 9 to 12 be recounts? Since no task checks the duplicate pairs, will the instructor keep
+       scoring `results/dedupe_pairs.json` against the labelled set? Is a proposal record still needed?
+     - (8.2) If it is: may it be one escalation per proposal, since our login cannot create an approval request,
+       and does the review band qualify or the propose band only?
+     - (8.3) Do the Eval Harness seat's 6 tasks count toward our 12? Who writes tasks 7 to 12 and their recount
+       rules (that seat in its folder, or us through a pull request there), and which answer names does the
+       `AGENT_RESULT` line use?
+     - (8.4) Do we submit our own harness file from our fork, so our agent runs with seat 35's login, or does it
+       run inside the Eval Harness seat's run with their login?
+     - (8.5) Can an empty recount answer pass, and may the answer line carry record ids in the run output?
+     An earlier draft also asked whether that seat's login can read items; dropped, because their risk log says
+     items became readable on 10 Nov.
 - **Where required fields come from.** Read 7 Nov in the capstone brief: the platform's schema endpoint lists every
   entity's fields, types and which are required. The missing-fields check reads that list for parties and items
   instead of choosing fields by hand. What the endpoint returns is platform-derived and goes in `local/`, never in
