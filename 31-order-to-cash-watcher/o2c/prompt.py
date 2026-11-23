@@ -37,15 +37,15 @@ _UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 # read as order numbers: a named order narrows the list to that order, so a false one empties it.
 _NUMBER = re.compile(r"\bSO-(?=[A-Za-z0-9/-]*\d)[A-Za-z0-9](?:[A-Za-z0-9/-]*[A-Za-z0-9])?\b", re.I)
 # Asking for a change to a record or a message: seat 34's refusal tasks A1-A6 ("mark these as billed",
-# "allocate it", "change them", "push the order date", "create the invoices"), sends ("send it now"), and verbs that
-# only ever ask for a change ("submit", "reconcile", "refund", "amend", "assign", "write off"; Deepak, 22 Nov).
-# "close", "apply", "settle" and "release" wait for seat 34's prompts: "close to 30 days" and "which payments should
-# we apply?" are reads.
-# Nouns that double as verbs ("invoice", "bill", "email", "close to 30 days") are left out: a recount
-# question such as "which orders should we invoice?" is not a request to change anything.
+# "allocate it", "change them", "push the order date", "create the invoices"), sends ("send it now"), and verbs
+# that only ever ask for a change ("submit", "reconcile", "refund", "amend", "assign", "write off"/"writeoff";
+# Deepak, 22 Nov). Every verb here makes "which ... should we <verb>?" a request, as "which payments should we
+# allocate?" always has. Words used mostly as nouns are left out, so their questions stay reads: "invoice", "bill",
+# "email", and, until seat 34's prompts, "close", "apply", "settle", "release" ("close to 30 days", "which payments
+# should we apply?"). "refund" still flags in "show refund requests", as "cancel" does; fine for v1.
 _WRITE = re.compile(r"\b(mark|allocate|change|update|edit|modify|push|move|set|create|delete|remove|"
                     r"cancel|approve|send|post|reverse|void|adjust|reschedule|"
-                    r"submit|reconcile|refund|amend|assign|write[\s-]+off)\b", re.I)
+                    r"submit|reconcile|refund|amend|assign|write[\s-]*off)\b", re.I)
 _NOUN_BEFORE = re.compile(r"\b(?:a|an|the|any|no|status|daily|quick|full|entire|complete|whole)\s+$", re.I)
 _NOUN_WORDS = frozenset({"update", "set", "change", "post", "refund", "write off"})
 _NEG = r"\b(?:don'?t|do\s+not|never|without|no\s+need\s+to|not)"
@@ -62,7 +62,7 @@ _LIST_OBJECT = re.compile(r"\s+(?:the|a|an|this|that|our|my)\s+(?:(?:full|comple
 _SET_UP_LIST = re.compile(r"\s+up" + _LIST_OBJECT.pattern, re.I)
 _MOVE_ON = re.compile(r"\s+(?:quickly|fast)\b", re.I)
 # Except posting to a ledger, which changes it: "post the list to the ledger/books/GL" stays a write.
-_TO_LEDGER = re.compile(r"\b(?:to|into|in)\s+(?:the\s+|our\s+)?(?:general\s+ledger|ledger|books|gl)\b", re.I)
+_TO_LEDGER = re.compile(r"\b(?:to|into|in)\s+(?:the\s+|our\s+)?(?:general\s+ledger|ledger|books|g/?l)\b", re.I)
 _SENTENCE_END = re.compile(r"[.?!;\n]|\b(?:so|but|then)\b", re.I)
 
 
@@ -82,7 +82,7 @@ def asks_for_write(text):
     """The first verb asking for a change, or None. "don't change anything" is not a request."""
     source = text or ""
     for m in _WRITE.finditer(source):
-        word = re.sub(r"[\s-]+", " ", m.group(1).lower())
+        word = re.sub(r"^write[\s-]*off$", "write off", m.group(1).lower())
         before = source[max(0, m.start() - 25):m.start()]
         if word in _NOUN_WORDS and _NOUN_BEFORE.search(before):
             continue
