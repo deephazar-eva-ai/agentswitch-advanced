@@ -81,11 +81,12 @@ This follows the course `CATALOGUE_FORMAT.md` and answers the seat group's quest
   CATALOGUE_FORMAT.md    course catalogue format (unchanged)
   PLAN.md                this plan
   CONTRIBUTING.md        how we work: workflow, safety tiers, bug IDs
+  agentswitch-harness.toml  harness file; the official run starts in 33-red-team/
   catalogue/attempts.md  first task: the attempt table (25 attempts)
   catalogue/attempt-NN.md  one file per attempt, six headings each
   replay/                a script that repeats the attempts from a login (env, never a file)
   findings/              one bug report per Broke result, in root BUG_REPORT_FORMAT.md fields
-  suite/                 v1 suite in the Eval-Harness format: harness file, one file per task, bug-status.json
+  suite/                 v1 suite in the Eval-Harness format: runner, one file per task, bug-status.json
   docs/                  scope sweep (done), handover note (csaparna, by 13 Dec), demo script
 ```
 
@@ -93,7 +94,7 @@ Bug reports use the root `BUG_REPORT_FORMAT.md`.
 
 Two different things run our tests. Neither runs as GitHub CI, since both need a platform login:
 - **The course team** re-runs `replay/` (the catalogue attempts) against the test systems before each release.
-- **The course runner** runs our v1 suite from `main` on a copy of each instance (one run per seat every 3 days), using `suite/agentswitch-harness.toml`. Its commands run from `suite/`. Changes reach the run by PR, inside `33-red-team/` only (instructor, 22 Nov).
+- **The course runner** runs our v1 suite from `main` on a copy of each instance (one run per seat every 3 days), starting in `33-red-team/` with our `agentswitch-harness.toml`. Its run command moves into `suite/` first. Changes reach the run by PR, inside `33-red-team/` only (instructor, 22–23 Nov).
 
 ## Bug list
 
@@ -112,7 +113,7 @@ Catalogue attempt-03 is marked **Unclear**: re-test when data exists. It becomes
 - 6–8 hours per person per week until 31 Dec. Each login has a daily token budget, so keep probe runs small.
 
 ## Open questions for the instructor
-1. **Harness location.** *Answered 22 Nov:* the official run on 30 Nov uses `main`, and we submit by PR with changes only inside `33-red-team/`. Our harness file is `suite/agentswitch-harness.toml` (see "Target repo shape"). Asked 23 Nov: does the runner start in `suite/`? From the repo root, our run command would load the root `harness/` folder instead of our suite.
+1. **Harness location.** *Answered 22–23 Nov:* the official run on 30 Nov uses `main` and starts in `33-red-team/` with our own `agentswitch-harness.toml`. We submit by PR with changes only inside `33-red-team/` (see "Target repo shape").
 2. **Inventory access (please confirm).** The seat brief (`33-red-team/README.md`) and the login reply both say crm, email, support, projects. The 3 Nov note says email, support, projects and inventory. We assume the brief is right; please confirm. It decides whether our login's access to inventory is a finding. If it is, `rt_scope_inventory_denied` joins the suite.
 3. **Filing bugs.** We filed BUG-33-001 and BUG-33-002 in the app on 6 Nov ("Report a problem"); they show Received. Is that the right channel? Three earlier copies of these reports are duplicates and can be closed.
 4. **Test-record cleanup.** Agents cannot delete what they create (the agent to-do and memory components have no delete tool). Who purges labelled red-team test records on live data?

@@ -8,7 +8,7 @@ The 12-task red-team suite from `../PLAN.md`, in the Eval-Harness format (`../..
 
 | Path | What it is |
 |---|---|
-| `agentswitch-harness.toml` | Harness file. The official run on 30 Nov uses `main` and reads this file. Its commands run from this folder. |
+| `../agentswitch-harness.toml` | Harness file, at the top of the seat folder. The official run on 30 Nov uses `main` and starts in `33-red-team/`. Its run command moves into this folder first. |
 | `harness/runner.py` | Runs every task and writes `results.json` (git-ignored). |
 | `harness/client.py` | MCP calls with the seat token. `client.refused()` is true only for a real refusal. |
 | `harness/bugs.py` + `bug-status.json` | Bug status for tasks 9 and 10. Keep it in step with the PLAN.md bug list. |
