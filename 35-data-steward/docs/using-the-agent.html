@@ -6,246 +6,319 @@
 <title>Data Steward User Guide</title>
 <meta name="description" content="How to run the seat 35 Data Steward agent, review its duplicate pairs, export the results file and ask it questions.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Literata:opsz,wght@7..72,400;7..72,600&family=JetBrains+Mono:wght@400;600&display=swap">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;600&family=Atkinson+Hyperlegible+Next:ital,wght@0,400;0,700;0,800;1,400&display=swap">
 <style>
-/* A field manual: one reading column, a clickable map of the four jobs, then each job in turn. The outcome
-   explorer and the request examples hold fixed text taken from docs/user-guide.md; the page computes nothing. */
+/* A record keeper's ledger: green-tinted ruled paper, blue-black ink, a red double margin line down the page with
+   the step numbers hung to its left. Atkinson Hyperlegible throughout, because the page is full of record ids and
+   commands where 0/O and 1/l must not be confused. The outcome explorer and the request examples hold fixed text
+   taken from docs/user-guide.md; the page computes nothing. */
 :root {
-  --paper: #f5f7fa; --card: #ffffff; --ink: #18213b; --muted: #59627e; --rule: #d8dde9;
-  --accent: #2c55d6; --accent-soft: #e6ecff; --mark: #f2b12a; --mark-soft: #fff0c9;
-  --ok: #1f7a4d; --ok-soft: #e1f3e9; --warn: #9a6200; --warn-soft: #fdefd3;
-  --bad: #b23a3a; --bad-soft: #fbe5e5; --quiet: #545b6a; --quiet-soft: #eceef2;
-  --term: #111827; --term-ink: #e5e7eb; --term-dim: #9ca3af;
-  --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
-  --body: "Literata", Georgia, "Times New Roman", serif;
-  --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --paper: #edf2ea; --sheet: #f8faf6; --ink: #14233a; --muted: #4f5d6b; --rule: #c3d3c0; --rule-strong: #8fa98b;
+  --margin: #b42335; --pen: #2348a8; --pen-soft: #dfe6f7;
+  --ok: #1e6b45; --ok-soft: #dcefe2; --warn: #855600; --warn-soft: #f8ecd0;
+  --bad: #b42335; --bad-soft: #f8e0e2; --quiet: #4f5966; --quiet-soft: #e3e8e4;
+  --term: #172437; --term-ink: #e4ebe1; --term-dim: #93a1b5; --term-line: #2c3b52;
+  --t-key: #a9c1ff; --t-str: #f5d27a; --t-good: #8fe0b0; --t-bad: #ff9aa5;
+  --sans: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --mono: "Atkinson Hyperlegible Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --gut: 56px; --gap: 30px;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #0f1428; --card: #171f3d; --ink: #e6eaf6; --muted: #a1aac6; --rule: #2b355e;
-    --accent: #8ea4ff; --accent-soft: #1e2a55; --mark: #f4c04a; --mark-soft: #3a3115;
-    --ok: #6fd3a0; --ok-soft: #15352a; --warn: #f2c063; --warn-soft: #3a2e12;
-    --bad: #f08c8c; --bad-soft: #3c1d24; --quiet: #a7adbb; --quiet-soft: #262c40;
-    --term: #070b17; --term-ink: #e5e7eb; --term-dim: #8b93a7;
+    --paper: #111916; --sheet: #17211d; --ink: #dde6da; --muted: #a0ada4; --rule: #2c3b34; --rule-strong: #4a5f55;
+    --margin: #ef7380; --pen: #9fb5ff; --pen-soft: #1f2b4a;
+    --ok: #79d6a6; --ok-soft: #173327; --warn: #eac06a; --warn-soft: #362b13;
+    --bad: #ef7380; --bad-soft: #3a1c22; --quiet: #a7b0b6; --quiet-soft: #232d29;
+    --term: #0b1210; --term-ink: #e4ebe1; --term-dim: #8b9aa0; --term-line: #24302c;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --paper: #0f1428; --card: #171f3d; --ink: #e6eaf6; --muted: #a1aac6; --rule: #2b355e;
-  --accent: #8ea4ff; --accent-soft: #1e2a55; --mark: #f4c04a; --mark-soft: #3a3115;
-  --ok: #6fd3a0; --ok-soft: #15352a; --warn: #f2c063; --warn-soft: #3a2e12;
-  --bad: #f08c8c; --bad-soft: #3c1d24; --quiet: #a7adbb; --quiet-soft: #262c40;
-  --term: #070b17; --term-ink: #e5e7eb; --term-dim: #8b93a7;
+  --paper: #111916; --sheet: #17211d; --ink: #dde6da; --muted: #a0ada4; --rule: #2c3b34; --rule-strong: #4a5f55;
+  --margin: #ef7380; --pen: #9fb5ff; --pen-soft: #1f2b4a;
+  --ok: #79d6a6; --ok-soft: #173327; --warn: #eac06a; --warn-soft: #362b13;
+  --bad: #ef7380; --bad-soft: #3a1c22; --quiet: #a7b0b6; --quiet-soft: #232d29;
+  --term: #0b1210; --term-ink: #e4ebe1; --term-dim: #8b9aa0; --term-line: #24302c;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
-body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--body); font-size: 17px; line-height: 1.6;
-  padding: 40px max(16px, env(safe-area-inset-right, 0px)) 64px max(16px, env(safe-area-inset-left, 0px)); }
-main { max-width: 780px; margin: 0 auto; display: flex; flex-direction: column; gap: 48px; }
-h1, h2, h3 { font-family: var(--display); line-height: 1.15; margin: 0; text-wrap: balance; }
-h1 { font-size: clamp(2rem, 6vw, 2.8rem); letter-spacing: -0.01em; }
-h2 { font-size: 1.45rem; }
-h3 { font-size: 1.05rem; }
-p { margin: 0; }
-a { color: var(--accent); }
-code, .mono { font-family: var(--mono); font-size: 0.86em; }
-.stack { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
-.eyebrow { font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); }
-.lede { font-size: 1.12rem; color: var(--muted); max-width: 62ch; }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 17px; line-height: 1.6;
+  padding: 0 max(16px, env(safe-area-inset-right, 0px)) 72px max(16px, env(safe-area-inset-left, 0px)); }
+h1, h2, h3 { line-height: 1.15; margin: 0; text-wrap: balance; }
+h2 { font-size: 1.55rem; font-weight: 800; letter-spacing: -0.01em; }
+h3 { font-size: 1.08rem; font-weight: 700; margin-top: 10px; }
+p { margin: 0; max-width: 70ch; }
+a { color: var(--pen); text-underline-offset: 3px; }
+code, .mono { font-family: var(--mono); font-size: 0.88em; }
+button { font: inherit; color: inherit; }
+button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid var(--pen); outline-offset: 2px; }
 .note { font-size: 0.93rem; color: var(--muted); }
-ul.plain { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; }
-ul.plain li::marker { color: var(--accent); }
-button { font: inherit; }
-button:focus-visible, a:focus-visible { outline: 3px solid var(--mark); outline-offset: 2px; }
+ul.plain { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; max-width: 70ch; }
+ul.plain li::marker { color: var(--margin); }
 
-/* header promises */
-.promise { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
-.promise div { border-top: 3px solid var(--ink); padding-top: 10px; }
-.promise b { font-family: var(--display); display: block; }
-.promise span { color: var(--muted); font-size: 0.95rem; }
-
-/* the map */
-.map { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; position: relative; }
-.map button { text-align: left; background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 14px;
-  cursor: pointer; color: var(--ink); display: flex; flex-direction: column; gap: 6px; min-height: 128px; position: relative; }
-.map button .n { font-family: var(--display); font-weight: 700; font-size: 1.5rem; color: var(--accent); line-height: 1; }
-.map button b { font-family: var(--display); font-size: 1rem; }
-.map button span { color: var(--muted); font-size: 0.85rem; line-height: 1.4; }
-.map button[aria-pressed="true"] { border: 2px solid var(--accent); background: var(--accent-soft); padding: 13px; }
-.map button:not(:last-child)::after { content: "→"; position: absolute; right: -11px; top: 50%; transform: translateY(-50%);
-  color: var(--muted); font-family: var(--display); font-size: 1rem; z-index: 1; background: var(--paper); line-height: 1; }
-.map button.side::after { content: none; }
-.map button.side { border-style: dashed; }
-@media (max-width: 640px) {
-  .map { grid-template-columns: 1fr 1fr; }
-  .map button::after { content: none !important; }
+/* page frame: a rail of contents on wide screens, then the ledger sheet */
+.shell { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1080px) { .shell { grid-template-columns: 196px minmax(0, 860px); column-gap: 36px; justify-content: center; } }
+.rail { display: none; }
+@media (min-width: 1080px) {
+  .rail { display: block; position: sticky; top: 0; align-self: start; padding-top: 128px; }
+  .rail p { font-weight: 700; font-size: 0.85rem; color: var(--muted); margin-bottom: 10px; }
+  .rail ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .rail a { display: grid; grid-template-columns: 22px 1fr; gap: 6px; padding: 6px 10px; text-decoration: none; color: var(--muted);
+    font-size: 0.9rem; line-height: 1.35; border-left: 3px solid transparent; }
+  .rail a span:first-child { font-family: var(--mono); font-size: 0.82rem; padding-top: 1px; }
+  .rail a:hover { color: var(--ink); }
+  .rail a[aria-current="true"] { color: var(--ink); border-left-color: var(--margin); background: var(--sheet); font-weight: 700; }
 }
-.panel { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 18px; display: flex; flex-direction: column; gap: 12px; }
+
+/* the sheet's head row, like the top of a ledger page */
+.sheet-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 18px 0 12px; margin-bottom: 0;
+  border-bottom: 1px solid var(--rule-strong); font-size: 0.88rem; color: var(--muted); }
+.sheet-head b { color: var(--ink); }
+
+/* the margin line: two thin red rules down the whole sheet, numbers hung to their left */
+main { position: relative; display: flex; flex-direction: column; gap: 64px; padding-bottom: 8px; }
+main::before { content: ""; position: absolute; top: 0; bottom: 0; left: calc(var(--gut) + var(--gap) / 2 - 3px); width: 5px;
+  border-left: 1px solid var(--margin); border-right: 1px solid var(--margin); opacity: 0.75; pointer-events: none; }
+.row { display: grid; grid-template-columns: var(--gut) minmax(0, 1fr); column-gap: var(--gap); scroll-margin-top: 20px; }
+.row > .body { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.gut { text-align: right; font-family: var(--mono); font-weight: 600; font-size: 2.1rem; line-height: 1.05; color: var(--margin); padding-top: 2px; }
+.gut small { display: block; font-family: var(--sans); font-size: 0.72rem; font-weight: 700; color: var(--muted); line-height: 1.3; margin-top: 6px; }
+@media (max-width: 640px) { :root { --gut: 30px; --gap: 18px; } .gut { font-size: 1.5rem; } .gut small { display: none; } }
+
+/* hero: the title closed with an accountant's double rule */
+.hero { padding-top: 44px; }
+.hero h1 { font-size: clamp(2.3rem, 7vw, 3.7rem); font-weight: 800; letter-spacing: -0.025em; line-height: 1.02;
+  padding-bottom: 14px; border-bottom: 6px double var(--ink); }
+.hero .lede { font-size: 1.15rem; color: var(--ink); max-width: 60ch; }
+.promise { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 2px solid var(--ink); border-bottom: 1px solid var(--rule-strong); background: var(--sheet); }
+.promise div { padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 4px; }
+.promise div + div { border-left: 1px solid var(--rule); }
+.promise b { font-size: 1rem; }
+.promise span { color: var(--muted); font-size: 0.93rem; line-height: 1.45; }
+@media (max-width: 760px) { .promise { grid-template-columns: 1fr; } .promise div + div { border-left: 0; border-top: 1px solid var(--rule); } }
+
+/* the four jobs: a track of three in order, the fourth set apart */
+.map { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) 14px minmax(0, 1fr); align-items: stretch; }
+.map .split { border-left: 2px dashed var(--rule-strong); margin: 10px 0 10px 6px; }
+.map button { text-align: left; background: var(--sheet); border: 1px solid var(--rule-strong); padding: 12px 14px 14px; cursor: pointer;
+  display: flex; flex-direction: column; gap: 4px; min-height: 120px; position: relative; }
+.map button + button { border-left: 0; }
+.map button.side { border-left: 1px solid var(--rule-strong); border-style: dashed; }
+.map button .n { font-family: var(--mono); font-weight: 600; font-size: 0.85rem; color: var(--margin); }
+.map button b { font-size: 1.02rem; }
+.map button span:last-child { color: var(--muted); font-size: 0.86rem; line-height: 1.4; }
+.map button:hover { background: var(--paper); }
+.map button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.map button[aria-pressed="true"] span:last-child { color: var(--paper); opacity: 0.8; }
+.map button[aria-pressed="true"] .n { color: var(--paper); }
+@media (max-width: 640px) {
+  .map { grid-template-columns: 1fr 1fr; gap: 0; }
+  .map .split { display: none; }
+  .map button { min-height: 104px; border: 1px solid var(--rule-strong) !important; margin: 0 -1px -1px 0; }
+  .map button.side { border-style: dashed !important; }
+}
+.panel { background: var(--sheet); border: 1px solid var(--rule-strong); border-top: 3px solid var(--ink); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
 .panel[hidden] { display: none; }
 
 /* commands */
-.cmd { display: flex; align-items: stretch; background: var(--term); color: var(--term-ink); border-radius: 10px; overflow: hidden; }
-.cmd pre { margin: 0; padding: 12px 14px; font-family: var(--mono); font-size: 0.82rem; line-height: 1.5; overflow-x: auto; flex: 1; white-space: pre; }
-.cmd pre .c { color: var(--term-dim); }
-.cmd button { border: 0; border-left: 1px solid #2a3348; background: transparent; color: var(--term-ink); cursor: pointer;
-  font-family: var(--display); font-weight: 700; font-size: 0.8rem; padding: 0 14px; flex: none; }
-.cmd button:hover { background: #1f2937; }
+.cmd { display: flex; align-items: stretch; background: var(--term); color: var(--term-ink); border-radius: 6px; overflow: hidden; }
+.cmd pre { margin: 0; padding: 12px 14px; font-family: var(--mono); font-size: 0.84rem; line-height: 1.55; overflow-x: auto; flex: 1; white-space: pre; }
+.cmd button { border: 0; border-left: 1px solid var(--term-line); background: transparent; color: var(--term-ink); cursor: pointer;
+  font-weight: 700; font-size: 0.82rem; padding: 0 14px; flex: none; }
+.cmd button:hover { background: var(--term-line); }
 
-/* steps */
-.step { display: grid; grid-template-columns: 52px 1fr; gap: 16px; scroll-margin-top: 16px; }
-.num { font-family: var(--display); font-weight: 700; font-size: 1.6rem; color: var(--accent); line-height: 1; padding-top: 2px; }
-@media (max-width: 520px) { .step { grid-template-columns: 1fr; gap: 6px; } }
-
-/* checklist */
-.check { display: grid; gap: 8px; }
-.check label { display: grid; grid-template-columns: 22px 1fr; gap: 10px; align-items: start; background: var(--card);
-  border: 1px solid var(--rule); border-radius: 10px; padding: 10px 14px; cursor: pointer; font-size: 0.96rem; }
-.check input { margin-top: 5px; width: 17px; height: 17px; accent-color: var(--accent); }
+/* checklist: ruled rows */
+.check { display: flex; flex-direction: column; border-top: 1px solid var(--rule-strong); }
+.check label { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 12px; align-items: start; padding: 11px 4px;
+  border-bottom: 1px solid var(--rule); cursor: pointer; font-size: 0.97rem; }
+.check input { margin-top: 5px; width: 17px; height: 17px; accent-color: var(--ink); }
 .check label:has(input:checked) { color: var(--muted); }
-.check label:has(input:checked) span { text-decoration: line-through; text-decoration-color: var(--muted); }
-.warnline { border-left: 4px solid var(--bad); background: var(--bad-soft); padding: 10px 14px; border-radius: 0 10px 10px 0; font-size: 0.95rem; }
-.tip { border-left: 4px solid var(--mark); background: var(--mark-soft); padding: 10px 14px; border-radius: 0 10px 10px 0; font-size: 0.95rem; }
+.check label:has(input:checked) > span { text-decoration: line-through; text-decoration-color: var(--margin); }
+.warnline, .tip { padding: 10px 14px; font-size: 0.95rem; max-width: none; }
+.warnline { border-left: 4px solid var(--bad); background: var(--bad-soft); }
+.tip { border-left: 4px solid var(--warn); background: var(--warn-soft); }
 
-/* files */
-.files { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 10px; }
-.file { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.file code { overflow-wrap: anywhere; color: var(--accent); }
-.file span { font-size: 0.9rem; color: var(--muted); }
+/* files: a small ruled register */
+.files { margin: 0; border-top: 1px solid var(--rule-strong); }
+.files div { display: grid; grid-template-columns: minmax(0, 18rem) minmax(0, 1fr); gap: 4px 18px; padding: 9px 4px; border-bottom: 1px solid var(--rule); }
+.files dt code { overflow-wrap: anywhere; color: var(--pen); }
+.files dd { margin: 0; font-size: 0.93rem; color: var(--muted); }
+@media (max-width: 640px) { .files div { grid-template-columns: 1fr; } }
 
-/* score ruler */
-.track { display: grid; grid-template-columns: minmax(0, 60fr) minmax(0, 30fr) minmax(0, 10fr); height: 46px; border-radius: 8px; overflow: hidden; border: 1px solid var(--rule); }
-.track div { display: flex; align-items: center; justify-content: center; font-family: var(--display); font-weight: 700; font-size: 0.9rem; text-align: center; padding: 0 4px; }
-.t-below { background: var(--quiet-soft); color: var(--quiet); }
+/* score scale */
+.scale { display: flex; flex-direction: column; gap: 0; }
+.track { display: grid; grid-template-columns: minmax(0, 60fr) minmax(0, 30fr) minmax(0, 10fr); height: 44px; border: 1px solid var(--rule-strong); }
+.track div { display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem; text-align: center; padding: 0 4px; }
+.track div + div { border-left: 2px solid var(--ink); }
+.t-below { background: repeating-linear-gradient(135deg, var(--quiet-soft) 0 6px, var(--sheet) 6px 12px); color: var(--quiet); }
 .t-review { background: var(--warn-soft); color: var(--warn); }
 .t-propose { background: var(--ok-soft); color: var(--ok); }
-.ticks { position: relative; height: 22px; font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }
+.ticks { position: relative; height: 24px; font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
 .ticks span { position: absolute; top: 4px; transform: translateX(-50%); }
 .ticks span:first-child { transform: none; }
 .ticks span:last-child { transform: translateX(-100%); }
 
-/* report sections accordion */
-details.sec { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 0 14px; }
-details.sec + details.sec { margin-top: 8px; }
-details.sec summary { cursor: pointer; padding: 11px 0; font-family: var(--display); font-weight: 700; list-style: none; display: flex; gap: 10px; align-items: center; }
+/* report sections */
+.secs { border-top: 1px solid var(--rule-strong); }
+details.sec { border-bottom: 1px solid var(--rule); }
+details.sec summary { cursor: pointer; padding: 10px 4px; font-weight: 700; list-style: none; display: grid; grid-template-columns: 16px 6.5rem minmax(0, 1fr); gap: 10px; align-items: center; }
 details.sec summary::-webkit-details-marker { display: none; }
-details.sec summary::before { content: "+"; font-family: var(--mono); color: var(--accent); width: 14px; }
+details.sec summary::before { content: "+"; font-family: var(--mono); color: var(--margin); font-weight: 600; }
 details.sec[open] summary::before { content: "−"; }
-details.sec > div { padding: 0 0 12px 24px; font-size: 0.95rem; display: flex; flex-direction: column; gap: 6px; }
+details.sec summary:hover { background: var(--sheet); }
+details.sec > div { padding: 0 4px 14px calc(16px + 6.5rem + 24px); font-size: 0.95rem; display: flex; flex-direction: column; gap: 6px; }
+@media (max-width: 640px) {
+  details.sec summary { grid-template-columns: 16px minmax(0, 1fr); }
+  details.sec summary .pill { grid-column: 2; justify-self: start; }
+  details.sec summary .t { grid-column: 2; }
+  details.sec > div { padding-left: 30px; }
+}
 
-.pill { display: inline-block; font-family: var(--display); font-weight: 700; font-size: 0.8rem; padding: 2px 10px; border-radius: 999px; white-space: nowrap; }
+.pill { display: inline-block; font-weight: 700; font-size: 0.8rem; padding: 1px 9px; border-radius: 3px; white-space: nowrap;
+  border: 1.5px solid currentColor; justify-self: start; }
 .p-ok { background: var(--ok-soft); color: var(--ok); }
 .p-warn { background: var(--warn-soft); color: var(--warn); }
 .p-bad { background: var(--bad-soft); color: var(--bad); }
 .p-quiet { background: var(--quiet-soft); color: var(--quiet); }
-.p-accent { background: var(--accent-soft); color: var(--accent); }
+.p-accent { background: var(--pen-soft); color: var(--pen); }
 
-/* numbered ladder */
-ol.ladder { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; counter-reset: l; }
-ol.ladder li { counter-increment: l; display: grid; grid-template-columns: 30px 1fr; gap: 10px; align-items: start; font-size: 0.95rem; }
-ol.ladder li::before { content: counter(l); font-family: var(--display); font-weight: 700; background: var(--mark-soft); color: var(--ink);
-  border-radius: 50%; width: 26px; height: 26px; display: grid; place-items: center; font-size: 0.85rem; }
+/* numbered ladder: a real sequence, so it is numbered */
+ol.ladder { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; counter-reset: l; border-top: 1px solid var(--rule-strong); }
+ol.ladder li { counter-increment: l; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 0.96rem;
+  padding: 10px 4px; border-bottom: 1px solid var(--rule); }
+ol.ladder li::before { content: counter(l); font-family: var(--mono); font-weight: 600; color: var(--margin); font-size: 1rem; text-align: right; }
 
 /* labels json */
-.json { background: var(--term); color: var(--term-ink); border-radius: 10px; padding: 14px; font-family: var(--mono); font-size: 0.82rem; overflow-x: auto; margin: 0; line-height: 1.55; }
-.json .k { color: #93c5fd; } .json .s { color: #fcd34d; } .json .g { color: #86efac; } .json .r { color: #fca5a5; }
+.json { background: var(--term); color: var(--term-ink); border-radius: 6px; padding: 14px; font-family: var(--mono); font-size: 0.84rem; overflow-x: auto; margin: 0; line-height: 1.6; }
+.json .k { color: var(--t-key); } .json .s { color: var(--t-str); } .json .g { color: var(--t-good); } .json .r { color: var(--t-bad); }
 
 /* export flow */
-.flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; align-items: center; }
-.flow .box { background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; font-size: 0.88rem; text-align: center; min-width: 0; }
-.flow .box b { display: block; font-family: var(--display); font-size: 0.95rem; }
-.flow .arr { color: var(--muted); font-family: var(--display); }
-@media (max-width: 560px) { .flow { grid-template-columns: 1fr; } .flow .arr { transform: rotate(90deg); justify-self: center; } }
+.flow { display: grid; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr) 28px minmax(0, 1fr); align-items: stretch; }
+.flow .box { background: var(--sheet); border: 1px solid var(--rule-strong); padding: 10px 12px; font-size: 0.88rem; min-width: 0; overflow-wrap: anywhere; }
+.flow .box:last-child { border: 2px solid var(--ink); }
+.flow .box b { display: block; font-size: 0.95rem; }
+.flow .arr { display: grid; place-items: center; color: var(--margin); font-weight: 800; font-size: 1.1rem; }
+@media (max-width: 560px) { .flow { grid-template-columns: 1fr; } .flow .arr { height: 26px; } .flow .arr.to { transform: rotate(90deg); } }
 
-/* explorer */
+/* outcome explorer */
 .seg { display: flex; flex-wrap: wrap; gap: 6px; }
-.seg button { font-family: var(--display); font-weight: 700; font-size: 0.84rem; padding: 6px 12px; border-radius: 999px;
-  border: 1px solid var(--rule); background: var(--card); color: var(--muted); cursor: pointer; }
+.seg button { font-weight: 700; font-size: 0.86rem; padding: 5px 11px; border-radius: 3px; border: 1px solid var(--rule-strong); background: var(--sheet); color: var(--muted); cursor: pointer; }
+.seg button:hover { color: var(--ink); }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
-.term { background: var(--term); color: var(--term-ink); border-radius: 10px; padding: 14px; font-family: var(--mono); font-size: 0.8rem; line-height: 1.55; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 120px; margin: 0; }
-.term .p { color: var(--term-dim); } .term .r { color: #86efac; } .term .e { color: #fca5a5; }
-.verdict { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.verdict .lbl { font-family: var(--display); font-weight: 700; font-size: 0.85rem; color: var(--muted); }
+.console { border: 1px solid var(--ink); border-radius: 6px; overflow: hidden; }
+.term { background: var(--term); color: var(--term-ink); padding: 14px; font-family: var(--mono); font-size: 0.82rem; line-height: 1.6; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 150px; margin: 0; }
+.term .p { color: var(--term-dim); } .term .r { color: var(--t-good); } .term .e { color: var(--t-bad); }
+.verdict { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 10px 14px; background: var(--sheet); border-top: 1px solid var(--rule-strong); }
+.verdict .lbl { font-weight: 700; font-size: 0.85rem; color: var(--muted); }
 
 /* example requests */
-.ex { display: grid; gap: 8px; }
-.ex button { text-align: left; background: var(--card); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 14px; cursor: pointer;
-  color: var(--ink); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; align-items: center; font-size: 0.93rem; }
-.ex button q { font-style: italic; quotes: "“" "”"; overflow-wrap: anywhere; }
+.ex { display: flex; flex-direction: column; border-top: 1px solid var(--rule-strong); }
+.ex button { text-align: left; background: transparent; border: 0; border-bottom: 1px solid var(--rule); padding: 10px 4px; cursor: pointer;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; font-size: 0.95rem; }
+.ex button:hover { background: var(--sheet); }
+.ex button q { quotes: "“" "”"; overflow-wrap: anywhere; }
+.ex button q::before, .ex button q::after { color: var(--margin); font-weight: 800; }
 .ex button .pill { visibility: hidden; }
+.ex button[aria-expanded="true"] { background: var(--sheet); box-shadow: inset 3px 0 0 var(--margin); padding-left: 12px; }
 .ex button[aria-expanded="true"] .pill { visibility: visible; }
-.ex button[aria-expanded="true"] { border-color: var(--accent); }
 .ex .why { grid-column: 1 / -1; color: var(--muted); font-size: 0.9rem; display: none; }
 .ex button[aria-expanded="true"] .why { display: block; }
 
 /* tables */
-.tbl { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
-.tbl th, .tbl td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
-.tbl th { font-family: var(--display); font-size: 0.85rem; color: var(--muted); }
 .scroll { overflow-x: auto; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 0.93rem; border-top: 2px solid var(--ink); }
+.tbl th, .tbl td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.tbl th { font-size: 0.85rem; color: var(--muted); border-bottom: 1px solid var(--rule-strong); }
+.tbl td:first-child { font-weight: 700; width: 32%; }
 
-/* exit codes */
-.exits { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
-.exit { background: var(--card); border: 1px solid var(--rule); border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 8px; border-top-width: 4px; }
-.exit .code { font-family: var(--display); font-weight: 700; font-size: 2rem; line-height: 1; }
-.e0 { border-top-color: var(--ok); } .e0 .code { color: var(--ok); }
-.e1 { border-top-color: var(--bad); } .e1 .code { color: var(--bad); }
-.e2 { border-top-color: var(--quiet); } .e2 .code { color: var(--quiet); }
-.exit p { font-size: 0.92rem; }
+/* exit codes: ledger rows, the code in the left column */
+.exits { display: flex; flex-direction: column; border-top: 2px solid var(--ink); }
+.exit { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 4px 16px; padding: 12px 4px; border-bottom: 1px solid var(--rule); }
+.exit .code { font-family: var(--mono); font-weight: 600; font-size: 2.2rem; line-height: 1; grid-row: span 2; text-align: center; }
+.exit p { font-size: 0.94rem; }
+.e0 .code { color: var(--ok); } .e1 .code { color: var(--bad); } .e2 .code { color: var(--quiet); }
 
-.final { border-left: 4px solid var(--mark); padding: 6px 0 6px 18px; }
-footer { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--rule); padding-top: 16px; }
+.final .body { background: var(--sheet); border: 1px solid var(--rule-strong); border-bottom: 6px double var(--ink); padding: 18px 20px; }
+footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--rule-strong); padding-top: 16px; }
 </style>
 </head>
 <body>
+<div class="shell">
+
+<nav class="rail" aria-label="On this page">
+  <p>On this page</p>
+  <ol>
+    <li><a href="#jobs"><span>·</span><span>Four jobs</span></a></li>
+    <li><a href="#s0"><span>0</span><span>Before you start</span></a></li>
+    <li><a href="#s1"><span>1</span><span>Run the duplicate report</span></a></li>
+    <li><a href="#s2"><span>2</span><span>Review pairs</span></a></li>
+    <li><a href="#s3"><span>3</span><span>Export the results file</span></a></li>
+    <li><a href="#s4"><span>4</span><span>Ask it a question</span></a></li>
+    <li><a href="#out"><span>·</span><span>What comes back</span></a></li>
+    <li><a href="#exits"><span>·</span><span>Exit codes and error lines</span></a></li>
+    <li><a href="#limits"><span>·</span><span>Limits worth knowing</span></a></li>
+  </ol>
+</nav>
+
+<div>
+<div class="sheet-head"><span><b>Seat 35</b>, Data Steward</span><span>User guide</span></div>
 <main>
 
-  <header class="stack">
-    <span class="eyebrow">Seat 35 · Data Steward · user guide</span>
-    <h1>Using the Data Steward agent</h1>
-    <p class="lede">The agent reads parties and items on one system, finds likely duplicates, answers a few fixed questions about the data, and checks that each item's preferred vendor exists. This page shows how to run it and how to read everything it gives back.</p>
-    <div class="promise">
-      <div><b>It only reads</b><span>It never changes a record. A person makes every change, through the platform, with approval.</span></div>
-      <div><b>Fixed rules, no AI model</b><span>The same data and the same private files give the same pairs and scores every time.</span></div>
-      <div><b>It cannot be talked into acting</b><span>A request it does not recognise is refused before anything is read.</span></div>
+  <header class="row hero">
+    <div class="gut" aria-hidden="true"></div>
+    <div class="body">
+      <h1>Using the Data Steward agent</h1>
+      <p class="lede">The agent reads parties and items on one system, finds likely duplicates, answers a few fixed questions about the data, and checks that each item's preferred vendor exists. This page shows how to run it and how to read everything it gives back.</p>
+      <div class="promise">
+        <div><b>It only reads</b><span>It never changes a record. A person makes every change, through the platform, with approval.</span></div>
+        <div><b>Fixed rules, no AI model</b><span>The same data and the same private files give the same pairs and scores every time.</span></div>
+        <div><b>It cannot be talked into acting</b><span>A request it does not recognise is refused before anything is read.</span></div>
+      </div>
     </div>
   </header>
 
-  <section class="stack" aria-labelledby="map-h">
-    <h2 id="map-h">Four jobs</h2>
-    <p class="note">Pick a job to see its command. The first three are the duplicate workflow; the fourth is how the course harness talks to the agent.</p>
-    <div class="map" role="group" aria-label="Jobs">
-      <button type="button" data-job="report" aria-pressed="true"><span class="n">1</span><b>Run the report</b><span>Read both systems, find pairs</span></button>
-      <button type="button" data-job="review" aria-pressed="false"><span class="n">2</span><b>Review pairs</b><span>Mark each pair accepted or rejected</span></button>
-      <button type="button" data-job="export" aria-pressed="false"><span class="n">3</span><b>Export</b><span>Make the file the instructor scores</span></button>
-      <button type="button" data-job="ask" aria-pressed="false" class="side"><span class="n">4</span><b>Ask a question</b><span>Scan named records, or a recount</span></button>
-    </div>
-    <div class="panel" data-panel="report">
-      <div class="cmd"><pre>uv run python -m data_steward.dedupe --instance keystone
+  <section class="row" id="jobs" aria-labelledby="map-h">
+    <div class="gut" aria-hidden="true"></div>
+    <div class="body">
+      <h2 id="map-h">Four jobs</h2>
+      <p class="note">Pick a job to see its command. The first three are the duplicate workflow; the fourth is how the course harness talks to the agent.</p>
+      <div class="map" role="group" aria-label="Jobs">
+        <button type="button" data-job="report" aria-pressed="true"><span class="n">1</span><b>Run the report</b><span>Read both systems, find pairs</span></button>
+        <button type="button" data-job="review" aria-pressed="false"><span class="n">2</span><b>Review pairs</b><span>Mark each pair accepted or rejected</span></button>
+        <button type="button" data-job="export" aria-pressed="false"><span class="n">3</span><b>Export</b><span>Make the file the instructor scores</span></button>
+        <span class="split" aria-hidden="true"></span>
+        <button type="button" data-job="ask" aria-pressed="false" class="side"><span class="n">4</span><b>Ask a question</b><span>Scan named records, or a recount</span></button>
+      </div>
+      <div class="panel" data-panel="report">
+        <div class="cmd"><pre>uv run python -m data_steward.dedupe --instance keystone
 uv run python -m data_steward.dedupe --instance suryodaya</pre><button type="button" data-copy>Copy</button></div>
-      <p>Reads every party and item on one system and writes three private files to <code>local/</code>. Run it on both systems before you export. <a href="#s1">More in step 1.</a></p>
-    </div>
-    <div class="panel" data-panel="review" hidden>
-      <p class="note">File to edit by hand (the agent reads it and never writes it):</p>
-      <div class="cmd"><pre>local/dedupe-labels.json</pre><button type="button" data-copy>Copy path</button></div>
-      <p>Give each pair you have judged a verdict. A label records intent only: it changes no score and no record. <a href="#s2">More in step 2.</a></p>
-    </div>
-    <div class="panel" data-panel="export" hidden>
-      <div class="cmd"><pre>uv run python -m data_steward.results</pre><button type="button" data-copy>Copy</button></div>
-      <p>Makes <code>results/dedupe_pairs.json</code> from the saved reports, with no platform call. Needs a report from both systems. <a href="#s3">More in step 3.</a></p>
-    </div>
-    <div class="panel" data-panel="ask" hidden>
-      <div class="cmd"><pre>uv run python -m data_steward.dedupe --instance suryodaya \
+        <p>Reads every party and item on one system and writes three private files to <code>local/</code>. Run it on both systems before you export. <a href="#s1">More in step 1.</a></p>
+      </div>
+      <div class="panel" data-panel="review" hidden>
+        <p class="note">File to edit by hand (the agent reads it and never writes it):</p>
+        <div class="cmd"><pre>local/dedupe-labels.json</pre><button type="button" data-copy>Copy path</button></div>
+        <p>Give each pair you have judged a verdict. A label records intent only: it changes no score and no record. <a href="#s2">More in step 2.</a></p>
+      </div>
+      <div class="panel" data-panel="export" hidden>
+        <div class="cmd"><pre>uv run python -m data_steward.results</pre><button type="button" data-copy>Copy</button></div>
+        <p>Makes <code>results/dedupe_pairs.json</code> from the saved reports, with no platform call. Needs a report from both systems. <a href="#s3">More in step 3.</a></p>
+      </div>
+      <div class="panel" data-panel="ask" hidden>
+        <div class="cmd"><pre>uv run python -m data_steward.dedupe --instance suryodaya \
   --prompt "Which are the items that have no category?"</pre><button type="button" data-copy>Copy</button></div>
-      <p>The harness adds <code>--prompt</code> to every task. The agent answers only the forms it recognises and refuses everything else. <a href="#s4">More in step 4.</a></p>
+        <p>The harness adds <code>--prompt</code> to every task. The agent answers only the forms it recognises and refuses everything else. <a href="#s4">More in step 4.</a></p>
+      </div>
     </div>
   </section>
 
-  <section class="step" id="s0">
-    <div class="num">0</div>
-    <div class="stack">
-      <h2>Before you start</h2>
+  <section class="row" id="s0" aria-labelledby="s0-h">
+    <div class="gut">0</div>
+    <div class="body">
+      <h2 id="s0-h">Before you start</h2>
       <p class="note">Tick each one off as you go. Nothing here is saved.</p>
       <div class="check">
         <label><input type="checkbox"><span>From the repository root, <code>cd 35-data-steward</code>. Every command on this page runs there.</span></label>
@@ -257,23 +330,23 @@ uv run python -m data_steward.dedupe --instance suryodaya</pre><button type="but
     </div>
   </section>
 
-  <section class="step" id="s1">
-    <div class="num">1</div>
-    <div class="stack">
-      <h2>Run the duplicate report</h2>
+  <section class="row" id="s1" aria-labelledby="s1-h">
+    <div class="gut">1</div>
+    <div class="body">
+      <h2 id="s1-h">Run the duplicate report</h2>
       <div class="cmd"><pre>uv run python -m data_steward.dedupe --instance keystone
 uv run python -m data_steward.dedupe --instance suryodaya</pre><button type="button" data-copy>Copy</button></div>
       <p>Each run writes three files, readable only by your account, into the git-ignored <code>local/</code> folder, because they hold real party data:</p>
-      <div class="files">
-        <div class="file"><code>local/dedupe-&lt;system&gt;.json</code><span>The full report: the record of truth.</span></div>
-        <div class="file"><code>local/dedupe-&lt;system&gt;.md</code><span>The same report as a page to read.</span></div>
-        <div class="file"><code>local/dedupe-&lt;system&gt;-pairs.json</code><span>Each listed pair: pair id, the two record ids, score and band.</span></div>
-      </div>
+      <dl class="files">
+        <div><dt><code>local/dedupe-&lt;system&gt;.json</code></dt><dd>The full report: the record of truth.</dd></div>
+        <div><dt><code>local/dedupe-&lt;system&gt;.md</code></dt><dd>The same report as a page to read.</dd></div>
+        <div><dt><code>local/dedupe-&lt;system&gt;-pairs.json</code></dt><dd>Each listed pair: pair id, the two record ids, score and band.</dd></div>
+      </dl>
       <p class="note">Two optional private files in <code>local/</code> change what the report shows: <code>test-tags.txt</code> and <code>dedupe-labels.json</code> (below). To reproduce someone else's report, get both from them privately.</p>
       <p>Standard output is a summary with counts and the run's details only (no record data), safe to paste into a pull request; its last line names the files. If a run fails while reading, the earlier files stay as they were. If it fails while writing, all three are removed, so old and new files are never mixed.</p>
 
       <h3>What a score means</h3>
-      <div>
+      <div class="scale">
         <div class="track" aria-hidden="true"><div class="t-below">not listed</div><div class="t-review">review</div><div class="t-propose">✓</div></div>
         <div class="ticks" aria-hidden="true"><span style="left:0">0</span><span style="left:60%">0.6</span><span style="left:90%">0.9</span><span style="left:100%">1</span></div>
       </div>
@@ -281,24 +354,24 @@ uv run python -m data_steward.dedupe --instance suryodaya</pre><button type="but
       <p class="note">Scores are rule scores, not probabilities. A pair can score 1.0 and still sit in review when a rule holds it back; the report gives the reason. How a pair is scored, step by step: <a href="duplicate-rules.html">How duplicates are found</a>.</p>
 
       <h3>How to read the report</h3>
-      <div>
-        <details class="sec"><summary><span class="pill p-ok">Propose</span> Proposed merges</summary><div><p>Pairs scoring 0.9 or more with nothing holding them back.</p></div></details>
-        <details class="sec"><summary><span class="pill p-warn">Review</span> Pairs to review</summary><div><p>Pairs scoring 0.6 or more that a person should judge. When a rule holds a pair back from propose, the reason is shown (for example, different roles or different phone numbers); a score from 0.6 to below 0.9 lands here without one.</p></div></details>
-        <details class="sec"><summary><span class="pill p-accent">Keep</span> The suggested record to keep</summary><div><p>Every pair suggests which record to keep: the one with more linked records (counted for proposed merges only), then the older, then the one with more fields filled, then the first id in text order. It is only a suggestion.</p></div></details>
-        <details class="sec"><summary><span class="pill p-quiet">Test</span> Test-record pairs</summary><div><p>Pairs where a name carries a confirmed test-run tag, one row each. The tags come from the private file <code>local/test-tags.txt</code>, one per line, added by a person only after a read confirmed it; without it, these pairs are not set apart.</p><p>The summary counts them apart from the bands, but the export still lists them, so an export can hold pairs even when the report shows no ordinary proposal.</p></div></details>
-        <details class="sec"><summary><span class="pill p-quiet">Labelled</span> Pairs already labelled</summary><div><p>One row each, under their band (or under test-record pairs, for those). Full details of every pair are in the <code>.json</code> report.</p></div></details>
-        <details class="sec"><summary><span class="pill p-bad">Out</span> Pairs ruled out</summary><div><p>Pairs that scored high but can never be merged, with the reason: for example, different companies, or a party flagged as an allowed duplicate.</p></div></details>
-        <details class="sec"><summary><span class="pill p-quiet">Limits</span> Omissions and limits</summary><div><p>What was not listed and why: low scores, records withheld for privacy, values shared too widely to count.</p></div></details>
-        <details class="sec"><summary><span class="pill p-warn">Orphans</span> Items whose preferred vendor is missing</summary><div><p>"Not found among the parties this login can list" means the vendor id names no party this login can read. A party created after the party table was read can also show up here.</p><p>If the party table was cut off, the check says it was not run. If only the item table was cut off, the count is a lower bound.</p></div></details>
+      <div class="secs">
+        <details class="sec"><summary><span class="pill p-ok">Propose</span><span class="t">Proposed merges</span></summary><div><p>Pairs scoring 0.9 or more with nothing holding them back.</p></div></details>
+        <details class="sec"><summary><span class="pill p-warn">Review</span><span class="t">Pairs to review</span></summary><div><p>Pairs scoring 0.6 or more that a person should judge. When a rule holds a pair back from propose, the reason is shown (for example, different roles or different phone numbers); a score from 0.6 to below 0.9 lands here without one.</p></div></details>
+        <details class="sec"><summary><span class="pill p-accent">Keep</span><span class="t">The suggested record to keep</span></summary><div><p>Every pair suggests which record to keep: the one with more linked records (counted for proposed merges only), then the older, then the one with more fields filled, then the first id in text order. It is only a suggestion.</p></div></details>
+        <details class="sec"><summary><span class="pill p-quiet">Test</span><span class="t">Test-record pairs</span></summary><div><p>Pairs where a name carries a confirmed test-run tag, one row each. The tags come from the private file <code>local/test-tags.txt</code>, one per line, added by a person only after a read confirmed it; without it, these pairs are not set apart.</p><p>The summary counts them apart from the bands, but the export still lists them, so an export can hold pairs even when the report shows no ordinary proposal.</p></div></details>
+        <details class="sec"><summary><span class="pill p-quiet">Labelled</span><span class="t">Pairs already labelled</span></summary><div><p>One row each, under their band (or under test-record pairs, for those). Full details of every pair are in the <code>.json</code> report.</p></div></details>
+        <details class="sec"><summary><span class="pill p-bad">Out</span><span class="t">Pairs ruled out</span></summary><div><p>Pairs that scored high but can never be merged, with the reason: for example, different companies, or a party flagged as an allowed duplicate.</p></div></details>
+        <details class="sec"><summary><span class="pill p-quiet">Limits</span><span class="t">Omissions and limits</span></summary><div><p>What was not listed and why: low scores, records withheld for privacy, values shared too widely to count.</p></div></details>
+        <details class="sec"><summary><span class="pill p-warn">Orphans</span><span class="t">Items whose preferred vendor is missing</span></summary><div><p>"Not found among the parties this login can list" means the vendor id names no party this login can read. A party created after the party table was read can also show up here.</p><p>If the party table was cut off, the check says it was not run. If only the item table was cut off, the count is a lower bound.</p></div></details>
       </div>
       <p class="tip">If a table was cut off (too many rows to read), the report says so. Rows beyond the cut were never compared, so a missing pair does not prove two records are different.</p>
     </div>
   </section>
 
-  <section class="step" id="s2">
-    <div class="num">2</div>
-    <div class="stack">
-      <h2>Review pairs</h2>
+  <section class="row" id="s2" aria-labelledby="s2-h">
+    <div class="gut">2</div>
+    <div class="body">
+      <h2 id="s2-h">Review pairs</h2>
       <p>Write your verdicts in <code>local/dedupe-labels.json</code>. Copy each pair id exactly as the report shows it: the two ids are in a fixed order, so do not swap them.</p>
 <pre class="json">{
   <span class="k">"party:&lt;first id&gt;:&lt;second id&gt;"</span>: <span class="g">"accepted"</span>,
@@ -312,14 +385,14 @@ uv run python -m data_steward.dedupe --instance suryodaya</pre><button type="but
     </div>
   </section>
 
-  <section class="step" id="s3">
-    <div class="num">3</div>
-    <div class="stack">
-      <h2>Export the results file</h2>
+  <section class="row" id="s3" aria-labelledby="s3-h">
+    <div class="gut">3</div>
+    <div class="body">
+      <h2 id="s3-h">Export the results file</h2>
       <div class="cmd"><pre>uv run python -m data_steward.results</pre><button type="button" data-copy>Copy</button></div>
       <div class="flow" aria-label="Both saved reports and your labels go into the results file">
-        <div class="box"><b>Both saved reports</b>local/dedupe-*.json</div><div class="arr">+</div>
-        <div class="box"><b>Your labels</b>read fresh</div><div class="arr">→</div>
+        <div class="box"><b>Both saved reports</b>local/dedupe-*.json</div><div class="arr" aria-hidden="true">+</div>
+        <div class="box"><b>Your labels</b>read fresh</div><div class="arr to" aria-hidden="true">→</div>
         <div class="box"><b>results/dedupe_pairs.json</b>commit in a pull request</div>
       </div>
       <ul class="plain">
@@ -332,10 +405,10 @@ uv run python -m data_steward.dedupe --instance suryodaya</pre><button type="but
     </div>
   </section>
 
-  <section class="step" id="s4">
-    <div class="num">4</div>
-    <div class="stack">
-      <h2>Ask it a question</h2>
+  <section class="row" id="s4" aria-labelledby="s4-h">
+    <div class="gut">4</div>
+    <div class="body">
+      <h2 id="s4-h">Ask it a question</h2>
       <p>The course harness runs the agent once per task with the request added as <code>--prompt</code>, and you can do the same. A request with <code>--prompt</code> writes nothing to <code>local/</code> and ignores <code>local/test-tags.txt</code> and <code>local/dedupe-labels.json</code>. Each sentence (ending in <code>.</code>, <code>!</code>, <code>?</code> or <code>;</code>) must match a recognised form as a whole; case, extra spaces and apostrophes do not matter.</p>
 
       <h3>How a request is read</h3>
@@ -376,39 +449,53 @@ uv run python -m data_steward.dedupe --instance suryodaya</pre><button type="but
     </div>
   </section>
 
-  <section class="stack" aria-labelledby="out-h">
-    <h2 id="out-h">What comes back</h2>
-    <p>A prompted run that exits 0 ends with one line the harness reads: <code>AGENT_RESULT</code> and one line of JSON with a <code>claim</code>. Pick an outcome to see its output.</p>
-    <div class="seg" role="group" aria-label="Outcome" id="outcomes"></div>
-    <pre class="term" id="term" aria-live="polite"></pre>
-    <div class="verdict"><span class="lbl">Claim</span><span id="claim" class="pill"></span><span class="lbl">Exit</span><span id="exitc" class="pill"></span></div>
-    <p class="note" id="outnote"></p>
-  </section>
-
-  <section class="stack" aria-labelledby="exit-h">
-    <h2 id="exit-h">Exit codes and error lines</h2>
-    <div class="exits">
-      <div class="exit e0"><span class="code">0</span><b>Finished</b><p>A completed report or export, or a prompted run that returns a <code>done</code>, <code>failed</code> or <code>refused</code> claim.</p></div>
-      <div class="exit e1"><span class="code">1</span><b>Could not run</b><p>Login failed or settings missing; a platform outage or error, including during a scan; a lost connection; a recount table cut off, or a field the rule needs absent from every row of a non-empty table; an export that cannot run. One line on standard error, such as <code>could not run: …</code>, <code>platform problem: …</code>, <code>connection or file problem: …</code> or <code>could not export: …</code>. It never quotes a platform reply.</p></div>
-      <div class="exit e2"><span class="code">2</span><b>Command-line mistake</b><p>Such as an unknown <code>--instance</code> value. The usage message is shown.</p></div>
+  <section class="row" id="out" aria-labelledby="out-h">
+    <div class="gut" aria-hidden="true"></div>
+    <div class="body">
+      <h2 id="out-h">What comes back</h2>
+      <p>A prompted run that exits 0 ends with one line the harness reads: <code>AGENT_RESULT</code> and one line of JSON with a <code>claim</code>. Pick an outcome to see its output.</p>
+      <div class="seg" role="group" aria-label="Outcome" id="outcomes"></div>
+      <div class="console">
+        <pre class="term" id="term" aria-live="polite"></pre>
+        <div class="verdict"><span class="lbl">Claim</span><span id="claim" class="pill"></span><span class="lbl">Exit</span><span id="exitc" class="pill"></span></div>
+      </div>
+      <p class="note" id="outnote"></p>
     </div>
-    <p class="note">Under the harness, an error the agent does not expect shows as <code>internal error: &lt;error type&gt;</code>; a local run shows the traceback. For the harness a non-zero exit is an infrastructure failure, which is why a scan that cannot read its records, or runs out of time, says so and exits 0, while a platform outage still exits 1. On a single row, a missing contact, category or vendor value counts as blank, and a party with no privacy state is left out of party recounts.</p>
   </section>
 
-  <section class="final stack">
-    <h2>Limits worth knowing</h2>
-    <ul class="plain">
-      <li>Matching is by rules, so some duplicates are missed: spellings further apart than a letter or two ("Lakshmi" and "Laxmi"), abbreviations ("SS" for stainless steel), initials.</li>
-      <li>A scan compares only the records named, so its pairs can differ from the full report, which sees the whole table.</li>
-      <li>A reworded question is refused. A new wording has to be added to the agent and its tests.</li>
-      <li>Recounts answer what is filled in, not what is true: a placeholder phone such as <code>+91 0000000000</code> counts as a phone.</li>
-    </ul>
+  <section class="row" id="exits" aria-labelledby="exit-h">
+    <div class="gut" aria-hidden="true"></div>
+    <div class="body">
+      <h2 id="exit-h">Exit codes and error lines</h2>
+      <div class="exits">
+        <div class="exit e0"><span class="code">0</span><b>Finished</b><p>A completed report or export, or a prompted run that returns a <code>done</code>, <code>failed</code> or <code>refused</code> claim.</p></div>
+        <div class="exit e1"><span class="code">1</span><b>Could not run</b><p>Login failed or settings missing; a platform outage or error, including during a scan; a lost connection; a recount table cut off, or a field the rule needs absent from every row of a non-empty table; an export that cannot run. One line on standard error, such as <code>could not run: …</code>, <code>platform problem: …</code>, <code>connection or file problem: …</code> or <code>could not export: …</code>. It never quotes a platform reply.</p></div>
+        <div class="exit e2"><span class="code">2</span><b>Command-line mistake</b><p>Such as an unknown <code>--instance</code> value. The usage message is shown.</p></div>
+      </div>
+      <p class="note">Under the harness, an error the agent does not expect shows as <code>internal error: &lt;error type&gt;</code>; a local run shows the traceback. For the harness a non-zero exit is an infrastructure failure, which is why a scan that cannot read its records, or runs out of time, says so and exits 0, while a platform outage still exits 1. On a single row, a missing contact, category or vendor value counts as blank, and a party with no privacy state is left out of party recounts.</p>
+    </div>
   </section>
 
-  <footer>
-    The same guide as plain text: <a href="user-guide.md">user-guide.md</a>. Setup and commands: <a href="../README.md">README</a>. How pairs are scored: <a href="duplicate-rules.html">How duplicates are found</a>. Decisions, known gaps and history: <a href="first-task-plan.md">the plan</a>.
+  <section class="row final" id="limits" aria-labelledby="limits-h">
+    <div class="gut" aria-hidden="true"></div>
+    <div class="body">
+      <h2 id="limits-h">Limits worth knowing</h2>
+      <ul class="plain">
+        <li>Matching is by rules, so some duplicates are missed: spellings further apart than a letter or two ("Lakshmi" and "Laxmi"), abbreviations ("SS" for stainless steel), initials.</li>
+        <li>A scan compares only the records named, so its pairs can differ from the full report, which sees the whole table.</li>
+        <li>A reworded question is refused. A new wording has to be added to the agent and its tests.</li>
+        <li>Recounts answer what is filled in, not what is true: a placeholder phone such as <code>+91 0000000000</code> counts as a phone.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer class="row">
+    <div class="gut" aria-hidden="true"></div>
+    <div class="body"><p>The same guide as plain text: <a href="user-guide.md">user-guide.md</a>. Setup and commands: <a href="../README.md">README</a>. How pairs are scored: <a href="duplicate-rules.html">How duplicates are found</a>. Decisions, known gaps and history: <a href="first-task-plan.md">the plan</a>.</p></div>
   </footer>
 </main>
+</div>
+</div>
 
 <script>
 (function () {
@@ -419,13 +506,31 @@ uv run python -m data_steward.dedupe --instance suryodaya</pre><button type="but
     document.querySelectorAll(".panel").forEach(p => { p.hidden = p.dataset.panel !== b.dataset.job; });
   }));
 
-  // Copy buttons: comments are left out of what is copied.
-  document.querySelectorAll("[data-copy]").forEach(btn => btn.addEventListener("click", async () => {
-    const text = btn.previousElementSibling.innerText.split("\n").filter(l => !l.trim().startsWith("#")).join("\n");
-    try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; }
-    catch (e) { btn.textContent = "Select it"; }
-    setTimeout(() => { btn.textContent = "Copy"; }, 1600);
-  }));
+  // Copy buttons: comments are left out of what is copied; the button gets its own label back.
+  document.querySelectorAll("[data-copy]").forEach(btn => {
+    const label = btn.textContent;
+    btn.addEventListener("click", async () => {
+      const text = btn.previousElementSibling.innerText.split("\n").filter(l => !l.trim().startsWith("#")).join("\n");
+      try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; }
+      catch (e) { btn.textContent = "Select it"; }
+      setTimeout(() => { btn.textContent = label; }, 1600);
+    });
+  });
+
+  // Contents rail: mark the last section whose top has passed a line near the top of the window, or the last
+  // section once the page is scrolled to the bottom (it may never reach that line).
+  const links = [...document.querySelectorAll(".rail a")];
+  const targets = links.map(a => document.getElementById(a.getAttribute("href").slice(1)));
+  let queued = false;
+  function mark() {
+    queued = false;
+    const atEnd = innerHeight + scrollY >= document.documentElement.scrollHeight - 4;
+    let i = atEnd ? targets.length - 1 : 0;
+    if (!atEnd) targets.forEach((t, k) => { if (t && t.getBoundingClientRect().top < innerHeight * 0.25) i = k; });
+    links.forEach((a, k) => a.setAttribute("aria-current", String(k === i)));
+  }
+  addEventListener("scroll", () => { if (!queued) { queued = true; requestAnimationFrame(mark); } }, { passive: true });
+  mark();
 
   // Example requests: fixed verdicts, checked against the agent on 23 Nov. Nothing is computed here.
   const IDS = "&lt;id&gt;, &lt;id&gt;";
