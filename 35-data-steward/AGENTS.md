@@ -71,6 +71,7 @@ description which pull request it builds on; until that one merges, the new one 
 | `docs/first-task-plan.md` | the first-task plan: decisions, signals, exclusions, build steps |
 | `docs/recount-rules.md` | the written recount rules handed to the Eval Harness seat, with the supported request wording |
 | `docs/user-guide.md` | for people using the agent: report, labels, export, the requests it answers, outputs and exit codes. Update it, and its visual version `docs/using-the-agent.html` (fixed text, no agent logic), when behaviour changes |
+| `docs/user-facing-messages.md` | every fixed message the agent prints for people, grouped by where it appears, with its source file. Update it when a message changes; the tests and both user guides quote some word for word |
 | `tests/` | offline tests; every network call is faked. `tests/data/dedupe_tuning.json` is the made-up tuning set; `dedupe_heldback*.json` are the held-back sets (see the plan); `recount_rows.json` holds made-up rows and expected ids for the recount rules |
 | `local/` | git-ignored platform-derived output: tool lists, reads, reports, test tags, labels |
 
