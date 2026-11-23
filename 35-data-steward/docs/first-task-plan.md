@@ -1,7 +1,8 @@
 # First task plan: duplicate-party and duplicate-item report
 
-Due 15 Nov 2026. Written 3 Nov; last updated 10 Nov with the instructor's answers, the Eval Harness seat's agent
-contract, the steps left for 15 Nov and a version 1 plan.
+Due 15 Nov 2026. Written 3 Nov; updated 10 Nov with the instructor's answers, the Eval Harness seat's agent
+contract, the steps left for 15 Nov and a version 1 plan; last updated 23 Nov with the instructor's answers on the
+labelled set and the go-ahead for version 1.
 
 ## What we deliver
 
@@ -100,7 +101,8 @@ gaps"), but that is not a guarantee for larger tables.
     and are long enough to keep the names under 0.9 alike;
   - a party name with a bracketed prefix that is not a confirmed test tag, such as "[OLD]", kept by design;
   - a one-word name against the same name with a copy number ("Acme" and "Acme (2)"): the copy number is kept as a
-    word, so the names are not near and the pair is dropped. Longer names with a copy number reach review at 0.6;
+    word, so the names are not near and the pair is dropped. Longer names with a copy number reach review at 0.6.
+    Since 23 Nov this is not a gap: the instructor said copy-numbered names do not count as duplicates;
   - a name whose accented letters were garbled by a wrong character encoding (second held-back run);
   - city and postcode are compared on each party's first address only.
   Rules version 3 brings to review one Suryodaya item pair that a person should judge (names 0.89 alike, one with a
@@ -149,7 +151,7 @@ count makes the survivor rule skip the reference step and say so. Either way, ma
 | 8 | README and AGENTS.md updates, pull request, review | 2 | pull request open, review requested |
 | 9 | Grader output, by 12 Nov. Built 10 Nov: `--prompt` accepted and ignored, one-line errors with exit code 1 (no platform reply or reply code quoted), and `local/dedupe-<instance>-pairs.json` (pair id, record ids, score, band, and whether each table was cut off; propose and review pairs). Still open: where the grader reads it; record ids stay off standard output until that is known. Plan as written: The command accepts `--prompt` and ignores its value (no model), so a harness run does not fail on an unknown argument, and runs the same scan. It writes the pair list in the form the grader reads: pair id, the two record ids, score and band, no names or other record data. Until the format is known, build a plain JSON list and adapt it to the answer. Output only: rules version 3 is untouched. | 2 | built; superseded for grading by step 11 (instructor's answer, 10 Nov) |
 | 10 | One rehearsal harness run by 12 Nov, only if the grader is the harness and only with the person's approval, so the first run is not the graded one (one run per seat every 3 days). | 0.5 | dropped: the grader is not the harness (10 Nov) |
-| 11 | Results file, by 13 Nov. `python -m data_steward.results` writes `results/dedupe_pairs.json` from the saved reports, offline: propose and review pairs, except pairs a person rejected and test-record pairs; confidence is the score, capped at 0.6 for a review pair; the reason from fixed wording. Open questions: the seat lead reviews the rejections (8 are copy-number names, which another seat counts as duplicates) and labels the EV pair; the instructor says which system the labelled set is on, whether test-run records count, and how copy-number names are treated. Until then the file uses defaults: both systems, test-run records left out, the 8 copy-number pairs rejected, the EV pair listed at 0.6. An answer that changes a default means updating the labels or test tags and running the export again. Output only: rules version 3 is untouched. | 2 | exporter built 10 Nov; file committed 10 Nov from the 9 Nov reports with the defaults (1 pair); the label review and the instructor's answers are still open. 17 Nov: a fresh scan found the same records and pairs as 9 Nov; we decided repeated test-run records count, so the 62 Keystone test-record party pairs are listed at 0.6 with "test-run records" in the reason, and the file from the 17 Nov reports holds 63 pairs |
+| 11 | Results file, by 13 Nov. `python -m data_steward.results` writes `results/dedupe_pairs.json` from the saved reports, offline: propose and review pairs, except pairs a person rejected and test-record pairs; confidence is the score, capped at 0.6 for a review pair; the reason from fixed wording. Open questions: the seat lead reviews the rejections (8 are copy-number names, which another seat counts as duplicates) and labels the EV pair; the instructor says which system the labelled set is on, whether test-run records count, and how copy-number names are treated. Until then the file uses defaults: both systems, test-run records left out, the 8 copy-number pairs rejected, the EV pair listed at 0.6. An answer that changes a default means updating the labels or test tags and running the export again. Output only: rules version 3 is untouched. | 2 | exporter built 10 Nov; file committed 10 Nov from the 9 Nov reports with the defaults (1 pair); the label review and the instructor's answers are still open. 17 Nov: a fresh scan found the same records and pairs as 9 Nov; we decided repeated test-run records count, so the 62 Keystone test-record party pairs are listed at 0.6 with "test-run records" in the reason, and the file from the 17 Nov reports holds 63 pairs. 23 Nov: the instructor's answers (both systems; test-run records count; copy-numbered names do not) all match the file; a re-export the same day left it unchanged, so step 11 is done |
 | | Buffer | 1.5 | |
 
 **Not for 15 Nov:** a model in the loop, platform records, merges, missing-field
@@ -157,8 +159,27 @@ and orphan checks, and the 12-task suite (30 Nov).
 
 ## Version 1 (30 Nov)
 
-Every task in the suite passes only on platform state after the run, so version 1 needs a proposal record on the
-platform. The matcher is rules version 4 (W3 passed 17 Nov) once its branch merges; until then, version 3.
+Every task in the suite is judged on platform data, never on a report file in `local/`. The matcher is rules version
+4: W3 passed 17 Nov and pull request #45 merged 23 Nov. The instructor gave the go-ahead for version 1 on 23 Nov.
+
+**What the suite can check (read 23 Nov in the Eval Harness seat's docs):**
+- **Nothing changed.** Their 6 seat 35 tasks for 15 Nov (`../34-eval-harness/suites/seat35/suite.toml`) are four
+  scans and two refusals (merge, delete), each passing only if no party or item changed. On 17 Nov an agent that does
+  nothing passed all such tasks, so they cannot tell a working agent from none.
+- **Recount** (their decision 0011, 19 Nov; their notes say the instructor agreed it on 18 Nov). The task asks a
+  question; the agent prints the record ids it found on its last line, `AGENT_RESULT {"claim": "done", "answer":
+  {"<question>": [ids]}}`; the grader picks the right ids itself from platform rows saved before and after the run,
+  by a rule written from the seat's written rule, never from its code. So a report agent can pass without writing to
+  the platform. Only seat 31's rule exists so far. Missing required fields and orphan links are simple to recount;
+  duplicates as scored by the matcher are not, so a duplicate recount would ask an exact-key question (for example
+  parties sharing a GSTIN or an email).
+- **A proposal record** (the instructor's approval request, or an escalation) is needed only for tasks that check a
+  proposal exists (their card S34-21). No tool our login sees creates an approval request (10 Nov probe; the 11 Nov
+  release added only read tools), and escalations are not agreed (question 8).
+
+What our agent lacks for recount tasks: it prints counts only, never ids, and no `AGENT_RESULT` line, and it ignores
+`--prompt`. Under the runner the answer line must carry ids (the record `id`, not a number). Who writes the 12 tasks,
+and which recount rules the Eval Harness seat builds for us, is asked of Ranjani (seat 34) on 23 Nov.
 
 | # | Step | Hours | Needs |
 |---|---|---|---|
@@ -167,7 +188,7 @@ platform. The matcher is rules version 4 (W3 passed 17 Nov) once its branch merg
 | V3 | `--prompt` entry point with a model: it reads the request and picks the action (duplicate report, missing fields, orphans, publish); the fixed rules do the matching and scoring. Under the runner, it uses the runner's `AGENTSWITCH_*` and `OPENAI_*` values. | 4 | step 9 |
 | V4 | Missing-field check: required fields from the schema endpoint (answer 3), saved to `local/`. A field the platform fills another way (full name filled while first and last are empty on individuals) is reported as that platform gap once, not as each party's own gap. | 4 | schema read approved |
 | V5 | Orphan check: for each link field from parties and items, a row whose target does not exist. A target table that could not be read whole makes the result unknown, never an orphan. The cause is the known missing link check; not filed again. | 4 | |
-| V6 | The 12-task suite in the harness format, on both systems, each task checking platform state. Written by hand until question 6 is answered. | 6 | V2 to V5 |
+| V6 | The 12-task suite in the harness format, on both systems, each task checking platform state. Question 6 is open; on 23 Nov the person chose to assume the zero-marks rule does not apply here, so the suite need not be written by hand alone (the Eval Harness seat assumes the rule applies to its own suites). | 6 | V2 to V5 |
 | | Buffer | 2 | |
 
 Question 7 (tracing damage to the job that caused it) stays out of version 1 until answered.
@@ -404,11 +425,12 @@ only this plan.
   0 to 1 (both the pairs and how well the confidence matches are scored) and a short reason; no names, GSTINs or
   emails; uncertain pairs may be left out, and a listed low-confidence pair costs less than a confident wrong one. A
   matcher without a model is accepted, and the harness's `--prompt` contract does not apply to seat 35 for 15 Nov.
-  Seat 35 creates no approval requests for the first task. Still open: which system the labelled set is on, and
-  whether repeated test-run records count (step 11).
+  Seat 35 creates no approval requests for the first task. Answered 23 Nov: the labelled set covers both systems,
+  repeated test-run records count as duplicates, and copy-numbered names such as "(2)" do not. All three match the
+  committed file, so it stays as it is (step 11).
 - **Questions for the instructor.** Drafted 7 Nov; record the answers here and change the plan to match. Answers to
-  1 to 5 came 10 Nov; where the brief is silent the instructor marked the answer "recommended". 6 and 7 are still
-  open.
+  1 to 5 came 10 Nov; where the brief is silent the instructor marked the answer "recommended". 6, 7 and 8 are
+  still open.
   - Answer 1: one approval request per merge proposal, assigned to a named person (recommended). The platform has
     no proposal entity; the approval request is its human-in-the-loop item. Whether our login may create one was
     not checked by the course team. A read-only probe on 10 Nov found no tool that creates one directly on either
@@ -427,10 +449,15 @@ only this plan.
   Still open:
   6. The capstone brief for teams 01 to 27 says a test written by Claude or Codex scores zero. Does that apply to
      the Advanced seats' 12-task suite? If it does, the suite's tasks and checks are written by hand by this seat.
-     (Session 20 states the rule for the core seats; until answered, assume it applies here too.)
+     (Session 20 states the rule for the core seats.) Until answered, the person chose on 23 Nov to assume it does
+     not apply here (V6).
   7. Session 20 described seat 35 as watching shared data for damage and naming its source through the audit trail,
      using only invariants that already exist. The 2 Nov brief describes duplicates, missing fields and orphans. Is
-     tracing a problem to the job that caused it part of version 1, of the final, or no longer in scope?
+     tracing a problem to the job that caused it part of version 1, of the final, or no longer in scope? Until
+     answered it stays out of version 1.
+  8. Asked 23 Nov (V1): may our suite use recount tasks, so the agent writes nothing to the platform and needs no
+     proposal record? If a proposal record is still wanted, may it be one escalation per proposal, since our login
+     cannot create an approval request? And do review pairs qualify, or the propose band only?
 - **Where required fields come from.** Read 7 Nov in the capstone brief: the platform's schema endpoint lists every
   entity's fields, types and which are required. The missing-fields check reads that list for parties and items
   instead of choosing fields by hand. What the endpoint returns is platform-derived and goes in `local/`, never in
@@ -452,7 +479,8 @@ only this plan.
   it means here:
   - Copy numbers. In the saved Suryodaya read (6 Nov), 8 parties end in a copy number, each beside a record of the
     same plain name; our report finds all 8 in review at 0.6. A one-word name with a copy number would be missed
-    (see "Known gaps"). Stripping copy numbers is a candidate for rules version 4, which needs a new held-back set.
+    (see "Known gaps"). The instructor said on 23 Nov that copy-numbered names do not count as duplicates, so the
+    matcher keeps copy numbers and the 8 pairs stay labelled rejected.
   - Never link two parties with a relationship as a proposal record: it adds rows to shared customer data and puts
     nothing in front of a person.
   - Its bug list (late September, recheck before relying on it) bears on the missing-fields and orphan checks. On
