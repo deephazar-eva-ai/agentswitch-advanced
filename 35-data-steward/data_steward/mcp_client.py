@@ -265,6 +265,7 @@ class McpClient:
         """Every matching row, up to a ceiling that is never crossed silently: `RowPage.truncated` says it was hit,
         because a partial table that reads as a whole one would hide duplicates in the rows left behind."""
         rows, offset, total, seen = RowPage(), 0, None, set()
+        seen_ids, confirm, past_total = set(), False, False
         while True:
             res = self.call(f"{entity}.list", {"limit": page, "offset": offset, **filters})
             if isinstance(res, dict) and not isinstance(res.get("data"), list):
@@ -276,16 +277,28 @@ class McpClient:
             batch = res["data"] if isinstance(res, dict) else res
             if isinstance(res, dict) and res.get("total") is not None:
                 total = res["total"]
-            ids = {str(r.get("id")) for r in batch if isinstance(r, dict)}
-            if ids and ids <= seen:
+            # Whole rows, not ids: a later page may hold another copy of a known id (a withheld copy of an ordinary
+            # party, say) that a caller needs to see. Only rows seen before, unchanged, mean a repeated page.
+            prints = {json.dumps(r, sort_keys=True, default=str) for r in batch}
+            if prints and prints <= seen:
                 # The same rows again: the server ignored the offset, and paging on would only repeat them.
                 raise McpError("bad_reply", f"{entity}.list repeated a page (offset ignored)", None)
-            seen |= ids
+            if batch and past_total:
+                raise McpError("bad_reply", f"{entity}.list returned rows past its reported total", None)
+            ids = {str(r.get("id")) for r in batch if isinstance(r, dict)}
+            # A page holding any known id with changed values may carry a real second copy, or an offset the server
+            # ignored or shifted, returning records again, changed; counting those copies toward the total could hide
+            # rows never read. So once any id repeats, the read ends only on an empty page.
+            confirm = confirm or bool(ids & seen_ids)
+            seen |= prints
+            seen_ids |= ids
             rows.extend(batch[:max(0, max_rows - len(rows))])
             offset += len(batch)
             # A short page is not the end: a server may cap a page below the requested limit. Only an empty page,
             # or reaching the reported total, is.
-            exhausted = not batch or (total is not None and offset >= total)
+            reached = total is not None and offset >= total
+            exhausted = not batch or (reached and not confirm)
+            past_total = past_total or (reached and confirm)
             if exhausted and offset <= len(rows):
                 rows.total = total if total is not None else len(rows)
                 rows.truncated = rows.total > len(rows)

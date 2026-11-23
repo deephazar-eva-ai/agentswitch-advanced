@@ -342,6 +342,48 @@ def test_an_unreadable_tool_list_is_an_error_not_an_empty_catalogue(monkeypatch,
         McpClient(FakeSession()).tools()
 
 
+def test_a_later_page_with_a_changed_copy_of_a_known_id_is_read_not_called_a_repeat(monkeypatch):
+    # The recount rules let two rows of one id disagree; a withheld copy on page two must reach the privacy rule.
+    c, _ = client(monkeypatch, [ok({"structuredContent": [{"id": 1, "privacy_state": "normal"}]}),
+                                ok({"structuredContent": [{"id": 1, "privacy_state": "restricted"}]}),
+                                ok({"structuredContent": []})])
+    rows = c.list_all("Party", page=1)
+    assert [r["privacy_state"] for r in rows] == ["normal", "restricted"] and rows.truncated is False
+
+
+def test_an_ignored_offset_returning_a_changed_row_never_reads_as_a_whole_table(monkeypatch):
+    # Two records, total 2, one row a page; the server ignores the offset and returns A again with a value changed.
+    # Counting that copy toward the total would report A twice as the whole table and never read B.
+    a, changed = {"id": "A", "updated_at": "1"}, {"id": "A", "updated_at": "2"}
+    for third in ([{"id": "A", "updated_at": "3"}], [a]):
+        c, _ = client(monkeypatch, [ok({"data": [a], "total": 2}), ok({"data": [changed], "total": 2}),
+                                    ok({"data": third, "total": 2})])
+        with pytest.raises(McpError, match="past its reported total|repeated a page"):
+            c.list_all("Party", page=1)
+
+
+@pytest.mark.parametrize("after", [[{"id": "D"}], []])
+def test_a_page_partly_repeating_known_ids_needs_an_empty_page_to_end(monkeypatch, after):
+    # Total 4: [A, B] then [B changed, C]. Reaching 4 must not end the read, or D is never asked for.
+    pages = [ok({"data": [{"id": "A"}, {"id": "B", "v": 1}], "total": 4}),
+             ok({"data": [{"id": "B", "v": 2}, {"id": "C"}], "total": 4}), ok({"data": after, "total": 4})]
+    c, _ = client(monkeypatch, pages)
+    if after:
+        with pytest.raises(McpError, match="past its reported total"):
+            c.list_all("Party", page=2)
+    else:  # a server whose total counts both copies of B: all four rows, complete
+        rows = c.list_all("Party", page=2)
+        assert len(rows) == 4 and rows.truncated is False
+
+
+def test_a_changed_copy_within_the_total_still_ends_on_an_empty_page(monkeypatch):
+    c, calls = client(monkeypatch, [ok({"data": [{"id": "A", "privacy_state": "normal"}], "total": 2}),
+                                    ok({"data": [{"id": "A", "privacy_state": "restricted"}], "total": 2}),
+                                    ok({"data": [], "total": 2})])
+    rows = c.list_all("Party", page=1)
+    assert len(rows) == 2 and rows.truncated is False and len(calls) == 3
+
+
 def test_an_empty_tool_list_is_a_real_answer(monkeypatch):
     c, _ = client(monkeypatch, [], tools=[])
     assert c.tools() == {}
