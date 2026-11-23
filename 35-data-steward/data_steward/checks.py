@@ -28,6 +28,7 @@ def shared_party_names(rows: list[dict]) -> list[str]:
     """Ids of ordinary parties whose name, trimmed and lower-cased, is not blank and is held by two or more distinct
     ids. Nothing else is changed: inner spaces, punctuation, prefixes and copy numbers stay. A name that is not text is
     skipped. Sorted, each id once, even when one id is read under two shared names."""
+    _carried(rows, "name")
     groups: dict[str, set[str]] = defaultdict(set)
     for row in ordinary_parties(rows):
         name, rid = row.get("name"), row.get("id")
@@ -63,9 +64,9 @@ def _items_without(field: str):
 items_without_preferred_vendor = _items_without("preferred_vendor_id")
 items_without_category = _items_without("category_id")
 
-# Answer name -> (table, check), one per recount task (docs/recount-rules.md). The schema read (23 Nov) found one
-# required field, name, filled on every party and item, so tasks 9 and 10 ask about optional fields instead; all
-# four are working defaults until the instructor answers.
+# Answer name -> (table, check), one per recount task (docs/recount-rules.md). The schema's required fields are filled
+# on every party and item (schema read, 23 Nov), so tasks 9, 10 and 12 ask about optional fields; all four are working
+# defaults until the instructor answers.
 RECOUNTS = {
     "parties_without_contact": ("Party", parties_without_contact),          # task 9
     "items_without_preferred_vendor": ("Item", items_without_preferred_vendor),  # task 10

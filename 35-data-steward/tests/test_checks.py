@@ -16,7 +16,8 @@ def test_every_recount_matches_the_made_up_rows_written_for_the_eval_harness_sea
 
 
 @pytest.mark.parametrize("answer, field", [("parties_without_contact", "phone"), ("items_without_category", "category_id"),
-                                           ("items_without_preferred_vendor", "preferred_vendor_id")])
+                                           ("items_without_preferred_vendor", "preferred_vendor_id"),
+                                           ("shared_party_names", "name")])
 def test_a_field_no_row_carries_is_an_error_not_every_record(answer, field):
     _, check = checks.RECOUNTS[answer]
     rows = [{k: v for k, v in r.items() if k != field} for r in ROWS[answer]["rows"]]

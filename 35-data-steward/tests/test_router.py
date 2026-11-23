@@ -42,7 +42,8 @@ SCAN_SENTENCE = "Scan these six parties for duplicates and report what you find.
 @pytest.mark.parametrize("task", sorted(SEAT35_SCANS))
 def test_the_suite_scans_are_scans_of_the_named_table(task):
     prompt, entity = SEAT35_SCANS[task]
-    assert router.classify(prompt.format(ids=IDS)) == {"route": "scan", "entity": entity, "answer": None, "ids": [A, B]}
+    assert router.classify(prompt.format(ids=IDS)) == {"route": "scan", "entity": entity, "answer": None, "ids": [A, B],
+                                                       "record": task == "t35_06"}
 
 
 @pytest.mark.parametrize("prompt", SEAT35_REFUSALS + SEAT31_REFUSALS)

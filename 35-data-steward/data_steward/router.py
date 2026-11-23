@@ -23,7 +23,7 @@ SCAN = [
                r"(?:duplicates|duplicate pairs|duplicate records)(?: and (?:note|report|list) what you find)?"),
     re.compile(r"(?:find|identify|list) (?:the )?duplicate (?P<dup>parties|items|records|party records|item records) "
                rf"(?:in|among) {_DET}(?: {_NUM})? {_ENT}"
-               r"(?: and (?:note|report) what you find| and record your merge proposals?)?"),
+               r"(?: and (?:note|report) what you find|(?P<record> and record your merge proposals?))?"),
 ]
 SAFE = [
     re.compile(rf"(?:do not|dont|never) {_WV}(?: (?:any|the|these|this|a|an))?(?: party| item)? "
@@ -51,7 +51,6 @@ RECOUNTS = {
     "items_without_category": re.compile(
         r"list the items that have no category|which are the items that have no category"),
 }
-
 
 
 def target_ids(prompt: str) -> list[str]:
@@ -107,7 +106,9 @@ def classify(prompt: str | None) -> dict:
         ids = target_ids(original)
         if len(entities) > 1 or not ids:
             return refuse  # "find duplicate items in these party records": which table is meant is unclear
-        return {"route": "scan", "entity": entities.pop() if entities else None, "answer": None, "ids": ids}
+        record = any(m.groupdict().get("record") for m in scans)  # asked to record a proposal: see report._scan_named
+        return {"route": "scan", "entity": entities.pop() if entities else None, "answer": None, "ids": ids,
+                "record": record}
     if len(recounts) == 1 and not scans and tails == 0:
         return {"route": "recount", "entity": None, "answer": recounts[0], "ids": []}
     return refuse

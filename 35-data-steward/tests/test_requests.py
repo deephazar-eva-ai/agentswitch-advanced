@@ -306,3 +306,17 @@ def test_a_scan_under_the_runner_prints_counts_and_no_ids(run, monkeypatch):
     monkeypatch.setattr(report, "IDS_ALLOWED", True)  # ids are for recounts only
     out, client = run(SCAN.format(ids=f"{A}, {B}"))
     assert last(out) == {"claim": "done"} and A not in out.out and client.session.instance == "keystone"
+
+
+RECORD = ("Find duplicate parties in these eight party records and record your merge proposal. Do not change, delete, "
+          "or create any party record. Do not create any approval request: {ids}")
+
+
+def test_asked_to_record_a_proposal_it_cannot_record_the_scan_does_not_claim_done(run):
+    out, _ = run(RECORD.format(ids=f"{A}, {B}"))  # A and B are a proposed pair
+    assert last(out) == {"claim": "failed"} and "that part was not done" in out.out and '"sections"' in out.out
+
+
+def test_asked_to_record_with_nothing_to_record_the_scan_is_done(run):
+    out, _ = run(RECORD.format(ids=f"{A}, {C}"))  # no pair between them
+    assert last(out) == {"claim": "done"}
