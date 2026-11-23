@@ -150,13 +150,13 @@ class Section3(unittest.TestCase):
 
     def test_age_buckets(self):
         self.assertEqual([report.age_bucket(a) for a in (None, -1, 0, 30, 31, 60, 61, 90, 91)],
-                         ["unknown", "future", "0-30", "0-30", "31-60", "31-60", "61-90", "61-90", "90+"])
+                         ["unknown", "future", "0-30", "0-30", "31-60", "31-60", "61-90", "61-90", ">90"])
 
     def test_rows_carry_bucket_and_odd_status_note(self):
         rows = {r["number"]: r for r in report.payments_not_applied(self.PAYMENTS, D)}
         self.assertEqual(rows["A"]["age_bucket"], "0-30")
         self.assertEqual(rows["B"]["age_bucket"], "31-60")
-        self.assertEqual(rows["C"]["age_bucket"], "90+")
+        self.assertEqual(rows["C"]["age_bucket"], ">90")
         self.assertEqual(rows["D"]["age_bucket"], "future")
         self.assertEqual(rows["B"]["notes"], ["reconciled but nothing allocated"])
         self.assertEqual(rows["E"]["notes"], [])   # reconciled but partly allocated is fine
@@ -169,7 +169,7 @@ class Section3(unittest.TestCase):
         for part in ("by_age", "by_status", "by_customer"):
             self.assertEqual(sum(b["count"] for b in s[part]), 5, part)
             self.assertAlmostEqual(sum(b["unallocated"] for b in s[part]), 660.0, places=2)
-        self.assertEqual([b["bucket"] for b in s["by_age"]], ["future", "0-30", "31-60", "90+", "unknown"])
+        self.assertEqual([b["bucket"] for b in s["by_age"]], ["future", "0-30", "31-60", ">90", "unknown"])
         self.assertEqual(s["by_customer"][0],
                          {"party_id": "P1", "currency": None, "customer": "Acme", "count": 4, "unallocated": 360.0})
 
@@ -262,6 +262,11 @@ class Build(unittest.TestCase):
         rep = report.build(FakeClient({"SalesOrder.list", "Payment.list"}, {}), D, instance="keystone")
         self.assertIn("expected", rep["sections"]["payments_not_applied"]["note"])
         self.assertIn("no incoming payments on this instance", report.to_markdown(rep))
+
+    def test_empty_instance_note_has_no_nested_brackets(self):
+        rep = report.build(FakeClient({"SalesOrder.list", "Payment.list"}, {}), D, instance="keystone")
+        line = next(l for l in report.to_markdown(rep).splitlines() if "no incoming payments" in l)
+        self.assertEqual(line, "None (no incoming payments on this instance; expected, instructor 7 Nov).")
 
 
 if __name__ == "__main__":

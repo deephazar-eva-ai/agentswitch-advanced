@@ -328,3 +328,18 @@ class FixtureMarkers(unittest.TestCase):
 
     def test_notes_are_checked_too(self):
         self.assertTrue(report.looks_like_fixture({"_party_id_display": "Acme", "notes": "planted by [RT33]"}))
+
+
+
+class CurrencyRuleWording(unittest.TestCase):
+    """The README states the currency rule the report header uses (Sunil's review of the 22 Nov reports)."""
+
+    def test_readme_names_the_same_sources_as_the_report_header(self):
+        readme = (Path(__file__).resolve().parents[1] / "README.md").read_text(encoding="utf-8")
+        rule = next(l for l in readme.splitlines() if "never added together" in l)
+        header = Path(report.__file__).read_text(encoding="utf-8")
+        self.assertIn("else the customer's currency, else the company default", header)
+        for words in ("record's own currency", "customer's currency", "company's default currency",
+                      "currency not recorded"):
+            with self.subTest(words=words):
+                self.assertIn(words, rule)

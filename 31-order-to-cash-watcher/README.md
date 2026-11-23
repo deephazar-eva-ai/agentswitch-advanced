@@ -37,7 +37,7 @@ The three report sections:
 2. **Invoices overdue.** Submitted customer invoices past their due date with a balance left, oldest first. Each is labelled `unpaid`, `partially paid` (money received) or `partially credited` (a credit note applied, no money received). Invoices with no usable due date are listed separately. Supplier bills never appear.
 3. **Payments not applied.** Incoming payments with money not yet allocated to an invoice, with age buckets, totals per currency, status and customer, and each customer's history of applied receipts. Possible matches to open invoices are suggestions only; the seat never allocates a payment.
 
-Amounts in different currencies are never added together. A currency the records don't hold is shown as "currency not recorded", never guessed.
+Amounts in different currencies are never added together or converted. Each amount uses the record's own currency, else the customer's currency, else the company's default currency. If none of these is recorded, it is shown as "currency not recorded", never guessed from the instance name or an exchange rate.
 
 ## Setup
 

@@ -80,7 +80,7 @@ per currency; reconciled-but-unallocated payments are flagged; applied history i
 PaymentReceived when available. The report reads tool availability once to choose source coverage.
 
 `order_age_bucket` and `ORDER_AGE_BUCKETS` stay separate from payment `age_bucket` / `AGE_BUCKETS`.
-Order buckets are 0–7, 8–14, 15–30, 31–60, >60; payment buckets are future, 0–30, 31–60, 61–90, 90+, unknown.
+Order buckets are 0–7, 8–14, 15–30, 31–60, >60; payment buckets are future, 0–30, 31–60, 61–90, >90, unknown.
 Existing payment IDs, amounts, currency provenance and statuses remain; #35 adds `summary`, `note`,
 `receipt_history`, row bucket/docstatus/notes and receipt hints. These fields are covered by integration tests.
 

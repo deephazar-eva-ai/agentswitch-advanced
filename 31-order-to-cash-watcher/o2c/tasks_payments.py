@@ -211,7 +211,7 @@ def unapplied_payments(ctx):
             day = None
         age = (ctx.report_date - day).days if day else None
         bucket = ("unknown" if age is None else "future" if age < 0 else
-                  "0-30" if age <= 30 else "31-60" if age <= 60 else "61-90" if age <= 90 else "90+")
+                  "0-30" if age <= 30 else "31-60" if age <= 60 else "61-90" if age <= 90 else ">90")
         expected[_pay_key(p)] = amount, cur
         party = p.get("party_id") or p.get("_party_id_display") or "unknown"
         for name, key in (("by_currency", cur), ("by_age", (bucket, cur)),
@@ -245,7 +245,7 @@ def unapplied_payments(ctx):
                   and all(tables[name] == groups[name] for name in groups))
     exp_cur = groups["by_currency"]
     headline = tables["by_currency"]
-    note = "; no incoming payments on this instance (expected, instructor 7 Nov)" if not raw else ""
+    note = "; no incoming payments on this instance; expected, instructor 7 Nov" if not raw else ""
     return _ok(amounts_ok and summary_ok,
                f"verifier=payment_recount; rows expected={len(expected)} got={len(got)}; "
                f"unallocated by currency expected={_fmt(exp_cur)} "

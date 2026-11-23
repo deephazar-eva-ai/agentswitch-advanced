@@ -23,7 +23,7 @@ FIXTURE_MARKERS = ("test", "tests", "testing", "harness", "fixture", "fixtures",
 # every record it plants with "[RT33]".
 _FIXTURE_RE = re.compile(r"\b(?:" + "|".join(FIXTURE_MARKERS) + r")\b")
 ORDER_AGE_BUCKETS = ("0-7", "8-14", "15-30", "31-60", ">60")
-AGE_BUCKETS = (("future", None, -1), ("0-30", 0, 30), ("31-60", 31, 60), ("61-90", 61, 90), ("90+", 91, None))
+AGE_BUCKETS = (("future", None, -1), ("0-30", 0, 30), ("31-60", 31, 60), ("61-90", 61, 90), (">90", 91, None))
 
 
 def today_ist():
@@ -529,7 +529,7 @@ def build(client, report_date=None, days=7, instance=None, currencies=None):
         "rows": pay_rows,
         "summary": summary,
         "receipt_history": history,
-        "note": None if payments else "no incoming payments on this instance (expected, instructor 7 Nov)",
+        "note": None if payments else "no incoming payments on this instance; expected, instructor 7 Nov",
         "data_issues": payment_issues,
     }
     for section in sections.values():
