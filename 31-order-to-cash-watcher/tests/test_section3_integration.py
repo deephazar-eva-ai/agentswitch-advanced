@@ -48,7 +48,7 @@ class Section3Integration(unittest.TestCase):
         self.assertEqual(report.order_age_bucket(8), "8-14")
         self.assertEqual(report.age_bucket(8), "0-30")
         self.assertEqual(report.age_bucket(90), "61-90")
-        self.assertEqual(report.age_bucket(91), "90+")
+        self.assertEqual(report.age_bucket(91), ">90")
 
     def test_every_summary_dimension_adds_up_currency_by_currency(self):
         c = Reads([payment("A", 100), payment("B", 50, currency="USD"), payment("C", 0.10), payment("D", 0.20)])

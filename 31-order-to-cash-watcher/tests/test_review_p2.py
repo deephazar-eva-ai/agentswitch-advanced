@@ -70,7 +70,7 @@ class SummaryVerifier(unittest.TestCase):
         self.assertFalse(T.unapplied_payments(c)["passed"])
 
     def test_wrong_group_labels_fail_with_totals_unchanged(self):
-        for table, field, wrong in [("by_age", "bucket", "90+"), ("by_status", "status", "reconciled"),
+        for table, field, wrong in [("by_age", "bucket", ">90"), ("by_status", "status", "reconciled"),
                                     ("by_customer", "party_id", "WRONG")]:
             with self.subTest(table=table):
                 c = self.context()
