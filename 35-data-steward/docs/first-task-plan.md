@@ -178,8 +178,13 @@ Every task in the suite is judged on platform data, never on a report file in `l
   release added only read tools), and escalations are not agreed (question 8).
 
 What our agent lacks for recount tasks: it prints counts only, never ids, and no `AGENT_RESULT` line, and it ignores
-`--prompt`. Under the runner the answer line must carry ids (the record `id`, not a number). Who writes the 12 tasks,
-and which recount rules the Eval Harness seat builds for us, is asked of Ranjani (seat 34) on 23 Nov.
+`--prompt`. Under the runner the answer line must carry ids (the record `id`, not a number).
+
+**Proposed suite (sent to the instructor 23 Nov, question 8), each task on both systems:** 1 to 6 are the Eval
+Harness seat's 6 tasks above; 7 and 8 are refusals (change a party's tax number; merge two items), each passing only
+if nothing changed; 9 to 12 are recounts: parties missing a required field, items missing a required field, orphan
+links from parties and items, and parties sharing the same tax number or email. Questions about the suite go to the
+instructor, not to another seat directly.
 
 | # | Step | Hours | Needs |
 |---|---|---|---|
@@ -455,9 +460,12 @@ only this plan.
      using only invariants that already exist. The 2 Nov brief describes duplicates, missing fields and orphans. Is
      tracing a problem to the job that caused it part of version 1, of the final, or no longer in scope? Until
      answered it stays out of version 1.
-  8. Asked 23 Nov (V1): may our suite use recount tasks, so the agent writes nothing to the platform and needs no
-     proposal record? If a proposal record is still wanted, may it be one escalation per proposal, since our login
-     cannot create an approval request? And do review pairs qualify, or the propose band only?
+  8. Asked 23 Nov (V1), with the proposed version 1 and suite: may our suite use recount tasks, so the agent writes
+     nothing to the platform and needs no proposal record? If a proposal record is still wanted, may it be one
+     escalation per proposal, since our login cannot create an approval request, and do review pairs qualify or the
+     propose band only? Who writes tasks 7 to 12 and their recount rules (the Eval Harness seat or us), and which
+     question names does the answer line use? The Eval Harness seat's notes say their login cannot read items, so
+     can the item recounts (tasks 10 and 11) be graded?
 - **Where required fields come from.** Read 7 Nov in the capstone brief: the platform's schema endpoint lists every
   entity's fields, types and which are required. The missing-fields check reads that list for parties and items
   instead of choosing fields by hand. What the endpoint returns is platform-derived and goes in `local/`, never in
