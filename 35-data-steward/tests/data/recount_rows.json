@@ -1,0 +1,368 @@
+{
+ "_about": "Made-up rows for the recount rules in docs/recount-rules.md. Every value is invented.",
+ "shared_party_names": {
+  "table": "Party",
+  "rows": [
+   {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "name": "Harbour Lane Stores",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000002",
+    "name": "  harbour lane stores ",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000003",
+    "name": "Quillfeather Books",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000004",
+    "name": "Quillfeather Books (2)",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000005",
+    "name": "",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000006",
+    "name": "   ",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000007",
+    "name": null,
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000008",
+    "name": "[OLD] Mossgate Farm",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000009",
+    "name": "Mossgate Farm",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000010",
+    "name": "Tinder  Box Co",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000011",
+    "name": "Tinder Box Co",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000012",
+    "name": "Ravenhill Supply",
+    "privacy_state": "restricted"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000013",
+    "name": "Ravenhill Supply",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000014",
+    "name": "Copperfield Mills",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000015",
+    "name": "COPPERFIELD MILLS",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000016",
+    "name": "Copperfield mills",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000017",
+    "name": "Café Lumen",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000018",
+    "name": "CAFÉ LUMEN",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000019",
+    "name": "Straße Werke",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000020",
+    "name": "STRASSE WERKE",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000021",
+    "name": 12345,
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000022",
+    "name": 12345,
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000023",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000024",
+    "name": "Wrenfield Dairy",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000024",
+    "name": "Wrenfield Dairy",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000025",
+    "name": "Ashgrove Tiles",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000025",
+    "name": "Ashgrove Tiles",
+    "privacy_state": null
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000026",
+    "name": "Ashgrove Tiles",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000027",
+    "name": "Ashgrove Tiles",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000028",
+    "name": "Northgate Hardware",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000029",
+    "name": "Northgate Hardware",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000028",
+    "name": "Southgate Hardware",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-8000-000000000030",
+    "name": "Southgate Hardware",
+    "privacy_state": "normal"
+   }
+  ],
+  "expected": [
+   "00000000-0000-4000-8000-000000000001",
+   "00000000-0000-4000-8000-000000000002",
+   "00000000-0000-4000-8000-000000000014",
+   "00000000-0000-4000-8000-000000000015",
+   "00000000-0000-4000-8000-000000000016",
+   "00000000-0000-4000-8000-000000000017",
+   "00000000-0000-4000-8000-000000000018",
+   "00000000-0000-4000-8000-000000000026",
+   "00000000-0000-4000-8000-000000000027",
+   "00000000-0000-4000-8000-000000000028",
+   "00000000-0000-4000-8000-000000000029",
+   "00000000-0000-4000-8000-000000000030"
+  ]
+ },
+ "parties_without_contact": {
+  "table": "Party",
+  "rows": [
+   {
+    "id": "00000000-0000-4000-9000-000000000001",
+    "name": "Alder Mews",
+    "privacy_state": "normal",
+    "email": null,
+    "phone": null
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000002",
+    "name": "Birch Row",
+    "privacy_state": "normal",
+    "email": "  ",
+    "phone": ""
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000003",
+    "name": "Cedar Yard",
+    "privacy_state": "normal",
+    "email": "desk@cedar.example",
+    "phone": null
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000004",
+    "name": "Dogwood Hall",
+    "privacy_state": "normal",
+    "email": null,
+    "phone": "+91 0000000000"
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000005",
+    "name": "Elm Court",
+    "privacy_state": "restricted",
+    "email": null,
+    "phone": null
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000006",
+    "name": "Fir Lane",
+    "privacy_state": "normal"
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000007",
+    "name": "Ginkgo Place",
+    "privacy_state": "normal",
+    "email": null,
+    "phone": null,
+    "contacts": [
+     {
+      "email": "nested@ginkgo.example"
+     }
+    ]
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000008",
+    "name": "Hazel Row",
+    "privacy_state": "normal",
+    "email": null,
+    "phone": null
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000008",
+    "name": "Hazel Row",
+    "privacy_state": "normal",
+    "email": null,
+    "phone": "+91 98450 00000"
+   }
+  ],
+  "expected": [
+   "00000000-0000-4000-9000-000000000001",
+   "00000000-0000-4000-9000-000000000002",
+   "00000000-0000-4000-9000-000000000006",
+   "00000000-0000-4000-9000-000000000007",
+   "00000000-0000-4000-9000-000000000008"
+  ]
+ },
+ "items_without_preferred_vendor": {
+  "table": "Item",
+  "rows": [
+   {
+    "id": "00000000-0000-4000-9000-000000000011",
+    "name": "Hex Bolt",
+    "preferred_vendor_id": null,
+    "category_id": "cat-1"
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000012",
+    "name": "Wing Nut",
+    "preferred_vendor_id": "v-9",
+    "category_id": null
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000013",
+    "name": "Lock Washer",
+    "preferred_vendor_id": "",
+    "category_id": "  "
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000014",
+    "name": "Spring Pin",
+    "preferred_vendor_id": "v-1",
+    "category_id": "cat-2"
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000015",
+    "name": "Rivet"
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000016",
+    "name": "Clevis",
+    "preferred_vendor_id": 0,
+    "category_id": false
+   }
+  ],
+  "expected": [
+   "00000000-0000-4000-9000-000000000011",
+   "00000000-0000-4000-9000-000000000013",
+   "00000000-0000-4000-9000-000000000015"
+  ]
+ },
+ "items_without_category": {
+  "table": "Item",
+  "rows": [
+   {
+    "id": "00000000-0000-4000-9000-000000000011",
+    "name": "Hex Bolt",
+    "preferred_vendor_id": null,
+    "category_id": "cat-1"
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000012",
+    "name": "Wing Nut",
+    "preferred_vendor_id": "v-9",
+    "category_id": null
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000013",
+    "name": "Lock Washer",
+    "preferred_vendor_id": "",
+    "category_id": "  "
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000014",
+    "name": "Spring Pin",
+    "preferred_vendor_id": "v-1",
+    "category_id": "cat-2"
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000015",
+    "name": "Rivet"
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000016",
+    "name": "Clevis",
+    "preferred_vendor_id": 0,
+    "category_id": false
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000017",
+    "name": "Cotter Pin",
+    "category_id": null
+   },
+   {
+    "id": "00000000-0000-4000-9000-000000000017",
+    "name": "Cotter Pin",
+    "category_id": "cat-3"
+   },
+   {
+    "id": null,
+    "name": "No Id",
+    "category_id": null
+   }
+  ],
+  "expected": [
+   "00000000-0000-4000-9000-000000000012",
+   "00000000-0000-4000-9000-000000000013",
+   "00000000-0000-4000-9000-000000000015",
+   "00000000-0000-4000-9000-000000000017"
+  ]
+ }
+}
