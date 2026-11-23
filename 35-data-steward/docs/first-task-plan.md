@@ -2,7 +2,7 @@
 
 Due 15 Nov 2026. Written 3 Nov; updated 10 Nov with the instructor's answers, the Eval Harness seat's agent
 contract, the steps left for 15 Nov and a version 1 plan; last updated 23 Nov with the instructor's answers on the
-labelled set and the go-ahead for version 1.
+labelled set and the go-ahead for version 1, and the same day with the revised version 1 steps.
 
 ## What we deliver
 
@@ -41,7 +41,7 @@ So live data cannot tune or check the matcher. Made-up data does that instead: a
 |---|---|---|
 | Where proposals live | Local JSON plus Markdown. No platform records for 15 Nov. From version 1: one approval request per proposal, assigned to a named person, alongside the report. | The instructor (10 Nov) plans to grade the first task with no writes, and recommends the approval request as the proposal record, since the platform has no proposal entity. Our login has no tool that creates one directly, so how to create it is asked; until answered nothing is written. Creating a shared record needs the person's approval, and the publish step gets its own reviewed write path. |
 | What a proposal is | Every listed pair, in the propose or the review band, gets a proposal in the report (survivor, differences). "Proposed merge" means the propose band only. | Which of the two become approval requests, and which the 15 Nov grader counts, is asked (see "Checks"). |
-| How matches are found | Rules only: normalize, group by shared keys, score. No model. | The same data always gives the same result, it costs no tokens, it works offline, and a verifier can recompute it. The instructor (10 Nov) allows a model, not requires one, to understand requests and explain proposals, as long as the scoring rules stay fixed so confidences repeat. We plan to use one for the version 1 `--prompt` entry point only; it never touches matching or scores. |
+| How matches are found | Rules only: normalize, group by shared keys, score. No model. | The same data always gives the same result, it costs no tokens, it works offline, and a verifier can recompute it. The instructor (10 Nov) allows a model, not requires one, to understand requests and explain proposals, as long as the scoring rules stay fixed so confidences repeat. Version 1 uses none: a model fallback for reading requests was reviewed on 23 Nov (two advisors) and rejected, since it gains nothing the suite grades and would reopen misroutes the allowlist router closes. Revisit for the final (a plain-language explanation of each proposal is the first candidate). |
 | What confidence means | A score from 0 to 1 with the signals that produced it, and one band. **Propose:** 0.9 or more, with no conflict and no cap. **Review:** 0.6 to below 0.9, or 0.9 or more with a conflict or a cap (a conflict between strong values, a role difference, or party names that are only near). **Dropped:** below 0.6, whatever the conflicts; counted in the report, not listed. The band is the confidence; a capped pair keeps its full score (a pair can score 1.0 and be in review), so the score alone overstates a held pair. | It is a rule score, not a probability, and the report says so. The held-back set of made-up data gives how many in each band were right (step 7). Those figures come from made-up data that holds many duplicates, so the report says they do not predict how often a live proposal is right. Whether the grader reads the band or the number is asked. |
 | Pairs or groups | Pairs. A record in two proposals is flagged so both are reviewed together. | A matches B and B matches C does not mean A matches C. |
 | Pair identity | Party or item, plus the two record ids, sorted. The report is sorted by band, then pair id, so two runs with the same rows, date, labels and test tags write the same file. The id names no system, so the one labels file assumes the two systems never share a record id (not yet checked). | Review labels must still apply after the weights are tuned. |
@@ -190,7 +190,7 @@ the agent their token, while the instructor said on 13 Nov that each seat may su
 fork (question 8).
 
 **Proposed suite (for the instructor 23 Nov, question 8; reviewed first by two advisors), each task on both
-systems:**
+systems. Tasks 11 and 12 here are replaced by the revision below:**
 
 | # | Task | Kind |
 |---|---|---|
@@ -208,15 +208,107 @@ labelled set. We offered the written rules for 9 to 12 by 25 Nov. Still to check
 one scan per system, and that the saved reads give a non-empty answer to 9 to 12 on both systems. Questions about
 the suite go to the instructor, not to another seat directly.
 
+**Revised 23 Nov after a second advisor review (and checks on the saved reads):**
+- **Tasks 11 and 12 as proposed cannot tell a working agent from none.** In the saved reads no two parties share an
+  email on either system (Keystone 100 emails, Suryodaya 231, all distinct), and every item's `preferred_vendor_id` (the one
+  link whose target table we have saved) points to a party that exists (Suryodaya 43; Keystone has none). The harness seeds nothing before a task, so an agent that
+  prints a correctly named empty answer would pass both once their grader counts an empty answer (their open pull
+  request #56). A rule also reads one table only, and no link field on parties or items
+  points to its own table, so an orphan recount would need the Eval Harness seat to change their grader.
+  Proposed instead, each with a non-empty answer in the saved reads: task 11, every party whose non-blank name
+  matches another party's after trimming and lower case, copy numbers and prefixes kept (Keystone 28 records in 6
+  groups, Suryodaya 10 in 5; none ends in a copy number); task 12, items with no category (Keystone 14 of 28,
+  Suryodaya 55 of 104). A shared name is not a duplicate pair (all 10 Suryodaya ones have different emails), and a
+  category is not a required field, so task 12 goes to the instructor as a scope question and is built only on a
+  yes. Whether the harness's own read returns the same fields is not known: its rule reads `row.get(field)`, so a
+  field missing from its rows would count every item as uncategorised (checked at the rehearsal, V8). The orphan check stays in the agent's report, outside the
+  suite. Shared email, phone, item name, code and SKU all come back empty, so none of them makes a test.
+- **Tasks 9 and 10 depend on the schema read.** The saved tool lists hold no required-field list, so the fields
+  come only from the schema endpoint (answer 3), one live read that needs the person's approval. Both tasks may
+  still come back empty if the platform enforces required fields on creation; then they are swapped like 11 and 12.
+- **Who writes the tasks.** The Eval Harness seat's rules say a person writes every graded task, expected result
+  and check in their folder by hand (`../34-eval-harness/AGENTS.md`, "People write the tasks"). Our question 6
+  assumption covers our own folder only. So we hand over a written rule per answer plus a small made-up rows file
+  with the expected ids, and a person writes the task text and the rule code there (question 8.3 says who).
+- **Their grader is not ready.** Today's code reads `expected_ids`, which no trial sets, so every recount comes out
+  "unevaluated", and rows are saved only for answers that have a rule (only seat 31's so far). Their open pull
+  request #56 fixes the grader (full output, an empty answer counts, before or after rows match). The harness file
+  runs `suites/example`, and a trial with any `OPENAI_*` setting missing is an infrastructure failure even when the
+  agent uses no model. Tasks 9 to 12 pass only after #56 merges, our four rules merge, the tasks merge, and someone
+  points a run at `suites/seat35`.
+- **Recount tasks carry `recount` and `no_writes_since_start`,** not `records_unchanged`, which is "unevaluated" for
+  a task without targets and so fails the task.
+- **No model in version 1.** The request is read by fixed rules, which repeat and need no network; the grader scores
+  only platform state and the answer line. The router must handle negated wording: four of the six existing prompts
+  say "Do not merge, delete, or change", and task 6 asks for a "merge proposal". This replaces "with a model" in V3
+  and AGENTS.md; the instructor is told plainly.
+
 | # | Step | Hours | Needs |
 |---|---|---|---|
-| V1 | Decide the proposal record by 17 Nov: an approval request if the instructor says how our login creates one; otherwise ask whether one escalation per proposal (see "Escalations") is acceptable, and build that only on a yes. Also settle which pairs qualify: the propose band only, or review pairs too. | 0.5 | instructor's answer |
-| V2 | Publish path: one record per qualifying pair, naming both records, the band, the score and the suggested survivor, assigned to a named person. Its own reviewed write path; the write guard stays as it is for every other tool. Offline tests: a record per pair, nothing sent when no assignee exists or the person has not approved, no update or delete ever called. Nothing live without the person's approval. | 6 | V1 |
-| V3 | `--prompt` entry point with a model: it reads the request and picks the action (duplicate report, missing fields, orphans, publish); the fixed rules do the matching and scoring. Under the runner, it uses the runner's `AGENTSWITCH_*` and `OPENAI_*` values. | 4 | step 9 |
-| V4 | Missing-field check: required fields from the schema endpoint (answer 3), saved to `local/`. A field the platform fills another way (full name filled while first and last are empty on individuals) is reported as that platform gap once, not as each party's own gap. | 4 | schema read approved |
-| V5 | Orphan check: for each link field from parties and items, a row whose target does not exist. A target table that could not be read whole makes the result unknown, never an orphan. The cause is the known missing link check; not filed again. | 4 | |
-| V6 | The 12-task suite in the harness format, on both systems, each task checking platform state. Question 6 is open; on 23 Nov the person chose to assume the zero-marks rule does not apply here, so the suite need not be written by hand alone (the Eval Harness seat assumes the rule applies to its own suites). | 6 | V2 to V5 |
+| V1 | Send the instructor the changes above with the 23 Nov message: tasks 11 and 12 swapped, no model, written rules plus made-up rows (not task code) for the Eval Harness seat. Ask the person to approve the schema read. | 0.5 | |
+| V2 | Schema read (required fields of parties and items, both systems) into `local/`; count tasks 9 and 10 on the saved reads; swap either one if empty. | 1 | person's approval |
+| V3 | Written rules and made-up rows for tasks 9 to 12 by 25 Nov: entity, exact field names, answer name, what counts as blank (null, empty or spaces-only text, empty list), name matching (trim, lower case, groups of two or more), and the Suryodaya name gap (first and last name left off the field list). Whether records our scan withholds as private are in the answer. | 2 | V2 for 9 and 10 |
+| V4 | Request router in `python -m data_steward.dedupe --prompt`, fixed rules, no model: a request to change, merge or delete is refused before any login or call; "do not ..." wording and "merge proposal" are not refusals; anything not recognised as a read request gets no login and no call. Tested on the six existing prompts word for word and on seat 31's refusal prompts. | 3 | |
+| V5 | Answer paths: a scan reads only the record ids the request names; a recount reads one table, skips reference counts and writes no file under the runner; a table cut off or unreadable exits non-zero with one fixed line, never a partial or empty answer. The last line is `AGENT_RESULT {...}` at column 0 with the 36-character record ids, printed only under the runner and only for a recount, once the instructor allows ids in the run output (question 8.5); every other line stays counts only. Update AGENTS.md (it still says a model reads requests and no ids on standard output). | 5 | V3 |
+| V6 | Checks behind tasks 9 to 12 (missing required fields, shared names, items with no category) and the orphan check for the report; offline tests on made-up rows, including an empty answer and one longer than 4000 characters. | 4 | V3 |
+| V7 | Time budget: the 5 minutes per task cover our process only; the whole run has 20 minutes (30 at most) for 12 tasks plus the harness's own reads. Measure one scan per system in the approved local run. | 0.5 | V8 |
+| V8 | Local rehearsal with the Eval Harness seat's `scripts/run_local.py` (read-only, live data) by 26 Nov, once #56 and our rules have merged. On both systems, compare the fields the harness's rows hold before it keeps only the rule's fields, and the id sets it and our agent give; read each system's results, since the launcher exits 0 even when a run fails. The rehearsal is not a submission, but it reads live data, so it needs the person's approval and the login settled (question 8.4). A submitted run only when asked; one run per seat every 3 days leaves a second slot only if the first is by 27 Nov. | 1 | person's approval, #56 |
+| V9 | Proposal record (one escalation per qualifying pair, own reviewed write path), built only if the instructor says yes to 8.2. Otherwise duplicates stay scored through `results/dedupe_pairs.json`. | (6) | instructor's answer |
+| V10 | README and AGENTS.md, pull request #58 marked ready by 30 Nov. | 1 | |
 | | Buffer | 2 | |
+
+**Status (23 Nov, built on branch `seat35/v1-answers` after advisor GO on the design):**
+- V3: `docs/recount-rules.md` written for task 11, with the supported request sentences and the words that make our
+  agent refuse; made-up rows and expected ids in `tests/data/recount_rows.json`. Tasks 9 and 10 wait for V2; task 12
+  for the instructor's yes.
+- V4: built as an allowlist, not a negation-aware word list. Four design reviews found write requests that a word
+  list let through ("why not merge", "if no approval is needed merge them", "keep only the newest record"), so a
+  request runs only if every sentence is one of a few read or safety forms; anything else is refused before any
+  setting, login or call. The cost: a reworded read is refused too (an honesty label on a scan task; a failed task on
+  a recount, so the recount wording is fixed in the written rule).
+- V5: a scan reads each named record with an id-filtered list call plus a second call proving it is the only row
+  (whether the platform honours the `id` filter is checked at V8; if it does not, every scan ends "failed" with exit
+  0 and still passes), within a 4-minute limit enforced by a timer. A recount reads one table. Ids print only under
+  the runner and only while `IDS_ALLOWED` is set (on since 23 Nov, see below). A cut-off recount table, a
+  setup failure or a platform outage exits 1; a lookup that cannot show one row per id, or the time limit, is claim
+  "failed" with exit 0.
+- V6: task 11's check and the orphan check (item preferred vendor against every party read, in the full report
+  only, beside `sections`) are built. On the saved reads: task 11 gives Keystone 28 and Suryodaya 10; the orphan
+  check finds 0 of 43 Suryodaya links (Keystone has none). Offline tests: 310 pass.
+
+**Defaults and rehearsal (23 Nov, afternoon).** V1 was sent. The person approved V2, V7 and V8 and, expecting a slow
+reply from the instructor, asked for defaults chosen with the advisors (two joint rounds) so the work continues:
+- **V2 done.** The schema endpoint (`/api/schemas`, both systems, saved in `local/`) lists one required field on
+  parties and items: `name`. No party or item has a blank name, so "missing a required field" has an empty answer on
+  both systems and tasks 9 and 10 are swapped, as planned.
+- **The four recounts (working defaults):** 9 `parties_without_contact` (ordinary parties whose email and phone are
+  both blank: Keystone 47, Suryodaya 2); 10 `items_without_preferred_vendor` (Keystone 28 of 28, Suryodaya 61 of
+  104; only Suryodaya tells a working agent apart); 11 `shared_party_names` (28, 10); 12 `items_without_category`
+  (14, 55; still the scope question sent to the instructor). Rules in `docs/recount-rules.md`, with the weak spots
+  named there.
+- **Defaults for question 8:** 8.1 recounts are acceptable and `results/dedupe_pairs.json` stays the duplicate
+  deliverable; 8.2 no proposal record (V9 not built); 8.3 the Eval Harness seat's 6 tasks count, we hand over written
+  rules, made-up rows and ideas for tasks 7 and 8, and a person there writes the tasks and rule code; 8.4 runs use
+  seat 35's login; 8.5 the advisors split, and the person decided on 23 Nov to print ids now: `IDS_ALLOWED` is True
+  (ids only under the runner, only on a recount); one line sets it back if the instructor says no.
+- **No model in version 1** (reviewed again 23 Nov, two advisors): it gains nothing the suite grades; revisit for the
+  final.
+- **V8 done, read-only, seat 35's login, both systems.** The rehearsal did not use `scripts/run_local.py` (it logs in
+  with the Eval Harness seat's settings). Instead, in a throwaway worktree outside the repository (deleted afterwards,
+  since trial records hold platform rows): stage 1 ran their unmodified harness on their 6 seat 35 tasks with our
+  working-tree agent: 6 of 6 passed on both systems, the four scans claimed "done" (so the platform honours the `id`
+  filter and returns one row per id) and the two refusals "refused". Stage 2 ran 4 local-only recount tasks with
+  pull request #56's `recount.py` and local-only rules written from our rule doc (never handed over; same author as
+  our checks, so agreement shows the REST and MCP rows give the same ids and the answer line parses, not that the
+  doc suffices for another reader), with ids allowed in a scratch copy of the agent: 4 of 4 passed with exact id sets
+  on both systems (Keystone 47, 28, 28, 14; Suryodaya 2, 61, 10, 55). REST rows carry every field the rules name.
+- **V7 done.** A scan of 8 named records takes about 33 s (16 calls), a recount 6 to 9 s, a refusal 0.1 s. Ten tasks
+  ran in about 2.5 minutes per system, so the full 12 should take about 3 minutes, far inside the run's 20.
+- Still open: the instructor's answers; the Eval Harness seat merging #56, writing tasks 7 to 12 and the four rules,
+  and pointing a run at `suites/seat35`; then a submitted run, only when the person asks.
+
+The Eval Harness seat's grader still writes the missing and extra ids of a failed recount into `results.json`; their
+rules keep run records out of git, but that file is theirs, so it goes in question 8.5.
 
 Question 7 (tracing damage to the job that caused it) stays out of version 1 until answered.
 
@@ -432,10 +524,10 @@ only this plan.
   infrastructure failure, and an optional last line `AGENT_RESULT {...}` is scored for honesty, never for pass or
   fail. What it means here: our code already uses the runner's token and never logs in under the runner, but the
   command rejects `--prompt` today (it accepts only `--instance`), which would end a harness run with a non-zero
-  exit. Step 9 makes it accept and ignore the value for 15 Nov; the model behind it is version 1 (V3).
+  exit. Step 9 makes it accept and ignore the value for 15 Nov; version 1 reads the request with fixed rules, no model (V4).
 - **What the course harness checks.** Read 7 Nov: `../34-eval-harness/TASK_FORMAT.md`, written by the Eval Harness
   seat, says a task passes only when a check on the resulting data confirms it, never because of the agent's wording.
-  A report in `local/` is not platform data, so no task can pass on it alone; version 1 needs the publish path (V2).
+  A report in `local/` is not platform data, so no task can pass on it alone; version 1 is graded through recount answers instead, and a proposal record only on the instructor's yes (V9).
   The instructor's plan for 15 Nov (10 Nov, to be confirmed in the seat channel before then): a harness task is
   judged on the correct duplicate pairs found against a labelled set, with a confidence for each pair and no
   writes. With no writes, the pairs must reach the grader some other way than platform state. Asked, to settle
@@ -463,7 +555,7 @@ only this plan.
     not checked by the course team. A read-only probe on 10 Nov found no tool that creates one directly on either
     system. Some agent records refer to one, so the platform may create it itself when an agent action needs
     approval (field names in `local/tools-<instance>.json`). Asked how seat 35 should create one; until answered,
-    no write is made. Escalations (below) are a candidate fallback, not yet agreed (V1).
+    no write is made. Escalations (below) are a candidate fallback, not yet agreed (V9).
   - Answer 2: a few natural look-alike parties and no planted answers; build our own fixtures.
   - Answer 3: use the fields the schemas declare as required (recommended). This matches "Where required fields
     come from" below.
@@ -477,12 +569,12 @@ only this plan.
   6. The capstone brief for teams 01 to 27 says a test written by Claude or Codex scores zero. Does that apply to
      the Advanced seats' 12-task suite? If it does, the suite's tasks and checks are written by hand by this seat.
      (Session 20 states the rule for the core seats.) Until answered, the person chose on 23 Nov to assume it does
-     not apply here (V6).
+     not apply to our own folder; the Eval Harness seat's folder still needs tasks written by a person (see the 23 Nov revision).
   7. Session 20 described seat 35 as watching shared data for damage and naming its source through the audit trail,
      using only invariants that already exist. The 2 Nov brief describes duplicates, missing fields and orphans. Is
      tracing a problem to the job that caused it part of version 1, of the final, or no longer in scope? Until
      answered it stays out of version 1.
-  8. For the instructor 23 Nov (V1), with the proposed version 1 and suite, in five parts:
+  8. For the instructor 23 Nov (V1 of the revised steps), with the proposed version 1 and suite, in five parts:
      - (8.1) May tasks 9 to 12 be recounts? Since no task checks the duplicate pairs, will the instructor keep
        scoring `results/dedupe_pairs.json` against the labelled set? Is a proposal record still needed?
      - (8.2) If it is: may it be one escalation per proposal, since our login cannot create an approval request,
@@ -499,7 +591,7 @@ only this plan.
   entity's fields, types and which are required. The missing-fields check reads that list for parties and items
   instead of choosing fields by hand. What the endpoint returns is platform-derived and goes in `local/`, never in
   the repository.
-- **Escalations as the proposal record.** A candidate fallback, used only if the instructor agrees (V1): the
+- **Escalations as the proposal record.** A candidate fallback, used only if the instructor agrees (V9): the
   instructor recommends approval requests (answer 1).
   Seen 7 Nov in another seat's public repo (`mkthoma/files_agent`, the Files
   seat): its agent hands each case to a named person by raising an agent escalation, and its harness checks those

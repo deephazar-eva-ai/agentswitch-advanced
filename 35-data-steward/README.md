@@ -36,9 +36,20 @@ Reads every party and item on one system and writes `local/dedupe-<instance>.jso
 `local/dedupe-<instance>.md` (made from it) and `local/dedupe-<instance>-pairs.json` (every listed pair as its pair
 id, the two record ids, score and band, plus whether each table was cut off), readable by you only. Compare pairs
 without regard to the order of the two ids. The pair list includes test-record pairs, which the summary leaves out of
-its band counts, so it can hold more pairs than those counts add up to. The course harness adds `--prompt "<request>"`; the command accepts it
-and runs the same scan whatever the request says (no model yet). Nothing on the platform changes: a person decides,
-and makes any change through the platform.
+its band counts, so it can hold more pairs than those counts add up to. The full report also checks every item's
+preferred vendor against the parties read (`orphan_check`). Nothing on the platform changes: a person decides, and
+makes any change through the platform.
+
+## Requests from the course harness (version 1)
+The harness adds `--prompt "<request>"`. Fixed rules read it (`data_steward/router.py`, no model), and a prompted run
+writes nothing to `local/`:
+- **Refused:** any request that is not, sentence by sentence, one of a few recognised read and safety forms. No
+  setting is read, no login is made, nothing is called. The last line is `AGENT_RESULT {"claim":"refused"}`.
+- **Scan:** a duplicate scan of the records the request names. Each is read with an id-filtered list call (and a
+  second call to make sure it is the only row), within a 4-minute limit. Standard output is counts only.
+- **Recount:** a question answered from one whole table: parties with no email or phone, items with no preferred
+  vendor, parties sharing a name, items with no category. The rules are in [docs/recount-rules.md](docs/recount-rules.md). Record ids go on the last line only under the harness runner and
+  never on a local run (`IDS_ALLOWED` in `report.py`, on since 23 Nov).
 
 The instructor scores `results/dedupe_pairs.json`, committed in a pull request. Make it from the saved reports,
 with no platform call:
