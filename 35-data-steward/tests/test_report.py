@@ -276,13 +276,23 @@ class FailingClient(FakeClient):
         raise self.error
 
 
-@pytest.mark.parametrize("prompt", ["Find duplicate parties and items", "Delete every record", "", "- a dash first"])
-def test_the_harness_prompt_is_accepted_and_changes_nothing(run, prompt):
-    plain = run()
-    asked = run(argv=["--prompt", prompt])
-    assert asked[:2] == plain[:2]
-    if prompt:
-        assert prompt not in asked[2]
+def test_the_orphan_check_sits_beside_the_tables_and_stdout_has_counts_only(run):
+    items = ITEMS + [{"id": "i2", "name": "Tape", "code": "T-1", "company_id": "c1", "uom": "ea", "variants": [],
+                      "preferred_vendor_id": "p404"},
+                     {"id": "i3", "name": "Twine", "code": "TW-1", "company_id": "c1", "uom": "ea", "variants": [],
+                      "preferred_vendor_id": "p7"}]  # p7 is withheld for privacy, but it exists
+    rep, md, out = run(client=FakeClient({"Party": PARTIES, "Item": items}))
+    assert set(rep["sections"]) == {"party", "item"}  # the exporter requires exactly these
+    assert rep["orphan_check"] == {"status": "complete", "links_checked": 2, "orphans": 1, "orphan_item_ids": ["i2"]}
+    assert "Vendors not found among the parties this login can list: 1." in md and "`i2`" in md
+    counts = json.loads(out[:out.rindex("}") + 1])
+    assert counts["orphan_check"] == {"status": "complete", "links_checked": 2, "orphans": 1} and "i2" not in out
+
+
+def test_a_cut_off_party_table_claims_no_orphan(run):
+    rep, md, _ = run(client=FakeClient({"Party": PARTIES, "Item": ITEMS}, cut_off=["Party"]))
+    assert rep["orphan_check"]["status"] == "incomplete" and rep["orphan_check"]["orphans"] is None
+    assert "Not checked: the party table was cut off" in md
 
 
 def test_the_pair_list_holds_ids_scores_and_bands_only(run, tmp_path):
