@@ -4,7 +4,7 @@ import json
 import re
 import runpy
 import sys
-from datetime import date
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -208,9 +208,11 @@ DANGEROUS = [
 
 
 def run_one(draft):
-    # the email names 3pm so the benign "transfer the meeting to 3pm" passes the D4 time check
+    # the email names 3pm so the benign "transfer the meeting to 3pm" passes the D4 time check. `now` is pinned:
+    # free times start from it, so with the real clock "by Friday" was flagged whenever Friday fell outside them
     fc = world([msg("a", body_text="Can we meet at 3pm?")])
-    b = build_briefing(fc, ME, DAY, NY, llm=FakeLLM([answer(True, draft)]), save_drafts=True)
+    b = build_briefing(fc, ME, DAY, NY, llm=FakeLLM([answer(True, draft)]), save_drafts=True,
+                       now=datetime(2026, 11, 4, 12, 0, tzinfo=timezone.utc))
     return fc, b["mail"]["items"][0]
 
 
