@@ -3,9 +3,11 @@
 The network is faked at `Client._post` and sleeping at `Client._sleep`; nothing is sent anywhere.
 """
 import contextlib
+import http.server
 import io
 import json
 import socket
+import threading
 import unittest
 import urllib.error
 from unittest import mock
@@ -235,6 +237,51 @@ class OneLineErrors(unittest.TestCase):
         self.assertIn("Saved 1 of 3 drafts before this. The failed one may still have been created: "
                       "check the mailbox before running --create again", err.getvalue())
 
+
+
+class Redirects(unittest.TestCase):
+    """Bug hunt BH-03 from seat 30 (24 Nov): a redirect to another host must not receive the token.
+    Two local servers only; nothing leaves this machine."""
+
+    def test_a_redirect_is_refused_and_the_token_stays_here(self):
+        seen = []
+
+        class Other(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):
+                seen.append(self.headers.get("Authorization"))
+                self.send_response(200); self.end_headers(); self.wfile.write(b"{}")
+            do_POST = do_GET
+
+            def log_message(self, *a):
+                pass
+
+        other = http.server.HTTPServer(("127.0.0.1", 0), Other)
+        servers = [other]
+        try:
+            threading.Thread(target=other.serve_forever, daemon=True).start()
+            for code in (301, 302, 303, 307, 308):
+                class Platform(http.server.BaseHTTPRequestHandler):
+                    def do_POST(self, code=code):
+                        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+                        self.send_response(code)
+                        self.send_header("Location", f"http://localhost:{other.server_port}/x")
+                        self.send_header("Content-Length", "0")
+                        self.end_headers()
+
+                    def log_message(self, *a):
+                        pass
+
+                platform = http.server.HTTPServer(("127.0.0.1", 0), Platform)
+                servers.append(platform)
+                threading.Thread(target=platform.serve_forever, daemon=True).start()
+                with self.assertRaises(McpError) as e:
+                    Client(f"http://127.0.0.1:{platform.server_port}", TOKEN).tool_names()
+                self.assertIn("redirect", str(e.exception))
+                self.assertNotIn(TOKEN, str(e.exception))
+        finally:
+            for s in servers:
+                s.shutdown(); s.server_close()
+        self.assertEqual(seen, [])
 
 if __name__ == "__main__":
     unittest.main()

@@ -109,7 +109,7 @@ class RetryBudget(unittest.TestCase):
         self.assertLess(timeouts[1], c.timeout)          # the second try only gets what is left
 
     def test_the_cut_timeout_reaches_urllib(self):
-        # The real _post, with urlopen faked: the second try must be opened with the shortened timeout.
+        # The real _post, with the opener faked: the second try must be opened with the shortened timeout.
         clock, seen = [0.0], []
         c = Client("https://example.invalid", "t")
 
@@ -133,7 +133,7 @@ class RetryBudget(unittest.TestCase):
             return Reply()
 
         c._sleep = lambda s: clock.__setitem__(0, clock[0] + s)
-        with mock.patch.object(C.urllib.request, "urlopen", urlopen), \
+        with mock.patch.object(C._OPENER, "open", urlopen), \
                 mock.patch.object(C.time, "monotonic", side_effect=lambda: clock[0]):
             c._rpc("tools/list", {})
         self.assertEqual(seen[0], c.timeout)
