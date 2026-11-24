@@ -48,7 +48,7 @@ See the top-level README. Put your agent code, tests and notes in this folder; o
   findings/                 BUG-33-NNN.md (public redacted summaries)
   replay/                   boundary probes + scope sweep (env tokens only)
   suite/                    v1 Eval-Harness suite (harness + tasks + tests)
-  docs/                     scope-sweep notes (handover / demo later)
+  docs/                     scope-sweep, injection plan, demo script
 ```
 
 ## Boundary catalogue
@@ -172,4 +172,5 @@ From the instructor brief (interpreted in [PLAN.md](PLAN.md)):
 - [CATALOGUE_FORMAT.md](CATALOGUE_FORMAT.md) — attempt file shape
 - [suite/README.md](suite/README.md) / [replay/README.md](replay/README.md) — how to run
 - [docs/scope-sweep.md](docs/scope-sweep.md) — how tasks 11–12 were chosen
+- [docs/demo-script.md](docs/demo-script.md) — ≤5-min DoD demo recording script
 - [BUG_REPORT_FORMAT.md](../BUG_REPORT_FORMAT.md) — course bug format
