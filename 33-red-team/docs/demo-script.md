@@ -2,7 +2,7 @@
 
 Timed speakable script for the DoD demo recording. Facts match the seat README and catalogue on `main`.
 
-**Recording checklist:** hide tokens and passwords; use offline tests or redacted sample output only; do not show live request/response bodies for findings; stay under **5:00**.
+**Recording checklist:** hide tokens and passwords; re-check the numbers on the day you record; for the terminal show the offline test summary (`cd 33-red-team/suite` then `python -m unittest discover -s tests -t .`) or the masked PASS/SKIP block from [PR #60](https://github.com/theschoolofai/agentswitch-advanced/pull/60) — not raw runner output and not `replay/sample-results.json`; do not show live request/response bodies for findings; stay under **5:00**.
 
 ---
 
@@ -40,7 +40,7 @@ Timed speakable script for the DoD demo recording. Facts match the seat README a
 >
 > Broke two — BUG-33-002, Medium: a low-privilege seat can read job-ledger forensics. Seen on both systems; status new, filed and Received.
 >
-> Most other boundaries Held. The Unclear cases need a same-instance foreign id we cannot see from our login, or a copy run — they are not silent passes.
+> Most other boundaries Held. The Unclear cases need a same-instance foreign id we cannot see from our login, a copy run, or no data to test against — they are not silent passes.
 
 *(Do not open steps or evidence fields on camera — public files keep title, component, and status only.)*
 
@@ -48,7 +48,7 @@ Timed speakable script for the DoD demo recording. Facts match the seat README a
 
 ## 2:45–4:30 — How the suite runs
 
-**On screen:** [agentswitch-harness.toml](../agentswitch-harness.toml), then a terminal with offline tests or a prior PASS/SKIP summary — never a live token.
+**On screen:** [agentswitch-harness.toml](../agentswitch-harness.toml), then a terminal with the offline test summary, **or** the masked PASS/SKIP local-run block from [PR #60](https://github.com/theschoolofai/agentswitch-advanced/pull/60) (platform tool names as `<...>`) — never a live token, never raw `harness.runner` output, never `replay/sample-results.json`.
 
 **Say:**
 
@@ -56,11 +56,11 @@ Timed speakable script for the DoD demo recording. Facts match the seat README a
 >
 > You need three environment variables: base URL, instance name, and token. No credentials in the repo.
 >
-> Locally, only read-only tasks actually hit the platform. Copy-only tasks — auth probes and foreign writes — show as SKIP unless Eval-Harness sets a run id on a non-live copy. Offline, we run `python -m unittest discover` under `suite/tests` with no login.
+> Locally, only read-only tasks actually hit the platform. Copy-only tasks — auth probes and foreign writes — show as SKIP unless Eval-Harness sets a run id on a non-live copy. Offline, from `suite/`, we run `python -m unittest discover -s tests -t .` with no login.
 >
 > Eval-Harness runs the full twelve on a throwaway copy of each instance. Tasks nine and ten read `bug-status.json`: they pass if the call is refused, or if the bug is still recorded as not fixed. If a bug is marked fixed but data still comes back, that is the regression we catch.
 
-**Optional show (≤15 s):** redacted [replay/sample-results.json](../replay/sample-results.json), or a unittest summary.
+**Optional show (≤15 s):** offline unittest summary from `suite/`, or the masked PR #60 PASS/SKIP block.
 
 ---
 
