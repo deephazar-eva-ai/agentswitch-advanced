@@ -1,0 +1,8 @@
+# Seat 33 (Red Team) v1 suite, in the format of 34-eval-harness/TASK_FORMAT.md.
+# The official run on 30 Nov uses main and starts in 33-red-team/ (instructor,
+# 22-23 Nov). The suite lives in suite/, so the run command moves there first.
+install = "pip install -r suite/requirements.txt"
+run     = "cd suite && python -m harness.runner --out results.json"
+results = "suite/results.json"
+instances = ["suryodaya", "keystone"]
+timeout_minutes = 10

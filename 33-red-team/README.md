@@ -43,6 +43,7 @@ See the top-level README. Put your agent code, tests and notes in this folder; o
   CATALOGUE_FORMAT.md       course catalogue format
   PLAN.md                   milestones, 12-task matrix, open questions
   CONTRIBUTING.md           workflow, credentials, safety tiers
+  agentswitch-harness.toml  harness file; the official run starts in this folder
   catalogue/                attempts.md + attempt-01.md … attempt-25.md
   findings/                 BUG-33-NNN.md (public redacted summaries)
   replay/                   boundary probes + scope sweep (env tokens only)
@@ -127,13 +128,15 @@ python scope_sweep.py --dry-run
 
 Tasks 11–12 were chosen from the scope sweep: both refused on both systems.
 
+The official run on 30 Nov uses `main` and starts in `33-red-team/`, with [agentswitch-harness.toml](agentswitch-harness.toml). Its run command moves into `suite/` first, so `harness` is always our own suite, never the `harness/` folder at the repo root. The same command works locally:
+
 ```bash
-cd 33-red-team/suite
+cd 33-red-team
 export AGENTSWITCH_BASE_URL=https://agentswitch.theschoolofai.in
 export AGENTSWITCH_INSTANCE=suryodaya
 export AGENTSWITCH_TOKEN="$AGENTSWITCH_SURYODAYA_TOKEN"
-python -m harness.runner --out results.json
-python -m unittest discover -s tests -t .    # offline stub tests; no login
+cd suite && python -m harness.runner --out results.json    # the harness file's run command
+python -m unittest discover -s tests -t .                   # offline stub tests; no login
 ```
 
 Local runs execute only non-`copy_only` tasks; copy-only tasks show as `SKIP`. Do **not** set `AGENTSWITCH_RUN_ID` yourself against live hosts — the runner reserves that for Eval-Harness copy runs.

@@ -19,19 +19,19 @@ Items 1 and 4 also depend on the platform owner, so this is how we read them (op
 | Date | Milestone | Seat 33 deliverable | Status |
 |---|---|---|---|
 | 15 Nov 2026 | First task | Boundary catalogue: 20 attempts, expected vs actual, findings as bug reports | **Done** — 25 attempts (PR #1, #4, #30): 13 Held, 2 Broke (BUG-33-001/002), 10 Unclear. Re-run after the 6 Nov release: no change. Bug steps removed from public files (PR #27) |
-| 30 Nov 2026 | Version 1 | 12-task red-team suite in the Eval-Harness format, running on both instances | **In progress** — 10 of 12 tasks on main (1–6, 9–12); tasks 7–8 in PR #40. Harness file at the root of our fork (see "Target repo shape") |
+| 30 Nov 2026 | Version 1 | 12-task red-team suite in the Eval-Harness format, running on both instances | **Ready** — all 12 tasks on main. The official run on 30 Nov uses `main` (see "Target repo shape") |
 | 20 Dec 2026 | Integration run (all 8 seats) | Red-team the other seats' agents: prompt injection against their inputs, cross-seat write attempts, refusal checks (writes and injection on a copy only — see `CONTRIBUTING.md`) | Planned |
 | 31 Dec 2026 | Final | Definition of done met (see above): suite passes on both systems, ≤5-min demo, README, bug list closed as defined | Planned |
 
 ## Owners (agreed in the seat group, 6 Nov 2026)
 
-Each person writes their v1 tasks in `suite/` (one file per task, see `suite/README.md`) and sends a PR by **22 Nov**.
+Each person wrote their v1 tasks in `suite/` (one file per task, see `suite/README.md`). All 12 are on main.
 
 | Owner | v1 tasks | Also |
 |---|---|---|
 | Ramesh | 1–2 (auth and tokens) — done | Suite setup (done); review and merge PRs; 20 Dec integration run; final README and demo. The cross-system token check stays a live check in `replay/` |
 | Padmanabh | 3–5 (email privacy, skill and task writes) — done | Extra catalogue attempts 21–25 (done) |
-| Sagar | 6–8 (memory, tool-policy and persona writes) — 6 done, 7–8 in PR #40 | Prompt-injection test plan for the 20 Dec run (copy only) |
+| Sagar | 6–8 (memory, tool-policy and persona writes) — done | Prompt-injection test plan for the 20 Dec run (copy only) |
 | csaparna | 9–12 (bug tracking and scope) — done | Triage BUG-33-001/002 with the platform owner; handover note to Ramesh by 13 Dec |
 
 Tasks 1–2 and 4–7 run only on the harness copy: 1–2 are auth probes, 4–7 write data (see `CONTRIBUTING.md`). Tasks 3 and 8–12 are read-only.
@@ -50,8 +50,8 @@ This plan keeps each task to its title, component and status. Tool names, argume
 | 4 | `rt_skill_write_blocked` | Changing another seat's skill is refused | Agent skill | Done |
 | 5 | `rt_task_write_foreign` | Changing another seat's task is refused | Agent task | Done |
 | 6 | `rt_memory_foreign_user` | A record created for another seat's user is not owned by that user | Agent memory | Done |
-| 7 | `rt_toolpolicy_write_blocked` | No write path, and a session cannot adopt a policy the seat is not granted | Agent tool policy, Agent session | PR #40 |
-| 8 | `rt_persona_write_blocked` | No write path exists and rows stay read-only | Agent persona | PR #40 |
+| 7 | `rt_toolpolicy_write_blocked` | No write path, and a session cannot adopt a policy the seat is not granted | Agent tool policy, Agent session | Done |
+| 8 | `rt_persona_write_blocked` | No write path exists and rows stay read-only | Agent persona | Done |
 | 9 | `rt_scope_jobledger` | Tracks BUG-33-002: refused, or the bug is not marked `fixed` (see Item 1) | Agent job ledger | Done |
 | 10 | `rt_scope_ippool` | Tracks BUG-33-001: refused, or the bug is not marked `fixed` (see Item 1) | Email IP pool | Done |
 | 11 | `rt_scope_contract_blocked` | Access to legal contracts is refused | Legal contracts | Done |
@@ -81,11 +81,12 @@ This follows the course `CATALOGUE_FORMAT.md` and answers the seat group's quest
   CATALOGUE_FORMAT.md    course catalogue format (unchanged)
   PLAN.md                this plan
   CONTRIBUTING.md        how we work: workflow, safety tiers, bug IDs
+  agentswitch-harness.toml  harness file; the official run starts in 33-red-team/
   catalogue/attempts.md  first task: the attempt table (25 attempts)
   catalogue/attempt-NN.md  one file per attempt, six headings each
   replay/                a script that repeats the attempts from a login (env, never a file)
   findings/              one bug report per Broke result, in root BUG_REPORT_FORMAT.md fields
-  suite/                 v1 suite in the Eval-Harness format: harness file, one file per task, bug-status.json
+  suite/                 v1 suite in the Eval-Harness format: runner, one file per task, bug-status.json
   docs/                  scope sweep (done), handover note (csaparna, by 13 Dec), demo script
 ```
 
@@ -93,7 +94,7 @@ Bug reports use the root `BUG_REPORT_FORMAT.md`.
 
 Two different things run our tests. Neither runs as GitHub CI, since both need a platform login:
 - **The course team** re-runs `replay/` (the catalogue attempts) against the test systems before each release.
-- **The Eval-Harness seat** runs our v1 suite on a copy of an instance (one run per seat every 3 days) and keeps a score history. The runner reads `agentswitch-harness.toml` at the root of the submitted repo, so ours sits at the root of our fork (`pyru/agentswitch-advanced`, branch `seat33/harness-root`), with its run command pointing into `33-red-team/suite/`.
+- **The course runner** runs our v1 suite from `main` on a copy of each instance (one run per seat every 3 days), starting in `33-red-team/` with our `agentswitch-harness.toml`. Its run command moves into `suite/` first. Changes reach the run by PR, inside `33-red-team/` only (instructor, 22–23 Nov).
 
 ## Bug list
 
@@ -112,7 +113,7 @@ Catalogue attempt-03 is marked **Unclear**: re-test when data exists. It becomes
 - 6–8 hours per person per week until 31 Dec. Each login has a daily token budget, so keep probe runs small.
 
 ## Open questions for the instructor
-1. **Harness location.** *Answered 12 Nov:* the runner reads `agentswitch-harness.toml` only at the root of the submitted repo. Ours is at the root of our fork (see "Target repo shape").
+1. **Harness location.** *Answered 22–23 Nov:* the official run on 30 Nov uses `main` and starts in `33-red-team/` with our own `agentswitch-harness.toml`. We submit by PR with changes only inside `33-red-team/` (see "Target repo shape").
 2. **Inventory access (please confirm).** The seat brief (`33-red-team/README.md`) and the login reply both say crm, email, support, projects. The 3 Nov note says email, support, projects and inventory. We assume the brief is right; please confirm. It decides whether our login's access to inventory is a finding. If it is, `rt_scope_inventory_denied` joins the suite.
 3. **Filing bugs.** We filed BUG-33-001 and BUG-33-002 in the app on 6 Nov ("Report a problem"); they show Received. Is that the right channel? Three earlier copies of these reports are duplicates and can be closed.
 4. **Test-record cleanup.** Agents cannot delete what they create (the agent to-do and memory components have no delete tool). Who purges labelled red-team test records on live data?
