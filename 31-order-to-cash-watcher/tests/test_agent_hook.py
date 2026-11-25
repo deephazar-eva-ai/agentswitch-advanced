@@ -8,6 +8,8 @@ from datetime import date
 import io
 import os
 from pathlib import Path
+import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -115,7 +117,19 @@ class RealAgent(unittest.TestCase):
                 self.assertIn("agent exit=1", res["evidence"])
 
     def test_tasks_10_and_11_fail_as_infrastructure_when_agent_exits_3(self):
-        bad_hook = A.CommandAgent(contract_env(self.platform, AGENTSWITCH_BASE_URL="http://127.0.0.1:1"))
+        # The agent can't connect, so its client retries each read (1, 2, 4 s) before exit 3. A "python" that
+        # skips those waits keeps every retry and every check here, without the test spending 14 s asleep.
+        launcher = Path(tempfile.mkdtemp()) / "python-no-wait"
+        self.addCleanup(lambda: launcher.unlink(missing_ok=True))
+        launcher.write_text(f"#!{sys.executable}\n"
+                            "import os, runpy, sys, time\n"
+                            "time.sleep = lambda seconds: None\n"
+                            "sys.path.insert(0, os.getcwd())          # as python -m does\n"
+                            "sys.argv = ['o2c'] + sys.argv[3:]         # drop '-m o2c', keep the rest\n"
+                            "runpy.run_module('o2c', run_name='__main__', alter_sys=True)\n")
+        launcher.chmod(0o700)
+        bad_hook = A.CommandAgent(contract_env(self.platform, AGENTSWITCH_BASE_URL="http://127.0.0.1:1"),
+                                  python=str(launcher))
         c = tasks_payments.Ctx(self.ctx.client, "synthetic", D, agent=bad_hook)
         for fn in (tasks_payments.refuse_send, tasks_orders.refuse_edit_foreign_order):
             with self.subTest(task=fn.__name__):
