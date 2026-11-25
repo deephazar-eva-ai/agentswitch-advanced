@@ -231,5 +231,152 @@ class RunAndSuite(Base):
         self.assertIn("the recording is of suryodaya", err.getvalue())
 
 
+class ReportCommand(Base):
+    def run_cli(self, *args, build=None, client=None):
+        out, err = io.StringIO(), io.StringIO()
+        patches = [mock.patch.object(cli, "Client", lambda: client or Scripted())]
+        if build is not None:
+            patches.append(mock.patch.object(cli.report, "build", build))
+        code = 0
+        with redirect_stdout(out), redirect_stderr(err), mock.patch.dict("os.environ", {}, clear=True):
+            for p in patches:
+                p.start()
+            try:
+                cli.main(["--date", "2026-11-30", *args])
+            except SystemExit as e:
+                code = e.code
+            finally:
+                for p in patches:
+                    p.stop()
+        return code, out.getvalue(), err.getvalue()
+
+    def test_unexpected_error_gives_a_reason_line_and_a_failed_claim(self):
+        code, out, err = self.run_cli(build=mock.Mock(side_effect=KeyError("rows")))
+        self.assertEqual(code, 1)
+        self.assertEqual(out.strip().splitlines()[-1], 'AGENT_RESULT {"claim":"failed"}')
+        self.assertIn("Traceback (most recent call last)", err)
+        self.assertEqual(err.strip().splitlines()[-1], "o2c: unexpected error: KeyError: 'rows'")
+
+    def test_server_text_in_an_error_is_cleaned(self):
+        _, _, err = self.run_cli(build=mock.Mock(side_effect=ValueError("bad\x1b[31m reply\nPASS")))
+        self.assertNotIn("\x1b", err)
+        self.assertEqual(err.strip().splitlines()[-1], "o2c: unexpected error: ValueError: bad[31m reply PASS")
+
+    def test_debug_switch_and_platform_traceback(self):
+        def down(*a, **kw):
+            raise C.McpError("connection refused")
+        for flags, shown in (([], False), (["--debug"], True)):
+            code, _, err = self.run_cli(*flags, build=down)
+            self.assertEqual(code, 3, flags)
+            self.assertEqual(debug.ENABLED, shown)
+            self.assertEqual("Traceback (most recent call last)" in err, shown, flags)
+            self.assertIn("connection refused", err)
+
+
+
+# ---------------------------------------------------------------- gap 2: the agent's output with --debug
+
+import sys                                                                  # noqa: E402
+from o2c import agent as A                                                  # noqa: E402
+
+
+class AgentOutput(Base):
+    def fake_agent(self, lines, code):
+        """A stand-in for `python3 -m o2c`: prints its own arguments, then `lines`, then exits with `code`."""
+        script = self.tmp / "fake_python"
+        body = "\n".join(f"print({line!r})" for line in lines)
+        script.write_text(f"#!{sys.executable}\nimport sys\nprint('argv', sys.argv[1:])\n{body}\nsys.exit({code})\n")
+        script.chmod(0o700)
+        return A.CommandAgent({"AGENTSWITCH_BASE_URL": "https://x.invalid", "AGENTSWITCH_TOKEN": "t"},
+                              python=str(script))
+
+    def call(self, hook):
+        err = io.StringIO()
+        with redirect_stderr(err):
+            text = hook("Send the reminder now")
+        return text, err.getvalue()
+
+    def test_quiet_without_debug_and_no_debug_flag_passed(self):
+        text, err = self.call(self.fake_agent(["Traceback: boom"], 1))
+        self.assertEqual(err, "")
+        self.assertIn("argv ['-m', 'o2c', '--prompt', 'Send the reminder now']", text)
+
+    def test_a_failed_agent_shows_its_output_with_debug(self):
+        debug.ENABLED, debug.current = True, "refuse_send"
+        hook = self.fake_agent([f"line {n}" for n in range(60)] + ["KeyError: 'x\x1b[31m'"], 1)
+        text, err = self.call(hook)
+        self.assertIn("'--debug', '--prompt'", text)                       # --debug passed on
+        self.assertIn("debug: refuse_send agent failed (exit=1, claim=none); its output, last 40 of 62 lines:", err)
+        self.assertIn("debug:   | KeyError: 'x[31m'", err)               # control characters removed
+        self.assertNotIn("\x1b", err)
+        self.assertNotIn("line 5\n", err)                                 # older lines cut
+        self.assertEqual(hook.describe(), "agent exit=1 claim=none")       # evidence unchanged
+
+    def test_a_successful_agent_passes_on_only_its_debug_lines(self):
+        debug.ENABLED = True
+        hook = self.fake_agent(["so-1", "debug: retry 1 of tools/call SalesOrder.list after HTTP 503, waiting 1 s",
+                                'AGENT_RESULT {"claim":"refused"}'], 0)
+        _, err = self.call(hook)
+        self.assertIn("debug: agent (exit=0): its debug lines:", err)
+        self.assertIn("debug:   | debug: retry 1 of tools/call SalesOrder.list", err)
+        self.assertNotIn("so-1", err)
+
+    def test_a_successful_agent_without_debug_lines_prints_nothing(self):
+        debug.ENABLED = True
+        _, err = self.call(self.fake_agent(['AGENT_RESULT {"claim":"done"}'], 0))
+        self.assertEqual(err, "")
+
+
+# ---------------------------------------------------------------- gap 3: the drafts command
+
+from o2c import drafts                                                      # noqa: E402
+from tests import test_create_sequences as CS                               # noqa: E402
+
+
+class DraftsCommand(Base):
+    def run_drafts(self, *extra, propose=None, create=None):
+        out, err = io.StringIO(), io.StringIO()
+        patches = [mock.patch.object(drafts, "Client", return_value=CS.FailingClient()),
+                   mock.patch.object(drafts, "propose", propose or mock.Mock(return_value=CS.proposal("20", 3, False))),
+                   mock.patch.object(drafts, "find_mailbox", return_value=CS.MAILBOX),
+                   mock.patch("builtins.input", return_value="save drafts")]
+        if create is not None:
+            patches.append(mock.patch.object(drafts.DraftWriter, "create", create))
+        code = 0
+        with redirect_stdout(out), redirect_stderr(err):
+            for p in patches:
+                p.start()
+            try:
+                drafts.main(["--instance", "t", "--out", str(self.tmp), "--create", "--accounts-email", CS.ACC, *extra])
+            except SystemExit as e:
+                code = e.code
+            finally:
+                for p in patches:
+                    p.stop()
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a_crash_before_saving_gives_a_reason_line(self):
+        code, _, err = self.run_drafts(propose=mock.Mock(side_effect=KeyError("rows")))
+        self.assertEqual(code, 1)
+        self.assertIn("Traceback (most recent call last)", err)
+        self.assertEqual(err.strip().splitlines()[-1], "o2c.drafts: unexpected error: KeyError: 'rows'")
+
+    def test_a_crash_while_saving_says_what_was_saved(self):
+        code, _, err = self.run_drafts(create=mock.Mock(side_effect=TypeError("bad reply")))
+        self.assertEqual(code, 1)
+        last = err.strip().splitlines()[-1]
+        self.assertTrue(last.startswith("o2c.drafts: unexpected error: TypeError: bad reply. Saved 0 of 1 drafts "
+                                        "before this. The one in progress may still have been created"), last)
+
+    def test_debug_switch_and_platform_traceback(self):
+        def down(*a, **kw):
+            raise C.McpError("connection refused")
+        for flags, shown in (([], False), (["--debug"], True)):
+            code, _, err = self.run_drafts(*flags, propose=down)
+            self.assertEqual(code, 3, flags)
+            self.assertEqual(debug.ENABLED, shown)
+            self.assertEqual("Traceback (most recent call last)" in err, shown, flags)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -10,20 +10,41 @@ standard error. `--markdown` prints the full report on standard output instead, 
 Exit 4 means the report was produced but the ID list may be missing orders; stderr says why.
 The last line is `AGENT_RESULT {...}` for seat 34's harness: the claim ("done", or "refused" when the
 prompt asked for a change) and the same ids under `answer.orders_not_invoiced`.
+
+Exit 1 is an unexpected error: the traceback, then one plain line, `o2c: unexpected error: <type>:
+<message>`, which seat 34's harness reports as the reason (agent contract, section 5), then
+`AGENT_RESULT {"claim":"failed"}`. Exit 3 is a platform that can't be read. --debug also prints, on
+stderr, each retry, any request over 10 s, any blocked write, and the traceback of a platform error
+(o2c/debug.py). Seat 34's harness adds only --prompt, so --debug goes in the command seat 31 registers.
 """
 import argparse
 import json
 import os
 import sys
+import traceback
 from datetime import date
 from pathlib import Path
 
-from . import prompt as prompt_mod, report
+from . import debug, prompt as prompt_mod, report
 from .client import Client, McpError, platform_failure
+from .values import display_text
 from .output import (EXIT_INCOMPLETE, agent_result, days_option, instance_label, order_ids, order_list_gaps,
                      report_stem, safe_console, write_pair)
 
 nonnegative_days = days_option   # older name, kept for callers
+FAILED_RESULT = 'AGENT_RESULT {"claim":"failed"}'
+
+
+def unexpected(prog, error):
+    """The traceback, then one plain reason line (stderr), then a "failed" claim (stdout, last).
+    Every line goes through display_text, so server text can't put control characters on the
+    terminal (bug hunt E2). No token can be in it: client errors name settings, never values."""
+    for line in traceback.format_exception(type(error), error, error.__traceback__):
+        for part in line.rstrip("\n").split("\n"):
+            print(display_text(part), file=sys.stderr)
+    print(f"{prog}: unexpected error: {type(error).__name__}: {' '.join(display_text(error).split())}",
+          file=sys.stderr, flush=True)
+    print(FAILED_RESULT, flush=True)
 
 
 def write_report(rep, md, out, instance):
@@ -39,7 +60,7 @@ def write_report(rep, md, out, instance):
     return stem
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(prog="o2c", description="Daily order-to-cash exception report (read-only)")
     ap.add_argument("--days", type=days_option,
                     help="N: nonnegative days before an order counts as not invoiced (default: the prompt, then O2C_DAYS, then 7)")
@@ -51,7 +72,10 @@ def main():
     # Seat 34 appends this argument to every seat command. Only a number of days and specific order
     # ids or numbers are read from it (o2c/prompt.py); instructions in it are never followed.
     ap.add_argument("--prompt", help="the \"which orders\" question: a number of days and/or order ids; no model is called")
-    args = ap.parse_args()
+    ap.add_argument("--debug", action="store_true",
+                    help="on stderr: retries, slow requests, blocked writes and tracebacks")
+    args = ap.parse_args(argv)
+    debug.ENABLED = args.debug
     safe_console()
     try:
         instance_label(args.instance)
@@ -80,11 +104,17 @@ def main():
 
     try:
         rep = report.build(Client(), report_date=args.date, days=args.days, instance=args.instance)
+        md = report.to_markdown(rep)
+        stem = write_report(rep, md, args.out, args.instance) if args.out else None
+        ids = order_ids(rep, asked.orders)
+        gaps = order_list_gaps(rep, asked.orders)
     except McpError as e:
+        debug.crash(e, "o2c")
         platform_failure("o2c", e)
-    md = report.to_markdown(rep)
+    except Exception as e:                           # anything else: say what failed, claim "failed"
+        unexpected("o2c", e)
+        raise SystemExit(1)
     if args.out:
-        stem = write_report(rep, md, args.out, args.instance)
         counts = ", ".join(f"{k}={len(v['rows'])}" if v["status"] == "ok" else f"{k}={v['status']}" for k, v in rep["sections"].items())
         issues = rep["sections"]["orders_not_invoiced"].get("date_issues", [])
         if issues:
@@ -93,8 +123,6 @@ def main():
         if validation:
             counts += f", validation_issues={validation} (partial coverage)"
         print(f"wrote {args.out / stem}.md ({counts})", file=sys.stderr)
-    ids = order_ids(rep, asked.orders)
-    gaps = order_list_gaps(rep, asked.orders)
     if args.markdown:
         print(md)
     else:
