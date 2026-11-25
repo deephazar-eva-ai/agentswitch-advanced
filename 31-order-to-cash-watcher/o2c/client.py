@@ -3,6 +3,7 @@
 Only tools on the read allowlist can be called. Anything else raises
 WriteBlocked before a request is sent, so the report can never change a record.
 """
+import copy
 import hashlib
 import http.client
 import json
@@ -12,7 +13,10 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from collections import Counter
+from pathlib import Path
 
+from . import debug
 from .values import display_text, reject_json_constant
 
 READ_SUFFIXES = (".list", ".get")
@@ -28,6 +32,7 @@ RETRY_STATUS = {429, 500, 502, 503, 504}
 RETRY_DELAYS = (1, 2, 4)        # seconds before the 2nd, 3rd and 4th try
 RETRY_AFTER_MAX = 30            # cap on a server's Retry-After
 RETRY_BUDGET = 90               # stop retrying once a request has taken this long in total
+SLOW_REQUEST = 10               # --debug names a request that took longer than this (seconds)
 
 
 class WriteBlocked(Exception):
@@ -63,6 +68,16 @@ _OPENER = urllib.request.build_opener(_NoRedirect)
 REDIRECT_STATUS = {301, 302, 303, 307, 308}
 
 
+def new_stats():
+    return {"requests": 0, "retries": 0, "waited": 0.0, "seconds": 0.0, "by_tool": Counter()}
+
+
+def stats_of(client):
+    """A copy of a client's stats (zeros for a client without them, such as a test fake)."""
+    s = getattr(client, "stats", None) or new_stats()
+    return {**s, "by_tool": Counter(s["by_tool"])}
+
+
 def is_read_tool(name):
     return name in READ_TOOLS or name.endswith(READ_SUFFIXES)
 
@@ -86,6 +101,9 @@ class Client:
         self.timeout = timeout
         self._id = 0
         self._sleep = time.sleep
+        # What this client did, for --debug and the suite's .meta.json: requests sent (retries
+        # included), retries, seconds waited before retries, seconds in requests, calls per tool.
+        self.stats = new_stats()
 
     def _rpc(self, method, params):
         """One JSON-RPC request. Reads are retried after transient failures (D1); every failure
@@ -99,7 +117,10 @@ class Client:
         delays = RETRY_DELAYS if retry else ()
         started = time.monotonic()
         self._try_timeout = None
+        stats = self.__dict__.setdefault("stats", new_stats())
+        stats["by_tool"][name or method] += 1
         for attempt in range(len(delays) + 1):
+            stats["requests"] += 1
             try:
                 status, ctype, raw = self._post(body)
                 break
@@ -120,12 +141,21 @@ class Client:
             wait = min(max(delays[attempt], wait_hint or 0), RETRY_AFTER_MAX) if attempt < len(delays) else 0
             # Review of #54: the budget holds for the whole request. The next try starts only if it can begin
             # inside the budget, and its timeout is cut to what is left, so a read stops by about 90 s.
-            left = RETRY_BUDGET - (time.monotonic() - started) - wait
+            elapsed = time.monotonic() - started
+            left = RETRY_BUDGET - elapsed - wait
             if attempt == len(delays) or left < 1:
                 tries = attempt + 1
+                stats["seconds"] += elapsed
                 raise PlatformUnavailable(f"{what}: {reason}" + (f" after {tries} tries" if tries > 1 else "")) from None
+            debug.step(f"retry {attempt + 1} of {what} after {display_text(reason)}, waiting {wait} s")
+            stats["retries"] += 1
+            stats["waited"] += wait
             self._sleep(wait)
             self._try_timeout = min(self.timeout, left)
+        took = time.monotonic() - started
+        stats["seconds"] += took
+        if took > SLOW_REQUEST:
+            debug.step(f"slow: {what} took {took:.1f} s")
         msg = _response_message(raw, ctype, status, request_id, what)
         if "error" in msg:
             error = msg["error"]
@@ -158,6 +188,7 @@ class Client:
 
     def call(self, name, args=None):
         if not is_read_tool(name):
+            debug.step(f"blocked: {display_text(name)} is not a read tool, nothing was sent")
             raise WriteBlocked(f"{name} is not a read tool; the report is read-only")
         return tool_result(self._rpc("tools/call", {"name": name, "arguments": args or {}}), name)
 
@@ -267,6 +298,119 @@ class Client:
 
 EXIT_PLATFORM = 3   # the platform could not be read; 2 is bad options (argparse)
 
+
+
+# ---------------------------------------------------------------- record and replay (--record / --replay)
+#
+# A recording is every request a run made and the reply it got, so a failing run can be
+# reproduced offline: the same data every time, in seconds, with no platform at all. It works at
+# the level of _rpc (one request in, one result or error out), so request ids, streamed replies
+# and retries don't matter, and tasks 11-12, which wrap _rpc, still see every call.
+#
+# A recording holds customer records: the folder is owner-only (0700) and calls.jsonl 0600. The
+# suite refuses a folder that git would track.
+
+RECORDING_FILE = "calls.jsonl"
+
+
+def request_key(method, params):
+    """The same request gives the same key, whatever its JSON-RPC id."""
+    text = json.dumps({"method": method, "params": params}, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]
+
+
+def _what(method, params):
+    name = params.get("name") if isinstance(params, dict) else None
+    return f"{method} {name}" if name else method
+
+
+class RecordingClient(Client):
+    """A normal client that also appends each request and its result (or error) to
+    <folder>/calls.jsonl, in the order they happened. A reply identical to the previous reply to
+    the same request is saved as {"same": true}, so repeated list reads don't fill the disk."""
+
+    def __init__(self, folder, base_url=None, token=None, timeout=60):
+        super().__init__(base_url, token, timeout)
+        self.folder = Path(folder)
+        self.folder.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(self.folder, 0o700)
+        self._calls = self.folder / RECORDING_FILE
+        if self._calls.is_symlink():
+            raise McpError(f"{RECORDING_FILE}: a recording must not be written through a symlink")
+        self._last = {}            # request key -> hash of its last recorded reply
+
+    def _rpc(self, method, params):
+        entry = {"key": request_key(method, params), "what": _what(method, params)}
+        try:
+            result = super()._rpc(method, params)
+        except McpError as e:
+            self._append({**entry, "error": type(e).__name__, "message": str(e)})
+            self._last.pop(entry["key"], None)       # a "same" never points at an error
+            raise
+        digest = hashlib.sha256(json.dumps(result, sort_keys=True, default=str).encode("utf-8")).hexdigest()
+        if self._last.get(entry["key"]) == digest:
+            self._append({**entry, "same": True})
+        else:
+            self._append({**entry, "result": result})
+        self._last[entry["key"]] = digest
+        return result
+
+    def _append(self, entry):
+        fd = os.open(self._calls, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        with os.fdopen(fd, "a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False, allow_nan=False) + "\n")
+
+
+class ReplayClient(Client):
+    """Answers every request from a recording; never touches the network and needs no token.
+
+    Each request gets the recorded replies for it in order (a list read twice gets its first,
+    then its second reply), and the last one again once they run out. A request the recording
+    doesn't have stops with McpError naming it: the code now asks for something the recorded
+    run didn't."""
+
+    def __init__(self, folder):
+        self.base_url, self.token, self.timeout = "replay:", "", 60
+        self._id, self._sleep, self._try_timeout = 0, time.sleep, None
+        self.stats = new_stats()
+        self.folder = Path(folder)
+        path = self.folder / RECORDING_FILE
+        if not path.is_file():
+            raise McpError(f"replay: no {RECORDING_FILE} in {self.folder}")
+        self._replies, self._served = {}, Counter()
+        with open(path, encoding="utf-8") as f:
+            for n, line in enumerate(f, 1):
+                if not line.strip():
+                    continue
+                try:
+                    entry = json.loads(line, parse_constant=reject_json_constant)
+                    replies = self._replies.setdefault(entry["key"], [])
+                    if entry.get("same"):
+                        entry = {**replies[-1], "same": True}      # IndexError: nothing to repeat
+                    replies.append(entry)
+                except (ValueError, KeyError, TypeError, IndexError):
+                    raise McpError(f"replay: {RECORDING_FILE} line {n} can't be read") from None
+
+    def _rpc(self, method, params):
+        what = _what(method, params)
+        key = request_key(method, params)
+        self.stats["requests"] += 1
+        self.stats["by_tool"][(params or {}).get("name") or method] += 1
+        replies = self._replies.get(key)
+        if not replies:
+            raise McpError(f"replay: no recorded reply for {what} (the recorded run never asked for it)")
+        entry = replies[min(self._served[key], len(replies) - 1)]
+        self._served[key] += 1
+        if "error" in entry:
+            raise _REPLAY_ERRORS.get(entry["error"], McpError)(entry.get("message") or what)
+        return copy.deepcopy(entry["result"])
+
+    def _post(self, body):
+        raise McpError("replay: no network")
+
+
+_REPLAY_ERRORS = {"McpError": McpError, "PlatformUnavailable": PlatformUnavailable,
+                  "PaginationError": PaginationError, "UnstablePaginationError": UnstablePaginationError}
 
 def platform_failure(prog, error):
     """One line on stderr and exit 3, instead of a traceback (bug hunt D2). Seat 34's harness

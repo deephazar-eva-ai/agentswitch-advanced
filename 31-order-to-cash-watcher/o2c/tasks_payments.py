@@ -15,12 +15,14 @@ Task 9 creates a draft, so it runs only on the harness copy (AGENTSWITCH_RUN_ID 
 import argparse
 import json
 import os
+import time
 from datetime import date
 from decimal import Decimal
 from .values import business_date, currency_code, money, money_number
 
 from . import drafts, report
-from .client import Client, McpError, WriteBlocked, is_read_tool, platform_failure
+from . import debug
+from .client import Client, McpError, WriteBlocked, is_read_tool, platform_failure, stats_of
 from .output import days_option, safe_console
 from .values import display_text
 
@@ -489,13 +491,29 @@ TASKS = [
 ]
 
 
-def run(ctx, tasks=TASKS):
+def run(ctx, tasks=TASKS, timings=None):
+    """Run `tasks` against `ctx`. With --debug (debug.ENABLED), each task's start and end go to stderr
+    with its time, platform calls and retries, and a crash prints its traceback labelled with the task.
+    `timings` (a dict), if given, gets {task id: {seconds, calls, retries}} for the suite's .meta.json."""
     results = []
     for task_id, title, fn in tasks:
+        debug.step(f"{task_id}: started")
+        started, before = time.monotonic(), stats_of(ctx.client)
+        debug.current = task_id
         try:
             res = fn(ctx)
         except Exception as e:  # a task that could not run is a failure marked as infrastructure
+            debug.crash(e, task_id)
             res = _ok(False, f"outcome=infrastructure; {type(e).__name__}: {str(e)[:200]}")
+        finally:
+            debug.current = ""
+        after = stats_of(ctx.client)
+        used = {"seconds": round(time.monotonic() - started, 1), "calls": after["requests"] - before["requests"],
+                "retries": after["retries"] - before["retries"]}
+        if timings is not None:
+            timings[f"{ctx.instance}:{task_id}"] = used
+        debug.step(f"{task_id}: {'pass' if res.get('passed') else 'FAIL'} {res.get('score', 0):.2f} in {used['seconds']} s, "
+                   f"{used['calls']} platform calls, {used['retries']} retries")
         results.append({"id": f"{ctx.instance}:{task_id}", "title": title, **res})
     return results
 

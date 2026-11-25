@@ -7,15 +7,32 @@ This is the runner for seat 34 and anyone running the whole suite. `--date` defa
 harness run needs no date; `o2c.tasks_orders` and `o2c.tasks_payments` (one half each) require `--date`.
 
     python3 -m o2c.suite --instance suryodaya --date 2026-11-21 --agent --out results.json
+
+Debugging (DEBUGGING.md):
+--debug prints, on stderr, a line as each task starts and ends (its time, platform calls and
+retries), each retry and slow request, any blocked write, the full traceback of a crash (labelled
+with the task), and a closing platform summary. The PASS/FAIL lines and results.json don't change.
+
+--record DIR saves every platform request and reply in DIR (calls.jsonl, plus recording.json saying
+what was recorded); --replay DIR runs the suite from it, with no platform and no token, on the same
+data every time. DIR holds customer records: it must be a folder git ignores (e.g. reports/recordings/
+<instance>-<date>) or outside the repo. --agent can't be combined with either: the agent runs as a
+separate process that talks to the platform itself, so its calls are neither recorded nor replayed.
+
+With --out, the run is also described in <out>.meta.json beside it: commit, start and end, the
+source (live, record or replay), platform totals, and per task its seconds, calls and retries.
+results.json keeps exactly the TASK_FORMAT.md shape.
 """
 import argparse
 import json
 import os
-from datetime import date
+import platform
+import subprocess
+from datetime import date, datetime
 from pathlib import Path
 
-from . import report, tasks_orders, tasks_payments
-from .client import Client, McpError, platform_failure
+from . import debug, report, tasks_orders, tasks_payments
+from .client import Client, McpError, RecordingClient, ReplayClient, platform_failure, stats_of
 from .output import days_option, safe_console
 from .tasks_payments import Ctx, command_agent, run
 from .values import display_text
@@ -36,10 +53,11 @@ def all_tasks():
     return sorted(found, key=lambda t: rank.get(t[0], len(NUMBERED)))
 
 
-def run_suite(ctx, tasks=None):
-    """Run the combined suite against `ctx` and return the TASK_FORMAT.md payload."""
+def run_suite(ctx, tasks=None, timings=None):
+    """Run the combined suite against `ctx` and return the TASK_FORMAT.md payload. `timings` (a dict),
+    if given, gets {task id: {seconds, calls, retries}} for each task."""
     selected = all_tasks() if tasks is None else list(tasks)
-    results = run(ctx, selected)
+    results = run(ctx, selected, timings)
     passed = sum(1 for r in results if r["passed"])
     return {
         "tasks": results,
@@ -55,27 +73,127 @@ def write_results(path, payload):
     target.write_text(encoded, encoding="utf-8")
 
 
-def main():
+RECORDING_META = "recording.json"
+
+
+def run_meta(client, instance, as_of, started, finished, timings, source, debug_on):
+    """What was run, for <out>.meta.json. Never the token or the platform address."""
+    stats = stats_of(client)
+    return {"instance": instance, "date": as_of.isoformat(),
+            "started": started.isoformat(timespec="seconds"), "finished": finished.isoformat(timespec="seconds"),
+            "seconds": round((finished - started).total_seconds(), 1), "commit": _commit(), "source": source,
+            "debug": debug_on, "python": platform.python_version(),
+            "platform": {"requests": stats["requests"], "retries": stats["retries"],
+                         "waited_seconds": round(stats["waited"], 1), "request_seconds": round(stats["seconds"], 1),
+                         "by_tool": dict(sorted(stats["by_tool"].items()))},
+            "tasks": timings}
+
+
+def _commit():
+    """The checked-out commit and whether files were changed, or None where git isn't available."""
+    here = Path(__file__).resolve().parent
+    try:
+        head = subprocess.run(["git", "-C", str(here), "rev-parse", "--short", "HEAD"],
+                              capture_output=True, text=True, timeout=10, check=True).stdout.strip()
+        dirty = subprocess.run(["git", "-C", str(here), "status", "--porcelain", "--untracked-files=no", "--", "."],
+                               capture_output=True, text=True, timeout=10, check=True).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return {"head": head, "changed_files": bool(dirty)}
+
+
+def meta_path(out):
+    """results.json -> results.meta.json, beside it."""
+    out = Path(out)
+    return out.with_name(f"{out.stem}.meta.json" if out.suffix == ".json" else f"{out.name}.meta.json")
+
+
+def git_would_track(folder):
+    """True when `folder` is inside this repository and not ignored by git, so a recording there
+    could be committed. False outside the repository, or where git isn't available."""
+    here = Path(__file__).resolve().parent
+    try:
+        top = subprocess.run(["git", "-C", str(here), "rev-parse", "--show-toplevel"],
+                             capture_output=True, text=True, timeout=10, check=True).stdout.strip()
+        target = Path(folder).resolve()
+        if Path(top).resolve() not in (target, *target.parents):
+            return False
+        ignored = subprocess.run(["git", "-C", top, "check-ignore", "-q", str(target)], timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return ignored.returncode != 0
+
+
+def read_recording_meta(folder):
+    try:
+        return json.loads((Path(folder) / RECORDING_META).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def main(argv=None):
     ap = argparse.ArgumentParser(prog="o2c.suite", description="Run the full seat 31 suite and write results.json")
     ap.add_argument("--instance", default=os.environ.get("AGENTSWITCH_INSTANCE"),
-                    required=not os.environ.get("AGENTSWITCH_INSTANCE"), help="instance label (suryodaya or keystone)")
+                    help="instance label (suryodaya or keystone); default AGENTSWITCH_INSTANCE, or the recording's with --replay")
     ap.add_argument("--date", type=date.fromisoformat, help="report date (default: today in IST)")
-    ap.add_argument("--days", type=days_option, default=os.environ.get("O2C_DAYS", "7"))
+    ap.add_argument("--days", type=days_option, help="threshold in days (default O2C_DAYS or 7, or the recording's)")
     ap.add_argument("--mailbox-id", default=os.environ.get("O2C_MAILBOX_ID"))
     ap.add_argument("--accounts-email", default=os.environ.get("O2C_ACCOUNTS_EMAIL"))
     ap.add_argument("--allow-writes", action="store_true", help="let task 9 create a draft (harness copy only)")
     ap.add_argument("--agent", action="store_true",
                     help="tasks 10 and 11: run the real agent (python3 -m o2c --prompt) instead of guardrails only")
     ap.add_argument("--out", help="write results JSON here (e.g. results.json)")
-    args = ap.parse_args()
+    ap.add_argument("--debug", action="store_true",
+                    help="on stderr: each task's start, end and time, retries, slow requests and tracebacks")
+    source = ap.add_mutually_exclusive_group()
+    source.add_argument("--record", metavar="DIR", help="save every platform request and reply in DIR (git-ignored)")
+    source.add_argument("--replay", metavar="DIR", help="run from a recording in DIR: no platform, no token")
+    args = ap.parse_args(argv)
+    debug.ENABLED = args.debug
+    recorded = read_recording_meta(args.replay) if args.replay else {}
+    if args.replay:
+        if not (Path(args.replay) / "calls.jsonl").is_file():
+            ap.error(f"--replay: no recording in {args.replay} (calls.jsonl missing)")
+        if args.instance and recorded.get("instance") and args.instance != recorded["instance"]:
+            ap.error(f"--replay: the recording is of {recorded['instance']}, not {args.instance}")
+        args.instance = recorded.get("instance") or args.instance
+        if args.date is None and recorded.get("date"):
+            args.date = date.fromisoformat(recorded["date"])     # replay on the recorded date unless told otherwise
+        if args.days is None and recorded.get("days") is not None:
+            args.days = days_option(str(recorded["days"]))
+    if args.days is None:
+        try:
+            args.days = days_option(os.environ.get("O2C_DAYS", "7"))
+        except argparse.ArgumentTypeError as e:      # bug hunt E5: a usage error, never a traceback
+            ap.error(f"O2C_DAYS: {e}")
+    if not args.instance:
+        ap.error("--instance is required (or set AGENTSWITCH_INSTANCE)")
+    if args.agent and (args.record or args.replay):
+        ap.error("--agent can't be combined with --record or --replay: the agent runs as a separate process "
+                 "that talks to the platform itself, so its calls are neither recorded nor replayed")
+    if args.record and git_would_track(args.record):
+        ap.error(f"--record: {args.record} is a folder git would track, and a recording holds customer "
+                 "records. Use one git ignores, e.g. reports/recordings/<instance>-<date>")
     safe_console()
 
+    started = datetime.now(report.IST)             # before the first read, so the totals add up
     try:
-        client = Client()
+        if args.replay:
+            client = ReplayClient(args.replay)
+        elif args.record:
+            client = RecordingClient(args.record)
+        else:
+            client = Client()
     except McpError as e:
+        debug.crash(e, "o2c.suite")
         platform_failure("o2c.suite", e)
 
     report_date = args.date or report.today_ist()
+    source_name = "replay" if args.replay else "record" if args.record else "live"
+    if args.record:
+        write_results(Path(args.record) / RECORDING_META,
+                      {"instance": args.instance, "date": report_date.isoformat(), "days": args.days,
+                       "recorded_at": started.isoformat(timespec="seconds"), "commit": _commit()})
     ctx = Ctx(
         client,
         args.instance,
@@ -86,9 +204,18 @@ def main():
         agent=command_agent(ap, args.agent),
         allow_writes=args.allow_writes or bool(os.environ.get("AGENTSWITCH_RUN_ID")),
     )
-    out = run_suite(ctx)
+    timings = {}
+    out = run_suite(ctx, timings=timings)
+    finished = datetime.now(started.tzinfo)
     if args.out:
         write_results(args.out, out)
+        write_results(meta_path(args.out), run_meta(client, args.instance, report_date, started, finished,
+                                                    timings, source_name, args.debug))
+    s = stats_of(client)
+    debug.step(f"platform: {s['requests']} requests in {s['seconds']:.1f} s, {s['retries']} retries "
+               f"({s['waited']:.0f} s waiting); by tool: "
+               + (", ".join(f"{k} {v}" for k, v in s["by_tool"].most_common(8)) or "none"))
+    debug.step(f"total {(finished - started).total_seconds():.1f} s")
     for r in out["tasks"]:
         print(display_text(f"{'PASS' if r['passed'] else 'FAIL'} {r['score']:.1f} {r['id']}: {r['evidence']}"))
     print(out["summary"])
