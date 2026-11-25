@@ -16,6 +16,10 @@ Exit 1 is an unexpected error: the traceback, then one plain line, `o2c: unexpec
 `AGENT_RESULT {"claim":"failed"}`. Exit 3 is a platform that can't be read. --debug also prints, on
 stderr, each retry, any request over 10 s, any blocked write, and the traceback of a platform error
 (o2c/debug.py). Seat 34's harness adds only --prompt, so --debug goes in the command seat 31 registers.
+
+`--explain ID` says why one order, invoice or payment is in or out of each section, rule by rule,
+with the report's own verdict (o2c/explain.py); add `--replay DIR` to read from a suite recording.
+It prints no ID list and no AGENT_RESULT; exit 5 means no record has that id or number.
 """
 import argparse
 import json
@@ -25,8 +29,8 @@ import traceback
 from datetime import date
 from pathlib import Path
 
-from . import debug, prompt as prompt_mod, report
-from .client import Client, McpError, platform_failure
+from . import debug, explain, prompt as prompt_mod, report
+from .client import RECORDING_FILE, Client, McpError, ReplayClient, platform_failure
 from .values import display_text
 from .output import (EXIT_INCOMPLETE, agent_result, days_option, instance_label, order_ids, order_list_gaps,
                      report_stem, safe_console, write_pair)
@@ -60,6 +64,34 @@ def write_report(rep, md, out, instance):
     return stem
 
 
+def explain_main(ap, args):
+    """--explain: never the ID list or AGENT_RESULT, so it can't be mistaken for a harness run."""
+    if args.prompt is not None or args.out or args.markdown:
+        ap.error("--explain can't be combined with --prompt, --out or --markdown")
+    if not args.explain.strip():
+        ap.error("--explain needs a record id or number")
+    recorded = {}
+    if args.replay:
+        if not (Path(args.replay) / RECORDING_FILE).is_file():
+            ap.error(f"--replay: no recording in {args.replay} ({RECORDING_FILE} missing)")
+        recorded = explain.read_recording_meta(args.replay)
+        if args.instance and recorded.get("instance") and args.instance != recorded["instance"]:
+            ap.error(f"--replay: the recording is of {recorded['instance']}, not {args.instance}")
+        if args.date is None and recorded.get("date"):
+            args.date = date.fromisoformat(recorded["date"])     # the recorded date unless told otherwise
+    try:
+        days = explain.resolve_days(args, recorded, days_option)
+    except argparse.ArgumentTypeError as e:
+        ap.error(f"O2C_DAYS: {e}")
+    try:
+        client = ReplayClient(args.replay) if args.replay else Client()
+        code = explain.run(client, args.explain.strip(), args.date or report.today_ist(), days)
+    except McpError as e:
+        debug.crash(e, "o2c --explain")
+        platform_failure("o2c", e)
+    raise SystemExit(code)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="o2c", description="Daily order-to-cash exception report (read-only)")
     ap.add_argument("--days", type=days_option,
@@ -74,9 +106,18 @@ def main(argv=None):
     ap.add_argument("--prompt", help="the \"which orders\" question: a number of days and/or order ids; no model is called")
     ap.add_argument("--debug", action="store_true",
                     help="on stderr: retries, slow requests, blocked writes and tracebacks")
+    ap.add_argument("--explain", metavar="ID",
+                    help="say why one order, invoice or payment (id or number) is in or out of each section; "
+                         "prints its values, which are customer data (o2c/explain.py)")
+    ap.add_argument("--replay", metavar="DIR",
+                    help="with --explain: read from a suite recording (o2c.suite --record) instead of the platform")
     args = ap.parse_args(argv)
     debug.ENABLED = args.debug
     safe_console()
+    if args.replay and args.explain is None:
+        ap.error("--replay works only with --explain (to replay a suite run: python3 -m o2c.suite --replay DIR)")
+    if args.explain is not None:
+        explain_main(ap, args)
     try:
         instance_label(args.instance)
     except ValueError as e:

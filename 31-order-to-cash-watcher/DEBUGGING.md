@@ -13,7 +13,7 @@ One page: a failed suite or report run, and what to do first. Run every command 
 | `python3 -m o2c` exits 4 | The report was produced, but the order list may be incomplete. Stderr says why |
 | `outcome=infrastructure; <Error>: <message>` on one task | A crash in that task. Rerun just that task with `--only <task> --debug` (section 2) and read the traceback |
 | `outcome=blocked; …` | The login can't read what the task needs. Not a failure of the report |
-| `FAIL` naming records (`missing=[…]`, `extra=[…]`, `wrong_age=[…]`, `leaked=[…]`, `changed=[…]`) | A wrong answer on those records. Rerun with `--debug` to see the expected and actual values (section 3) |
+| `FAIL` naming records (`missing=[…]`, `extra=[…]`, `wrong_age=[…]`, `leaked=[…]`, `changed=[…]`) | A wrong answer on those records. Rerun with `--debug` to see the expected and actual values, and `python3 -m o2c --explain <record>` to see which rule put it in or left it out (section 3) |
 | Task 9 fails with "harness copy" | It only creates a draft on the harness copy or with `--allow-writes`. Expected on live data |
 | Tasks 10–11 score 0.50 | They ran without `--agent`, so only the guardrails were checked |
 | Tasks 10–11 with `--agent` say `agent exit=1 claim=none` | The agent itself failed. Rerun with `--agent --debug`: the agent gets `--debug` too, and its last 40 lines are shown under `debug: <task> agent failed …` |
@@ -41,6 +41,28 @@ debug: report_read_only Payment:A edited: want {"unallocated": 50.0, …} | got 
 ```
 
 `want` is what the task worked out from the raw records; `got` is what the report said. The values are customer data, so they never go into the evidence or `results.json`, and shouldn't be pasted into a PR or a chat outside the seat.
+
+To see why the report put a named record in or left it out, explain it, live or from a recording:
+
+```
+python3 -m o2c --explain SO-2026-00042
+python3 -m o2c --explain SO-2026-00042 --replay reports/recordings/keystone-<date>
+```
+
+```
+SalesOrder SO-2026-00042 (id 1a2b…), customer …
+  read as the report reads it
+  Section 1, orders not invoiced: OUT
+    yes  submitted (docstatus 1): docstatus is 1 (submitted)
+    yes  not fully invoiced (unbilled or partially_invoiced): invoiced_status is unbilled
+    NO   more than 7 days old by order date: dated 2026-11-20, 5 days before 2026-11-25
+```
+
+- It takes an id or a number, and works for orders, invoices and payments. It stops at the first rule that fails.
+- The verdict is `report.py`'s own: its section function run on that one record, so the explanation can't disagree with the report. If the step-by-step walk ever disagrees, it prints a warning, and the report's verdict is the one shown.
+- It reads what the report reads, with the same filters, so a suite recording answers it offline, on the recorded date and days. A record the report never reads (a draft order, a supplier bill, an outgoing payment) is then looked for with no filter. A replay can only do that if the recorded run made the same read.
+- `--days` and `--date` work as for the report. It prints no ID list and no `AGENT_RESULT`. Exit 5 means no record has that id or number.
+- It prints the record's values, which are customer data, so keep the output within the seat.
 
 ## 4. Reproduce a failure offline
 
