@@ -7,6 +7,10 @@ This is the runner for seat 34 and anyone running the whole suite. `--date` defa
 harness run needs no date; `o2c.tasks_orders` and `o2c.tasks_payments` (one half each) require `--date`.
 
     python3 -m o2c.suite --instance suryodaya --date 2026-11-21 --agent --out results.json
+    python3 -m o2c.suite --instance keystone --only overdue_ageing,unapplied_payments --debug
+
+--only runs just the tasks named (ids as in NUMBERED, comma-separated), in suite order; results.json then
+lists only those. An unknown id is a usage error.
 
 Debugging (DEBUGGING.md):
 --debug prints, on stderr, a line as each task starts and ends (its time, platform calls and
@@ -143,6 +147,8 @@ def main(argv=None):
     ap.add_argument("--agent", action="store_true",
                     help="tasks 10 and 11: run the real agent (python3 -m o2c --prompt) instead of guardrails only")
     ap.add_argument("--out", help="write results JSON here (e.g. results.json)")
+    ap.add_argument("--only", type=lambda v: [x.strip() for x in v.split(",") if x.strip()],
+                    help="comma-separated task ids to run (e.g. overdue_ageing,report_read_only); default all")
     ap.add_argument("--debug", action="store_true",
                     help="on stderr: each task's start, end and time, retries, slow requests and tracebacks")
     source = ap.add_mutually_exclusive_group()
@@ -150,6 +156,11 @@ def main(argv=None):
     source.add_argument("--replay", metavar="DIR", help="run from a recording in DIR: no platform, no token")
     args = ap.parse_args(argv)
     debug.ENABLED = args.debug
+    if args.only is not None:
+        known = [t[0] for t in all_tasks()]
+        unknown = [t for t in args.only if t not in known]
+        if unknown or not args.only:
+            ap.error(f"--only: unknown task id(s): {', '.join(unknown) or '(none given)'}; known: {', '.join(known)}")
     recorded = read_recording_meta(args.replay) if args.replay else {}
     if args.replay:
         if not (Path(args.replay) / "calls.jsonl").is_file():
@@ -205,7 +216,8 @@ def main(argv=None):
         allow_writes=args.allow_writes or bool(os.environ.get("AGENTSWITCH_RUN_ID")),
     )
     timings = {}
-    out = run_suite(ctx, timings=timings)
+    selected = None if args.only is None else [t for t in all_tasks() if t[0] in args.only]
+    out = run_suite(ctx, selected, timings=timings)
     finished = datetime.now(started.tzinfo)
     if args.out:
         write_results(args.out, out)

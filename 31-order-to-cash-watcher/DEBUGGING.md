@@ -11,7 +11,7 @@ One page: a failed suite or report run, and what to do first. Run every command 
 | `python3 -m o2c` exits 1 with `o2c: unexpected error: <type>: <message>` | A crash in the report. The traceback is just above that line; rerun with `--debug` for retries and slow requests too |
 | `python3 -m o2c.drafts` exits 1 with `o2c.drafts: unexpected error: …` | A crash in the drafts command. If it says "Saved N of M drafts before this", check the mailbox before running `--create` again: the draft in progress may have been created |
 | `python3 -m o2c` exits 4 | The report was produced, but the order list may be incomplete. Stderr says why |
-| `outcome=infrastructure; <Error>: <message>` on one task | A crash in that task. Rerun the suite for that task with `--debug` (section 2) and read the traceback |
+| `outcome=infrastructure; <Error>: <message>` on one task | A crash in that task. Rerun just that task with `--only <task> --debug` (section 2) and read the traceback |
 | `outcome=blocked; …` | The login can't read what the task needs. Not a failure of the report |
 | `FAIL` naming records (`missing=[…]`, `extra=[…]`, `wrong_age=[…]`, `leaked=[…]`, `changed=[…]`) | A wrong answer on those records. Rerun with `--debug` to see the expected and actual values (section 3) |
 | Task 9 fails with "harness copy" | It only creates a draft on the harness copy or with `--allow-writes`. Expected on live data |
@@ -23,12 +23,13 @@ One page: a failed suite or report run, and what to do first. Run every command 
 ## 2. Rerun with `--debug`
 
 ```
-python3 -m o2c.suite --instance keystone --debug
+python3 -m o2c.suite --instance keystone --only overdue_ageing --debug    # one task, in seconds
+python3 -m o2c.suite --instance keystone --debug                          # the whole suite
 python3 -m o2c --instance keystone --debug
 python3 -m o2c.drafts --instance keystone --out reports/ --debug
 ```
 
-`--debug` writes to stderr only: a line as each task starts and ends (its time, platform calls and retries), each retry, any request over 10 s, any blocked write, the full traceback of a crash (labelled with the task), and a closing platform summary. The `PASS`/`FAIL` lines, `results.json` and the report are the same with or without it. Seat 34's harness adds only `--prompt` to the command we register, so `--debug` has to be in that command to show in a harness run.
+`--only` takes task ids, comma-separated (the part after `<instance>:` in a result, e.g. `overdue_ageing`); an unknown id lists the valid ones. It works with `--record` and `--replay` too. `--debug` writes to stderr only: a line as each task starts and ends (its time, platform calls and retries), each retry, any request over 10 s, any blocked write, the full traceback of a crash (labelled with the task), and a closing platform summary. The `PASS`/`FAIL` lines, `results.json` and the report are the same with or without it. Seat 34's harness adds only `--prompt` to the command we register, so `--debug` has to be in that command to show in a harness run.
 
 ## 3. Read a wrong answer
 

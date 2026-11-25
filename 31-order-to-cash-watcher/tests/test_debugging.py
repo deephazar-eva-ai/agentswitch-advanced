@@ -448,5 +448,46 @@ class DraftsCommand(Base):
             self.assertEqual("Traceback (most recent call last)" in err, shown, flags)
 
 
+
+# ---------------------------------------------------------------- --only (26 Nov plan, item 1)
+
+class Only(Base):
+    def run_main(self, *args):
+        seen = {}
+
+        def fake_run_suite(ctx, tasks=None, timings=None):
+            seen["tasks"] = None if tasks is None else [t[0] for t in tasks]
+            return {"tasks": [], "summary": "keystone: 0/0 tasks passed"}
+        err = io.StringIO()
+        with mock.patch.object(suite, "run_suite", fake_run_suite), mock.patch.object(suite, "Client", lambda: Scripted()), \
+                mock.patch.dict("os.environ", {}, clear=True), redirect_stdout(io.StringIO()), redirect_stderr(err):
+            try:
+                suite.main(["--instance", "keystone", "--date", "2026-11-30", *args])
+            except SystemExit as e:
+                seen["exit"] = e.code
+        seen["err"] = err.getvalue()
+        return seen
+
+    def test_only_runs_the_named_tasks_in_suite_order(self):
+        seen = self.run_main("--only", "report_read_only, overdue_ageing")
+        self.assertEqual(seen["tasks"], ["overdue_ageing", "report_read_only"])
+
+    def test_without_only_every_task_runs(self):
+        self.assertIsNone(self.run_main()["tasks"])
+
+    def test_an_unknown_id_is_a_usage_error(self):
+        seen = self.run_main("--only", "overdue_ageing,nope")
+        self.assertEqual(seen["exit"], 2)
+        self.assertIn("unknown task id(s): nope", seen["err"])
+        self.assertIn("overdue_ageing", seen["err"])                      # lists the known ids
+        self.assertEqual(self.run_main("--only", ",")["exit"], 2)
+
+    def test_only_with_replay(self):
+        Recording(self.tmp / "rec").tool_names()
+        (self.tmp / "rec" / "recording.json").write_text(json.dumps({"instance": "keystone", "date": "2026-11-24"}))
+        seen = self.run_main("--replay", str(self.tmp / "rec"), "--only", "overdue_invoices")
+        self.assertEqual(seen["tasks"], ["overdue_invoices"])
+
+
 if __name__ == "__main__":
     unittest.main()
