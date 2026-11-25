@@ -17,7 +17,7 @@ import json
 import os
 from datetime import date
 
-from . import drafts, report
+from . import debug, drafts, report
 from .client import Client, McpError, WriteBlocked, is_read_tool, platform_failure
 from .output import days_option, safe_console
 from .tasks_payments import Ctx, _agent_failed, _agent_mode, _blocked, _diff, _ok, _our_login, command_agent, run
@@ -81,6 +81,13 @@ def uninvoiced_count(ctx):
     duplicates = len(got) != len(sec["rows"])
     passed = (sec["status"] == "ok" and set(got) == set(expected) and not wrong_age and not duplicates
               and got_issues == unusable)
+    if not passed:          # --debug: the values behind the first few problems (stderr only)
+        for i in wrong_age[:3]:
+            debug.diff(i, "age_days", expected[i], got[i])
+        for i in sorted(set(expected) - set(got), key=str)[:3]:
+            debug.diff(i, "missing order", {"age_days": expected[i]}, None)
+        for i in sorted(set(got) - set(expected), key=str)[:3]:
+            debug.diff(i, "unexpected order", None, {"age_days": got[i]})
     return _ok(passed, f"verifier=sales_order_recount; days={ctx.days}; expected={len(expected)} got={len(got)} "
                        f"({_diff(set(expected), set(got))}); wrong_age={wrong_age[:3]}; duplicate_rows={duplicates}; "
                        f"date_issues expected={len(unusable)} got={len(got_issues)}; orders_read={len(raw)}")

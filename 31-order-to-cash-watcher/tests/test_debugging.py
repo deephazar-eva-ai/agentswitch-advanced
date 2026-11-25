@@ -274,6 +274,76 @@ class ReportCommand(Base):
 
 
 
+# ---------------------------------------------------------------- want/got values (tasks 1, 5, 6, 7, 12)
+
+from tests import test_tasks_orders as TO, test_tasks_payments as TP      # noqa: E402
+from o2c import tasks_orders                                               # noqa: E402
+
+
+class WantGot(Base):
+    def err_of(self, fn, *a):
+        debug.ENABLED, err = True, io.StringIO()
+        with redirect_stderr(err):
+            res = fn(*a)
+        return res, err.getvalue()
+
+    def test_quiet_without_debug(self):
+        c = TP.ctx({"Invoice": TP.INVOICES}, tools={"Invoice.list"})
+        c.report()["sections"]["invoices_overdue"]["rows"][0]["days_overdue"] += 1
+        err = io.StringIO()
+        with redirect_stderr(err):
+            self.assertFalse(tasks_payments.overdue_ageing(c)["passed"])
+        self.assertEqual(err.getvalue(), "")
+
+    def test_task1_wrong_age(self):
+        c = TO.ctx()
+        c.report()["sections"]["orders_not_invoiced"]["rows"][0]["age_days"] += 1
+        res, err = self.err_of(tasks_orders.uninvoiced_count, c)
+        self.assertFalse(res["passed"])
+        self.assertRegex(err, r"debug: A age_days: want (\d+) \| got (\d+)")
+        self.assertNotIn("want", res["evidence"])
+
+    def test_task5_a_leaked_bill(self):
+        bill = dict(TP.inv("B1", "2026-10-01", 50.0), direction="payable")
+        c = TP.ctx({"Invoice": TP.INVOICES + [bill]}, tools={"Invoice.list"})
+        c.report()["sections"]["invoices_overdue"]["rows"].append({"id": "B1", "number": "B1", "days_overdue": 45})
+        res, err = self.err_of(tasks_payments.overdue_invoices, c)
+        self.assertFalse(res["passed"])
+        self.assertIn('debug: B1 unexpected overdue invoice: want {"due_date": "2026-10-01", "outstanding": 50.0', err)
+        self.assertIn('| got {"balance": null, "days_overdue": 45, "due_date": null}', err)
+
+    def test_task6_wrong_days(self):
+        c = TP.ctx({"Invoice": TP.INVOICES}, tools={"Invoice.list"})
+        row = c.report()["sections"]["invoices_overdue"]["rows"][0]
+        row["days_overdue"] += 1
+        res, err = self.err_of(tasks_payments.overdue_ageing, c)
+        self.assertFalse(res["passed"])
+        self.assertRegex(err, r'debug: \S+ days_overdue: want \{"days_overdue": (\d+), "due_date": "[0-9-]+"\} \| got (\d+)')
+
+    def test_task7_summary_table(self):
+        c = TP.ctx()
+        c.report()["sections"]["payments_not_applied"]["summary"]["by_age"][0]["unallocated"] += 1.0
+        res, err = self.err_of(tasks_payments.unapplied_payments, c)
+        self.assertFalse(res["passed"])
+        self.assertIn("debug: by_age summary table: want ", err)
+
+
+    def test_task12_shows_the_fields_our_login_changed(self):
+        from tests import test_task12_read_only as T12
+        from o2c import report
+        fake, real = T12.platform(), report.build
+
+        def build(client, **kw):
+            fake.data["Payment"][0].update(unallocated=0.0, updated_by=T12.ME)
+            return real(client, **kw)
+        with mock.patch.object(report, "build", build):
+            res, err = self.err_of(tasks_payments.report_read_only, tasks_payments.Ctx(fake, "x", T12.D))
+        self.assertFalse(res["passed"])
+        self.assertIn('debug: Payment:A edited: want {"unallocated": 50.0, "updated_by": "U-SEED"} '
+                      '| got {"unallocated": 0.0, "updated_by": "U-31"}', err)
+
+
+
 # ---------------------------------------------------------------- gap 2: the agent's output with --debug
 
 import sys                                                                  # noqa: E402
