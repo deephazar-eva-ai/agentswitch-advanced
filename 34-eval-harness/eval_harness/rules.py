@@ -48,14 +48,23 @@ def _day(value: object) -> date | None:
         return None
 
 
+def _name(value: object) -> str:
+    return " ".join(str(value or "").split()).casefold()
+
+
 def orders_not_invoiced(rows: list[dict[str, Any]], as_of: datetime, params: dict[str, Any]) -> set[str]:
     """Seat 31's rule: submitted orders, not (fully) invoiced, dated more than `days` days (default 7)
-    before the report date. The report date is the India date of `as_of`. One pass: O(n) in rows."""
+    before the report date. The report date is the India date of `as_of`. With `customer`, only that
+    customer's orders, matched by name (case and spaces ignored), since one task runs on both systems and the
+    customer's id differs between them. One pass: O(n) in rows."""
     days = int(params.get("days", 7))
+    customer = _name(params.get("customer"))
     report_date = as_of.astimezone(IST).date()
     picked: set[str] = set()
     for row in rows:
         if row.get("docstatus") != SUBMITTED or row.get("invoiced_status") not in NOT_INVOICED:
+            continue
+        if customer and _name(row.get("_party_id_display")) != customer:
             continue
         day = _day(row.get("date"))
         if day is not None and (report_date - day).days > days:
@@ -66,7 +75,7 @@ def orders_not_invoiced(rows: list[dict[str, Any]], as_of: datetime, params: dic
 RULES: dict[str, Rule] = {
     "orders_not_invoiced": Rule(
         entity="SalesOrder",
-        fields=("id", "docstatus", "invoiced_status", "date"),
+        fields=("id", "docstatus", "invoiced_status", "date", "_party_id_display"),
         select=orders_not_invoiced,
     ),
 }

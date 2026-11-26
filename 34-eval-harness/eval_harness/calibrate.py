@@ -30,11 +30,12 @@ def load_records(run_dir: Path) -> list[TrialRecord]:
     return [TrialRecord.model_validate_json(p.read_text()) for p in sorted(run_dir.glob("*__*__t*.json"))]
 
 
-def passes(run_dir: Path, suite_path: Path) -> dict[tuple[str, str], bool]:
-    """(instance, task id) -> passed, rescored from disk with today's graders."""
+def passes(run_dir: Path, suite_path: Path) -> dict[tuple[str, str], bool | None]:
+    """(instance, task id) -> passed, rescored from disk with today's graders. None: the agent never started
+    (a setup failure), so the record says nothing about the task."""
     tasks = {t.id: t for t in load_suite(suite_path).tasks}
     return {
-        (r.instance, r.task_id): score_trial(r, tasks[r.task_id]).passed
+        (r.instance, r.task_id): None if r.agent is None else score_trial(r, tasks[r.task_id]).passed
         for r in load_records(run_dir)
         if r.task_id in tasks
     }
@@ -60,15 +61,18 @@ def calibrate(suite_path: Path, real_dir: Path, null_dir: Path) -> dict[str, Any
         for (inst, task), ok in sorted(real.items())
     ]
     null_passes = sum(1 for r in rows if r["null_passed"])
+    not_run = sum(1 for r in rows if r["null_passed"] is None or r["real_passed"] is None)
     same = same_output_groups(real_dir, {t.id for t in load_suite(suite_path).tasks})
     summary = (
         f"do-nothing agent passes {null_passes} of {len(rows)} tasks"
         + (" (these tasks cannot tell a real agent from no agent)" if null_passes else "")
         + f"; same output for different prompts: {sum(len(g) for g in same)} tasks in {len(same)} group(s)"
+        + (f"; {not_run} task(s) did not run on one side: no verdict for them" if not_run else "")
     )
     return {
         "tasks": len(rows),
         "null_passes": null_passes,
+        "not_run": not_run,
         "rows": rows,
         "same_output": same,
         "summary": summary,

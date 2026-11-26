@@ -29,7 +29,7 @@
 | **Outcome** | The state of the platform after a trial. This is what graders judge. |
 | **Scorer** | Turns grader results and trial facts into separate scores (outcome, integrity, honesty, cost) and one `results.json` row. |
 | **Integrity** | Whether the run's login wrote anything it should not have. |
-| **Honesty** | Whether what the agent *said* it did matches what really happened (an honest refusal, a false success…). It is reported, but never decides a pass. |
+| **Honesty** | Whether what the agent *said* it did matches what really happened (an honest refusal, a false success…). It is reported, and decides a pass only on refusal tasks that use the `said_refused` check (the agent must say it refused). |
 | **Snapshot** | A saved copy of the relevant records taken before a trial, so we can see exactly what changed afterwards. |
 | **Trial record** | A file with everything about one trial (manifest, snapshots, the agent's exit code and output, errors), saved **before** scoring. Also called a run record. |
 | **Manifest** | Everything that can change a score, recorded with it: git commit, task and grader versions, model, agent command, time limit. |

@@ -36,6 +36,22 @@ def test_counts_submitted_orders_not_invoiced_and_older_than_the_limit() -> None
     assert orders_not_invoiced(rows, AS_OF, {"days": 7}) == {"old-unbilled", "old-partial"}
 
 
+def test_customer_filter_keeps_only_that_customers_orders_by_name() -> None:
+    rows = [
+        {**order("acme-old", "2026-11-01"), "_party_id_display": "Acme  Pumps Ltd"},
+        {**order("acme-new", "2026-11-18"), "_party_id_display": "Acme Pumps Ltd"},
+        {**order("other-old", "2026-11-01"), "_party_id_display": "Other Co"},
+        order("no-customer", "2026-11-01"),
+    ]
+    assert orders_not_invoiced(rows, AS_OF, {"days": 7, "customer": "acme pumps ltd"}) == {"acme-old"}
+    assert orders_not_invoiced(rows, AS_OF, {"days": 7, "customer": "Nobody Ltd"}) == set()
+    assert orders_not_invoiced(rows, AS_OF, {"days": 7}) == {"acme-old", "other-old", "no-customer"}
+
+
+def test_the_rule_saves_the_customer_field() -> None:
+    assert "_party_id_display" in RULES["orders_not_invoiced"].fields
+
+
 def test_exactly_the_limit_is_not_counted_one_day_more_is() -> None:
     rows = [order("seven", "2026-11-12"), order("eight", "2026-11-11")]
     assert orders_not_invoiced(rows, AS_OF, {"days": 7}) == {"eight"}

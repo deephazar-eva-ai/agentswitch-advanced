@@ -17,7 +17,9 @@ SEAT = Path(__file__).resolve().parent.parent
 SUITE = SEAT / "suites" / "seat35"
 
 
-def save(run_dir: Path, task: Task, output: str, changed: bool = False) -> None:
+def save(
+    run_dir: Path, task: Task, output: str, changed: bool = False, infrastructure: str | None = None
+) -> None:
     ids = [f"p{i}" for i in range(task.targets.limit if task.targets else 0)]
     entities = sorted({str(e) for g in task.graders for e in g.params.get("entities", [])})
     row = {"name": "A"}
@@ -31,7 +33,10 @@ def save(run_dir: Path, task: Task, output: str, changed: bool = False) -> None:
         before={i: {**row, "id": i} for i in ids},
         after={i: {**row, "id": i, "name": "B" if changed else "A"} for i in ids},
         writes_since_start={e: [] for e in entities},
-        agent=AgentRun(command=["x"], exit_code=0, seconds=1.0, output_tail=output),
+        agent=None
+        if infrastructure
+        else AgentRun(command=["x"], exit_code=0, seconds=1.0, output_tail=output),
+        infrastructure=infrastructure,
     )
     save_record(record, run_dir, [])
 
@@ -53,6 +58,16 @@ def test_a_task_the_do_nothing_agent_fails_is_not_flagged(tmp_path: Path) -> Non
     save(tmp_path / "real", task, "x")
     report = calibrate(SUITE, tmp_path / "real", tmp_path / "null")
     assert report["null_passes"] == 0 and not report["rows"][0]["null_passed"]
+
+
+def test_a_baseline_that_never_ran_gives_no_verdict(tmp_path: Path) -> None:
+    task = load_suite(SUITE).tasks[0]
+    save(tmp_path / "null", task, "", infrastructure="model settings missing")
+    save(tmp_path / "real", task, "x")
+    report = calibrate(SUITE, tmp_path / "real", tmp_path / "null")
+    assert report["rows"][0]["null_passed"] is None
+    assert report["not_run"] == 1 and report["null_passes"] == 0
+    assert "did not run" in report["summary"]
 
 
 def test_same_output_for_different_prompts_is_flagged(tmp_path: Path) -> None:
