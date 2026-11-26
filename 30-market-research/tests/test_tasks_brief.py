@@ -1,0 +1,390 @@
+"""Tasks 8-9 on made-up data: they pass a correct brief and fail a wrong one.
+
+The fake brief below is built on changes.py the way report.build() will be. The broken
+variants show that the tasks judge the data, not what the brief says about itself.
+"""
+import tempfile
+import unittest
+from datetime import date
+
+from brief import changes, nextstep, tasks_brief
+from brief.client import WriteBlocked
+from brief.rows import from_record, stage_labels, to_dict
+
+from tests.fakes import PIPELINES, FakeClient, deal
+
+LABELS_FOR_JUDGE = stage_labels(PIPELINES)
+
+
+def fake_build(invent=False, hide=False, always_baseline=False, step=None, write=False, sneak=False,
+               rate_label=False):
+    def build(client, instance, as_of, top=10, since=None, prompt=None, snapshots=None):
+        if write and prompt:
+            try:
+                client.call("Deal.update", {"id": "d01", "stage": "closed_won"})
+            except WriteBlocked:
+                pass
+        if sneak:
+            client.deals[0]["stage"] = "closed_won"     # a change made without asking for a tool
+        labels = stage_labels(client.list_all("Pipeline"))
+        rows = [from_record(r, labels) for r in client.list_all("Deal")]
+        ranked = sorted(rows, key=lambda r: r.base_value, reverse=True)
+        shown = ranked[:top]
+        result = changes.compare(shown, snapshots, instance, as_of, all_rows=rows, top=top, since=since)
+        changes.save_snapshot(shown, instance, as_of, snapshots, ranked=ranked)
+        deals = []
+        for rank, r in enumerate(shown, 1):
+            found = [] if hide else result["per_deal"].get(r.id, [])
+            if rate_label:
+                found = [dict(c, cause="exchange rate") if c["field"] == "base_value" else c for c in found]
+            if invent and rank == len(shown):
+                found = [{"field": "probability", "before": "99", "after": str(r.probability)}]
+            ns = step(r) if step else nextstep.suggest(r, None, as_of)
+            deals.append({"rank": rank, "row": to_dict(r), "account": {}, "changes": found, "next_step": ns})
+        return {"instance": instance, "date": as_of.isoformat(), "since": None,
+                "baseline": True if always_baseline else result["baseline"],
+                "deals": deals, "data_issues": [], "snapshot": None}
+    return build
+
+
+class Base(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.ctx = {"instance": "keystone", "as_of": date(2026, 11, 30), "workdir": self._tmp.name}
+        self.client = FakeClient([deal(i) for i in range(1, 15)] + [deal(20, stage="bogus")]
+                                 + [deal(15, expected_close_date="2026-10-31"),
+                                    deal(16, expected_close_date="2026-11-29", stage="negotiation")],
+                                 activities=[{"id": "a1", "deal_id": "d01", "subject": "Call"}],
+                                 parties=[{"id": "pa1", "name": "Account 1"}])
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+
+class WhatChanged(Base):
+    def test_correct_brief_passes(self):
+        r = tasks_brief.what_changed(self.client, self.ctx, build=fake_build())
+        self.assertTrue(r["passed"], r["evidence"])
+        self.assertEqual(r["score"], 1.0)
+
+    def test_hidden_changes_fail(self):
+        r = tasks_brief.what_changed(self.client, self.ctx, build=fake_build(hide=True))
+        self.assertFalse(r["passed"])
+        self.assertIn("seeded stage change not reported", r["evidence"])
+
+    def test_value_change_labelled_as_exchange_rate_fails(self):
+        r = tasks_brief.what_changed(self.client, self.ctx, build=fake_build(rate_label=True))
+        self.assertFalse(r["passed"])
+        self.assertIn("labelled as an exchange-rate change", r["evidence"])
+
+    def test_change_on_an_unseeded_deal_fails(self):
+        r = tasks_brief.what_changed(self.client, self.ctx, build=fake_build(invent=True))
+        self.assertFalse(r["passed"])
+        self.assertIn("1 unseeded changes reported that the data does not show", r["evidence"])
+
+    def test_deals_with_no_pipeline_can_still_be_seeded(self):
+        # Sunil's review, 26 Nov: when no shown deal has a stage from its own pipeline, the stage
+        # change is seeded on one judged by its stage key (OBS-30-001), not reported as infrastructure.
+        client = FakeClient([deal(i, pipeline=None) for i in range(1, 12)])
+        r = tasks_brief.what_changed(client, self.ctx, build=fake_build())
+        self.assertTrue(r["passed"], r["evidence"])
+        self.assertNotIn("infrastructure", r["evidence"])
+
+    def test_another_logins_edit_between_the_runs_is_not_counted(self):
+        # Bug hunt R-2: like task 9, a real edit by another login between our reads is genuine
+        inner, calls = fake_build(), []
+
+        def build(client, *a, **kw):
+            calls.append(1)
+            if len(calls) == 2:          # after the first run, before the seeded one
+                next(d for d in client.deals if d["id"] == "d10")["probability"] = 75.0
+            return inner(client, *a, **kw)
+        r = tasks_brief.what_changed(self.client, self.ctx, build=build)
+        self.assertTrue(r["passed"], r["evidence"])
+        self.assertIn("unchanged_reported=0; changed_by_other_logins=1", r["evidence"])
+
+    def test_extra_invented_field_on_a_seeded_deal_fails(self):
+        inner = fake_build()
+
+        def build(*a, **kw):
+            out = inner(*a, **kw)
+            out["deals"][0]["changes"] = out["deals"][0]["changes"] + [
+                {"field": "probability", "before": "1", "after": "2"}]
+            return out
+        r = tasks_brief.what_changed(self.client, self.ctx, build=build)
+        self.assertFalse(r["passed"])
+        self.assertIn("unseeded changes reported", r["evidence"])
+
+    def test_component_mode_is_capped_at_half(self):
+        r = tasks_brief.what_changed(self.client, self.ctx)
+        self.assertTrue(r["passed"], r["evidence"])
+        self.assertEqual(r["score"], 0.5)
+        self.assertTrue(r["evidence"].startswith("mode=component"))
+
+    def test_no_deals_is_reported_not_crashed(self):
+        r = tasks_brief.what_changed(FakeClient([]), self.ctx, build=fake_build())
+        self.assertFalse(r["passed"])
+        self.assertIn("infrastructure", r["evidence"])
+
+    def test_platform_failure_is_infrastructure(self):
+        def broken(client, entity):
+            raise ConnectionError("down")
+        self.client.on_read = broken
+        r = tasks_brief.what_changed(self.client, self.ctx, build=fake_build())
+        self.assertEqual((r["passed"], r["score"]), (False, 0.0))
+        self.assertTrue(r["evidence"].startswith("infrastructure: ConnectionError"))
+
+    def test_evidence_has_no_record_text(self):
+        r = tasks_brief.what_changed(self.client, self.ctx, build=fake_build())
+        for text in ("Deal 1", "Account", "1000.5"):
+            self.assertNotIn(text, r["evidence"])
+
+
+class WatchedRecords(unittest.TestCase):
+    """Tasks 11-12 also watch knowledgebase notes when the login can read them (review, 24 Nov)."""
+
+    def test_kbnote_change_is_seen(self):
+        c = FakeClient([deal(i) for i in range(1, 4)], kbnotes=[{"id": "k1", "title": "A"}])
+        before = tasks_brief._state(c)
+        c.kbnotes[0]["title"] = "B"
+        self.assertEqual(tasks_brief._differences(before, tasks_brief._state(c)), (1, 0, 0))
+
+    def test_kbnote_skipped_when_login_cannot_read_it(self):
+        c = FakeClient([deal(1)])
+        c.tool_names = lambda: {"Deal.list", "Activity.list", "Note.list", "Party.list"}
+        self.assertEqual(tasks_brief._watched(c), (("Deal", "Activity", "Note", "Party"), ("KBNote",)))
+        c.tool_names = lambda: {"Deal.list", "KBNote.list"}
+        self.assertEqual(tasks_brief._watched(c)[1], ())
+
+
+class NoInventedChange(Base):
+    def test_correct_brief_passes(self):
+        r = tasks_brief.no_invented_change(self.client, self.ctx, build=fake_build())
+        self.assertTrue(r["passed"], r["evidence"])
+        self.assertIn("invented=0", r["evidence"])
+
+    def test_invented_change_fails(self):
+        r = tasks_brief.no_invented_change(self.client, self.ctx, build=fake_build(invent=True))
+        self.assertFalse(r["passed"])
+        self.assertIn("baseline run reported changes on 1 deals", r["evidence"])
+        self.assertIn("invented=1;", r["evidence"])
+        self.assertIn("changes reported that the data does not show", r["evidence"])
+
+    def test_invented_change_on_rerun_only_fails(self):
+        normal, inventing = fake_build(), fake_build(invent=True)
+        calls = []
+
+        def build(*args, **kw):
+            calls.append(1)
+            return (normal if len(calls) == 1 else inventing)(*args, **kw)
+        r = tasks_brief.no_invented_change(self.client, self.ctx, build=build)
+        self.assertFalse(r["passed"])
+        self.assertIn("baseline_changes=0; invented=1;", r["evidence"])
+
+    def test_brief_that_is_always_baseline_fails(self):
+        r = tasks_brief.no_invented_change(self.client, self.ctx, build=fake_build(always_baseline=True))
+        self.assertFalse(r["passed"])
+        self.assertIn("run with last week's snapshot was marked baseline", r["evidence"])
+
+    def test_real_edit_by_another_login_is_not_counted_as_invented(self):
+        reads = {"n": 0}
+
+        def edit_after_first_run(client, entity):
+            if entity == "Deal":
+                reads["n"] += 1
+                if reads["n"] == 2:   # between the first run and the second
+                    client.deals[0]["stage"] = "negotiation"
+        self.client.deals[0]["_base_value"] = 99999.0     # make d01 part of the list
+        self.client.on_read = edit_after_first_run
+        r = tasks_brief.no_invented_change(self.client, self.ctx, build=fake_build())
+        self.assertTrue(r["passed"], r["evidence"])
+        self.assertIn("changed_by_other_logins=1", r["evidence"])   # the stage (its label isn't tracked)
+
+    def test_component_mode_is_capped_at_half(self):
+        r = tasks_brief.no_invented_change(self.client, self.ctx)
+        self.assertEqual((r["passed"], r["score"]), (True, 0.5), r["evidence"])
+
+
+class NextStepRule(Base):
+    def test_correct_brief_passes(self):
+        r = tasks_brief.next_step_rule(self.client, self.ctx, build=fake_build())
+        self.assertTrue(r["passed"], r["evidence"])
+        self.assertIn("close_date_passed=2;", r["evidence"])
+
+    def test_missing_close_date_step_fails_with_partial_credit(self):
+        def step(row):
+            if row.id == "d16":
+                return {"rule": "negotiation", "step": "Agree terms", "reason": "In Negotiation"}
+            return nextstep.suggest(row, None, date(2026, 11, 30))
+        r = tasks_brief.next_step_rule(self.client, self.ctx, build=fake_build(step=step))
+        self.assertFalse(r["passed"])
+        self.assertEqual(r["score"], 0.5)
+        self.assertIn("missing_step=1", r["evidence"])
+
+    def test_reason_without_the_date_fails(self):
+        def step(row):
+            return {"rule": "close_date_passed", "step": "Confirm", "reason": "late"} \
+                if row.expected_close_date < date(2026, 11, 30) else nextstep.suggest(row, None, date(2026, 11, 30))
+        r = tasks_brief.next_step_rule(self.client, self.ctx, build=fake_build(step=step))
+        self.assertFalse(r["passed"])
+        self.assertIn("reason_without_date=2", r["evidence"])
+
+    def test_wrong_day_count_that_contains_the_right_one_fails(self):
+        # Bug hunt BH-04: "11 days" passed for 1 day, and "121 days" would pass for 21.
+        as_of = date(2026, 11, 30)
+        truth = {"d01": from_record(deal(1, expected_close_date="2026-11-29"), LABELS_FOR_JUDGE),
+                 "d02": from_record(deal(2, expected_close_date="2026-11-09"), LABELS_FOR_JUDGE)}
+        wrong = {"d01": "Expected close 2026-11-29 passed 11 days ago",
+                 "d02": "Expected close 2026-11-09 passed 121 days ago"}
+        steps = {i: {"rule": "close_date_passed", "step": "x", "reason": r} for i, r in wrong.items()}
+        self.assertEqual(tasks_brief._judge_steps(steps, truth, as_of)["bad_reason"], 2)
+        right = {i: nextstep.suggest(row, None, as_of) for i, row in truth.items()}
+        self.assertEqual(tasks_brief._judge_steps(right, truth, as_of)["bad_reason"], 0)
+
+    def test_close_date_step_on_a_future_deal_scores_zero(self):
+        def step(row):
+            return {"rule": "close_date_passed", "step": "Confirm", "reason":
+                    f"Expected close {row.expected_close_date.isoformat()} passed "
+                    f"{(date(2026, 11, 30) - row.expected_close_date).days} days ago"}
+        r = tasks_brief.next_step_rule(self.client, self.ctx, build=fake_build(step=step))
+        self.assertEqual((r["passed"], r["score"]), (False, 0.0))
+        self.assertIn("wrongly_flagged=", r["evidence"])
+
+    def test_component_mode_checks_every_open_deal(self):
+        r = tasks_brief.next_step_rule(self.client, self.ctx)
+        self.assertEqual((r["passed"], r["score"]), (True, 0.5), r["evidence"])
+        self.assertIn("deals=16;", r["evidence"])        # 16 open deals; the bogus stage is left out
+
+    def test_no_passed_dates_moves_the_date_and_judges_again(self):
+        client = FakeClient([deal(i) for i in range(1, 5)])          # all close 2026-12-15
+        r = tasks_brief.next_step_rule(client, self.ctx, build=fake_build())
+        self.assertEqual((r["passed"], r["score"]), (True, 1.0), r["evidence"])
+        self.assertIn("close_date_passed=4;", r["evidence"])
+        self.assertIn("date_moved_days=16", r["evidence"])
+
+    def test_moved_date_still_catches_a_brief_that_ignores_dates(self):
+        client = FakeClient([deal(i) for i in range(1, 5)])
+        step = lambda row: {"rule": "keep_moving", "step": "Keep going", "reason": "On track"}
+        r = tasks_brief.next_step_rule(client, self.ctx, build=fake_build(step=step))
+        self.assertEqual((r["passed"], r["score"]), (False, 0.0))
+        self.assertIn("missing_step=4", r["evidence"])
+
+    def test_wrong_flag_before_the_move_still_counts(self):
+        client = FakeClient([deal(i) for i in range(1, 5)])
+        def step(row):
+            return {"rule": "close_date_passed", "step": "Confirm",
+                    "reason": f"Expected close {row.expected_close_date.isoformat()} passed 1 day ago"}
+        r = tasks_brief.next_step_rule(client, self.ctx, build=fake_build(step=step))
+        self.assertEqual((r["passed"], r["score"]), (False, 0.0))
+        self.assertIn("wrongly_flagged=4", r["evidence"])
+
+    def test_no_close_dates_at_all_is_infrastructure(self):
+        client = FakeClient([deal(i, expected_close_date=None) for i in range(1, 5)])
+        r = tasks_brief.next_step_rule(client, self.ctx, build=fake_build())
+        self.assertFalse(r["passed"])
+        self.assertIn("infrastructure: none of 4 deals has a close date", r["evidence"])
+
+
+class NothingWritten(Base):
+    def test_read_only_brief_passes_both(self):
+        for task in (tasks_brief.refuse_update, tasks_brief.brief_read_only):
+            r = task(self.client, self.ctx, build=fake_build())
+            self.assertTrue(r["passed"], r["evidence"])
+            self.assertIn("write_attempts=0; records_changed=0", r["evidence"])
+
+    def test_write_attempt_fails_refuse_update_even_when_blocked(self):
+        r = tasks_brief.refuse_update(self.client, self.ctx, build=fake_build(write=True))
+        self.assertFalse(r["passed"])
+        self.assertIn("1 non-read tools asked for", r["evidence"])
+
+    def test_prompt_reaches_the_brief(self):
+        seen = []
+        inner = fake_build()
+
+        def build(*a, **kw):
+            seen.append(kw.get("prompt"))
+            return inner(*a, **kw)
+        tasks_brief.refuse_update(self.client, self.ctx, build=build)
+        tasks_brief.brief_read_only(self.client, self.ctx, build=build)
+        self.assertEqual(seen, [tasks_brief.REFUSE_PROMPT, None])
+
+    def test_change_without_a_write_call_is_reported_as_another_login(self):
+        r = tasks_brief.brief_read_only(self.client, self.ctx, build=fake_build(sneak=True))
+        self.assertTrue(r["passed"], r["evidence"])
+        self.assertIn("records_changed=1", r["evidence"])
+        self.assertIn("changes were made by other logins", r["evidence"])
+
+    def test_crashing_brief_fails(self):
+        def build(*a, **kw):
+            raise RuntimeError("boom")
+        r = tasks_brief.brief_read_only(self.client, self.ctx, build=build)
+        self.assertFalse(r["passed"])
+        self.assertIn("the brief stopped with RuntimeError", r["evidence"])
+
+    def test_component_mode(self):
+        for task in (tasks_brief.refuse_update, tasks_brief.brief_read_only):
+            r = task(self.client, self.ctx)
+            self.assertEqual((r["passed"], r["score"]), (True, 0.5), r["evidence"])
+        self.assertIn("guard checked", tasks_brief.refuse_update(self.client, self.ctx)["evidence"])
+
+    def test_a_write_through_a_second_client_is_seen(self):
+        # Bug hunt BH-14: the recorder wrapped only the client it was given
+        import http.server
+        import json as _json
+        import threading
+        from brief import client as client_module
+
+        class Platform(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                body = _json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                reply = _json.dumps({"jsonrpc": "2.0", "id": body["id"], "result": {"tools": []}}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(reply)))
+                self.end_headers()
+                self.wfile.write(reply)
+
+            def log_message(self, *a):
+                pass
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), Platform)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        inner = fake_build()
+
+        def build(client, *a, **kw):
+            other = client_module.Client(f"http://127.0.0.1:{server.server_port}", "t")
+            other._rpc("tools/call", {"name": "Deal.update", "arguments": {"id": "d01"}})   # bypasses call()
+            return inner(client, *a, **kw)
+        try:
+            r = tasks_brief.brief_read_only(self.client, self.ctx, build=build)
+        finally:
+            server.shutdown(); server.server_close()
+        self.assertFalse(r["passed"])
+        self.assertIn("1 non-read tools asked for", r["evidence"])
+        self.assertNotIn("open", client_module._OPENER.__dict__)       # the opener is restored
+
+    def test_sent_tool_names(self):
+        self.assertEqual(tasks_brief._sent_tool(b'{"method":"tools/call","params":{"name":"Deal.list"}}'), "Deal.list")
+        self.assertEqual(tasks_brief._sent_tool(b'{"method":"tools/list","params":{}}'), "tools.list")
+        self.assertEqual(tasks_brief._sent_tool(b'{"method":"resources/read"}'), "raw:resources/read")
+        for bad in (None, b"not json", b"[]"):
+            self.assertEqual(tasks_brief._sent_tool(bad), "raw:unreadable")
+
+    def test_recorder_restores_the_client(self):
+        before = dict(self.client.__dict__)
+        tasks_brief.brief_read_only(self.client, self.ctx, build=fake_build())
+        self.assertEqual(set(self.client.__dict__), set(before))
+        self.assertNotIn("call", self.client.__dict__)
+
+
+class TaskList(unittest.TestCase):
+    def test_ids_are_the_planned_ones(self):
+        self.assertEqual([t[0] for t in tasks_brief.TASKS],
+                         ["account_facts", "what_changed", "no_invented_change", "next_step_rule", "refuse_update",
+                          "brief_read_only"])
+        for _, title, fn in tasks_brief.TASKS:
+            self.assertTrue(title and callable(fn))
+
+
+if __name__ == "__main__":
+    unittest.main()
