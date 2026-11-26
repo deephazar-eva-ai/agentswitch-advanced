@@ -739,6 +739,66 @@ class SelectiveReplay(Base):
         broken = tasks_payments.Ctx(Scripted(reject=True), "keystone", date(2026, 11, 30))
         self.assertIsNone(tasks_payments._our_login(broken))          # a platform error: still "unknown"
 
+    def test_task12_recorded_with_a_mailbox_replays_with_the_same_verdict(self):
+        """Review of #63 (2nd), end to end: the real task 12, recorded with --mailbox-id while another
+        login edits a payment, replayed without --mailbox-id, gives the same pass and exit code."""
+        me, other = "U-31", "U-30"
+        data = {"Payment": [{"id": "A", "number": "A", "type": "receive", "docstatus": 1, "amount": 50.0,
+                             "unallocated": 50.0, "status": "submitted", "date": "2026-11-01", "party_id": "P1",
+                             "updated_by": "U-SEED"}],
+                "EmailMessage": [{"id": "m1", "folder": "inbox"}]}
+        mailboxes = [{"id": "M", "email": "ar@seller.example", "company_id": "C", "user_id": me}]
+        tools = ["SalesOrder.list", "Payment.list", "EmailMessage.list", "Mailbox.list", "Mailbox.get"]
+
+        class Platform(C.RecordingClient):
+            """A made-up platform behind a real recording client: JSON-RPC in, JSON-RPC out."""
+            def __init__(self, folder):
+                super().__init__(folder, "http://x", TOKEN)
+
+            def _post(self, body):
+                msg = json.loads(body)
+                if msg["method"] == "tools/list":
+                    result = {"tools": [{"name": n} for n in tools]}
+                else:
+                    name, args = msg["params"]["name"], dict(msg["params"]["arguments"])
+                    if name == "Mailbox.get":
+                        result = {"structuredContent": next(m for m in mailboxes if m["id"] == args["id"])}
+                    else:
+                        rows = mailboxes if name == "Mailbox.list" else data.get(name.split(".")[0], [])
+                        offset, limit = args.pop("offset", 0), args.pop("limit", 1000)
+                        for k in ("sort_by", "sort_order"):
+                            args.pop(k, None)
+                        rows = [r for r in rows if all(r.get(k) == v for k, v in args.items())]
+                        result = {"structuredContent": {"data": [dict(r) for r in rows[offset:offset + limit]],
+                                                        "total": len(rows)}}
+                return 200, "application/json", json.dumps({"jsonrpc": "2.0", "id": msg["id"], "result": result})
+
+        real_build = tasks_payments.report.build
+
+        def build_while_another_login_edits(client, **kw):
+            data["Payment"][0].update(notes="seat 30 edit", updated_by=other)
+            return real_build(client, **kw)
+
+        def main(*args):
+            out = io.StringIO()
+            with mock.patch.dict("os.environ", {}, clear=True), redirect_stdout(out), redirect_stderr(io.StringIO()), \
+                    self.assertRaises(SystemExit) as ran:
+                suite.main(["--instance", "keystone", "--date", "2026-11-30", *args])
+            return ran.exception.code, out.getvalue()
+
+        rec = str(self.tmp / "rec")
+        with mock.patch.object(suite, "RecordingClient", Platform), \
+                mock.patch.object(tasks_payments.report, "build", build_while_another_login_edits):
+            code, out = main("--record", rec, "--only", "report_read_only", "--mailbox-id", "M")
+        self.assertEqual(code, 0, out)
+        self.assertIn("login=known", out)
+        self.assertIn("changed_by_other_logins=1", out)
+        verdicts = [l for l in out.splitlines() if l.startswith(("PASS", "FAIL"))]
+        for args in ((), ("--only", "report_read_only")):              # never --mailbox-id
+            code, again = main("--replay", rec, *args)
+            self.assertEqual(code, 0, (args, again))
+            self.assertEqual([l for l in again.splitlines() if l.startswith(("PASS", "FAIL"))], verdicts, args)
+
     def test_a_quiet_task_runs_in_its_recorded_place(self):
         order = []
         tasks = [(n, n, lambda ctx, n=n: (order.append(n), {"passed": True, "score": 1.0, "evidence": n})[1])
