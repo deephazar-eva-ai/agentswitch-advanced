@@ -16,6 +16,7 @@ One page: a failed suite or report run, and what to do first. Run every command 
 | `outcome=blocked; …` | The login can't read what the task needs. Not a failure of the report |
 | `FAIL` naming records (`missing=[…]`, `extra=[…]`, `wrong_age=[…]`, `leaked=[…]`, `changed=[…]`) | A wrong answer on those records. Rerun with `--debug` to see the expected and actual values, and `python3 -m o2c --explain <record>` to see which rule put it in or left it out (section 3) |
 | Task 9 fails with "harness copy" | It only creates a draft on the harness copy or with `--allow-writes`. Expected on live data |
+| Task 9 fails with "doesn't run with --record or --replay" | A recorded or replayed run is read-only, so task 9 never creates a draft there. Expected |
 | Tasks 10–11 score 0.50 | They ran without `--agent`, so only the guardrails were checked |
 | Tasks 10–11 with `--agent` say `agent exit=1 claim=none` | The agent itself failed. Rerun with `--agent --debug`: the agent gets `--debug` too, and its last 40 lines are shown under `debug: <task> agent failed …` |
 | The run is slow | Run with `--out` and read the per-task `seconds`, `calls` and `retries` in `results.meta.json`, or rerun with `--debug` |
@@ -30,7 +31,7 @@ python3 -m o2c --instance keystone --debug
 python3 -m o2c.drafts --instance keystone --out reports/ --debug
 ```
 
-`--only` takes task ids, comma-separated (the part after `<instance>:` in a result, e.g. `overdue_ageing`); an unknown id lists the valid ones. It works with `--record` and `--replay` too. `--debug` writes to stderr only: a line as each task starts and ends (its time, platform calls and retries), each retry, any request over 10 s, any blocked write, the full traceback of a crash (labelled with the task), and a closing platform summary. The `PASS`/`FAIL` lines, `results.json` and the report are the same with or without it. Seat 34's harness adds only `--prompt` to the command we register, so `--debug` has to be in that command to show in a harness run.
+`--only` takes task ids, comma-separated (the part after `<instance>:` in a result, e.g. `overdue_ageing`); an unknown id lists the valid ones. It works with `--record` and `--replay` too; with `--replay`, see section 4. `--debug` writes to stderr only: a line as each task starts and ends (its time, platform calls and retries), each retry, any request over 10 s, any blocked write, the full traceback of a crash (labelled with the task), and a closing platform summary. The `PASS`/`FAIL` lines, `results.json` and the report are the same with or without it. Seat 34's harness adds only `--prompt` to the command we register, so `--debug` has to be in that command to show in a harness run.
 
 ## 3. Read a wrong answer
 
@@ -74,7 +75,9 @@ python3 -m o2c.suite --instance keystone --record reports/recordings/keystone-<d
 python3 -m o2c.suite --replay reports/recordings/keystone-<date> --debug
 ```
 
-- `--record` needs a new or empty folder: one that already holds a recording is refused, so two runs' replies are never mixed.
+- `--record` needs a new or empty folder: one that already holds a recording is refused, so two runs' replies are never mixed. The recording file is reserved as the run starts, so two runs started on one folder at once can't both record into it.
+- A recorded or replayed run is read-only. Nothing but a read is sent or saved, and `--allow-writes` can't be combined with `--record` or `--replay`. Task 9, which creates a draft, is reported as blocked, also when `AGENTSWITCH_RUN_ID` is set.
+- `--replay DIR --only <task>` gives the verdict that task had when recorded. The tasks recorded before it run first, quietly and unreported, because replies are served in recorded order and one report is shared by every task. A task that isn't in the recording, or a recording made before the task list was saved in `recording.json`, is refused: replay it whole, or record again.
 - Replay uses the recording's system, date and days unless they're given. It refuses a different system.
 - Every rerun sees exactly the same data, takes about a second, and can be used with `git bisect run` (the suite exits 1 when a task fails) or to try a fix before a live run.
 - If the code now asks for something the recorded run didn't, replay stops with `replay: no recorded reply for …`. Record a new run.

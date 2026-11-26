@@ -14,7 +14,7 @@ from unittest import mock
 
 from o2c import __main__ as cli
 from o2c import client as C
-from o2c import debug, suite, tasks_payments
+from o2c import debug, drafts, suite, tasks_payments
 
 TOKEN = "tok-SECRET-123"
 
@@ -48,6 +48,21 @@ class Recording(C.RecordingClient):
         self.fails, self.lists, self.reject, self._sleep = fails, list(lists), reject, lambda s: None
 
     _post = Scripted._post
+
+
+class Counting(Recording):
+    """A recording client that notes every request that reaches its transport, by tool."""
+    def __init__(self, folder, **kw):
+        super().__init__(folder, **kw)
+        self.sent = []
+
+    def _post(self, body):
+        msg = json.loads(body)
+        self.sent.append((msg.get("params") or {}).get("name") or msg["method"])
+        return Scripted._post(self, body)
+
+
+MAILBOX = {"id": "mb1", "company_id": "c1", "email": "ar@seller.example"}
 
 
 class Base(unittest.TestCase):
@@ -176,7 +191,44 @@ class RecordReplay(Base):
         rec = Recording(self.tmp / "rec")
         with self.assertRaises(C.WriteBlocked):
             rec.call("EmailMessage.send_email", {"id": "m1"})
-        self.assertFalse((self.tmp / "rec" / "calls.jsonl").exists())
+        self.assertEqual((self.tmp / "rec" / "calls.jsonl").read_text(), "")    # created empty, nothing written
+
+    def test_a_draft_create_is_refused_before_it_is_sent_or_recorded(self):
+        """Review of #63, P1: the draft writer calls _rpc directly, past Client.call's read check."""
+        rec = Counting(self.tmp / "rec")
+        writer = drafts.DraftWriter(rec, MAILBOX)
+        with self.assertRaises(C.WriteBlocked):
+            writer.create({"to": "ap@customer.example", "subject": "s", "body_text": "b"})
+        self.assertEqual(rec.sent, [])                                          # nothing reached the transport
+        self.assertEqual((self.tmp / "rec" / "calls.jsonl").read_text(), "")
+        with self.assertRaises(C.WriteBlocked):                                 # nor does a replay serve one
+            drafts.DraftWriter(C.ReplayClient(self.tmp / "rec"), MAILBOX).create(
+                {"to": "ap@customer.example", "subject": "s", "body_text": "b"})
+
+    def test_task9_creates_nothing_when_recorded_even_with_run_id(self):
+        """Review of #63, P1: --record with AGENTSWITCH_RUN_ID (or --allow-writes) must not leave a draft."""
+        made = []
+
+        def counting(folder):
+            made.append(Counting(folder))
+            return made[-1]
+        env = {"AGENTSWITCH_RUN_ID": "run-1"}
+        out = io.StringIO()
+        with mock.patch.dict("os.environ", env, clear=True), mock.patch.object(suite, "RecordingClient", counting), \
+                mock.patch.object(suite, "all_tasks", lambda: [("reminder_is_draft", "T9", tasks_payments.reminder_is_draft)]), \
+                redirect_stdout(out), redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            suite.main(["--instance", "keystone", "--date", "2026-11-30", "--record", str(self.tmp / "rec")])
+        self.assertIn("outcome=blocked; creates a draft, so it doesn't run with --record or --replay", out.getvalue())
+        self.assertEqual([m for m in made[0].sent if m != "tools/list"], [])
+        self.assertNotIn("EmailMessage.create", (self.tmp / "rec" / "calls.jsonl").read_text())
+
+    def test_a_second_recorder_on_the_same_folder_is_refused_before_any_call(self):
+        """Review of #63, P2: the first recorder reserves calls.jsonl when it starts."""
+        first = Recording(self.tmp / "rec", lists=[[{"id": "so1"}]])
+        with self.assertRaisesRegex(C.McpError, "already holds a recording"):
+            Recording(self.tmp / "rec", lists=[[{"id": "other"}]])
+        first.call("SalesOrder.list")
+        self.assertEqual(C.ReplayClient(self.tmp / "rec").call("SalesOrder.list")["data"], [{"id": "so1"}])
 
     def test_recording_is_owner_only_and_holds_no_token(self):
         Recording(self.tmp / "rec", lists=[[{"id": "so1"}]]).call("SalesOrder.list")
@@ -265,7 +317,7 @@ class RunAndSuite(Base):
         (self.tmp / "rec" / "recording.json").write_text(json.dumps({"instance": "suryodaya", "date": "2026-11-24", "days": 9}))
         seen = {}
 
-        def fake_run_suite(ctx, tasks=None, timings=None):
+        def fake_run_suite(ctx, tasks=None, timings=None, quiet=()):
             seen.update(instance=ctx.instance, date=ctx.report_date, days=ctx.days,
                         replay=isinstance(ctx.client, C.ReplayClient))
             return {"tasks": [], "summary": "suryodaya: 0/0 tasks passed"}
@@ -541,7 +593,7 @@ class Only(Base):
     def run_main(self, *args):
         seen = {}
 
-        def fake_run_suite(ctx, tasks=None, timings=None):
+        def fake_run_suite(ctx, tasks=None, timings=None, quiet=()):
             seen["tasks"] = None if tasks is None else [t[0] for t in tasks]
             return {"tasks": [], "summary": "keystone: 0/0 tasks passed"}
         err = io.StringIO()
@@ -570,9 +622,78 @@ class Only(Base):
 
     def test_only_with_replay(self):
         Recording(self.tmp / "rec").tool_names()
-        (self.tmp / "rec" / "recording.json").write_text(json.dumps({"instance": "keystone", "date": "2026-11-24"}))
+        (self.tmp / "rec" / "recording.json").write_text(json.dumps(
+            {"instance": "keystone", "date": "2026-11-24", "tasks": ["overdue_invoices"]}))
         seen = self.run_main("--replay", str(self.tmp / "rec"), "--only", "overdue_invoices")
         self.assertEqual(seen["tasks"], ["overdue_invoices"])
+
+    def test_only_with_replay_needs_the_task_in_the_recording(self):
+        Recording(self.tmp / "rec").tool_names()
+        for meta, words in (({"instance": "keystone"}, "doesn't list the tasks it ran"),
+                            ({"instance": "keystone", "tasks": ["overdue_invoices"]}, "overdue_ageing not in the recording")):
+            (self.tmp / "rec" / "recording.json").write_text(json.dumps(meta))
+            seen = self.run_main("--replay", str(self.tmp / "rec"), "--only", "overdue_ageing")
+            self.assertEqual(seen["exit"], 2, meta)
+            self.assertIn(words, seen["err"])
+
+    def test_allow_writes_with_record_or_replay_is_a_usage_error(self):
+        for source in ("--record", "--replay"):
+            seen = self.run_main(source, str(self.tmp / "r"), "--allow-writes")
+            self.assertEqual(seen["exit"], 2, source)
+            self.assertIn("--allow-writes can't be combined", seen["err"])
+
+
+def read_list(ctx):
+    return ctx.client.call("Invoice.list")["data"][0]["due_date"]
+
+
+def first_task(ctx):
+    ctx.seen = read_list(ctx)
+    return {"passed": True, "score": 1.0, "evidence": "first"}
+
+
+def ageing_task(ctx):
+    """Passes only on the second reply: the due date changed between the two tasks' reads."""
+    due = read_list(ctx)
+    ok = due == "2026-11-02" and getattr(ctx, "seen", None) == "2026-11-01"
+    return {"passed": ok, "score": 1.0 if ok else 0.0, "evidence": f"due={due}"}
+
+
+class SelectiveReplay(Base):
+    """Review of #63, P2: --replay --only gives the verdict the task had when recorded."""
+    TASKS = [("overdue_invoices", "T5", first_task), ("overdue_ageing", "T6", ageing_task)]
+
+    def main(self, *args):
+        out = io.StringIO()
+        with mock.patch.object(suite, "all_tasks", lambda: list(self.TASKS)), \
+                mock.patch.object(suite, "RecordingClient",
+                                  lambda folder: Recording(folder, lists=[[{"id": "i1", "due_date": "2026-11-01"}],
+                                                                          [{"id": "i1", "due_date": "2026-11-02"}]])), \
+                mock.patch.dict("os.environ", {}, clear=True), redirect_stdout(out), redirect_stderr(io.StringIO()), \
+                self.assertRaises(SystemExit) as ran:
+            suite.main(["--instance", "keystone", "--date", "2026-11-30", *args])
+        return ran.exception.code, out.getvalue()
+
+    def test_one_task_replayed_alone_sees_what_it_saw_when_recorded(self):
+        rec = str(self.tmp / "rec")
+        code, out = self.main("--record", rec)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(json.loads((self.tmp / "rec" / "recording.json").read_text())["tasks"],
+                         ["overdue_invoices", "overdue_ageing"])
+        for args in ((), ("--only", "overdue_ageing")):
+            code, out = self.main("--replay", rec, *args)
+            self.assertEqual(code, 0, (args, out))
+            self.assertIn("PASS 1.0 keystone:overdue_ageing: due=2026-11-02", out)
+        self.assertNotIn("overdue_invoices", out)                       # the quiet task isn't reported
+        self.assertIn("keystone: 1/1 tasks passed", out)
+
+    def test_a_quiet_task_runs_in_its_recorded_place(self):
+        order = []
+        tasks = [(n, n, lambda ctx, n=n: (order.append(n), {"passed": True, "score": 1.0, "evidence": n})[1])
+                 for n in ("a", "b", "c")]
+        out = suite.run_suite(tasks_payments.Ctx(Scripted(), "keystone", date(2026, 11, 30)), tasks, quiet={"b"})
+        self.assertEqual(order, ["a", "b", "c"])
+        self.assertEqual([t["id"] for t in out["tasks"]], ["keystone:a", "keystone:c"])
 
 
 if __name__ == "__main__":

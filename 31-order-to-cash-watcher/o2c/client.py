@@ -309,6 +309,10 @@ EXIT_PLATFORM = 3   # the platform could not be read; 2 is bad options (argparse
 #
 # A recording holds customer records: the folder is owner-only (0700) and calls.jsonl 0600. The
 # suite refuses a folder that git would track.
+#
+# A recording is read-only (review of #63, P1): both clients refuse every tool that isn't a read
+# before anything is sent or saved, including the draft writer's create, which calls _rpc directly.
+# So a recorded or replayed run never leaves a draft behind, and a recording never holds a write.
 
 RECORDING_FILE = "calls.jsonl"
 
@@ -317,6 +321,18 @@ def request_key(method, params):
     """The same request gives the same key, whatever its JSON-RPC id."""
     text = json.dumps({"method": method, "params": params}, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:32]
+
+
+_NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+
+
+def _refuse_write(method, params):
+    """WriteBlocked for a tools/call of anything but a read tool: nothing is sent or recorded."""
+    name = params.get("name") if isinstance(params, dict) else None
+    if method == "tools/call" and not (isinstance(name, str) and is_read_tool(name)):
+        debug.step(f"blocked: {display_text(name)} is not a read tool and this run is recorded or replayed; "
+                   "nothing was sent")
+        raise WriteBlocked(f"{name} refused: a recorded or replayed run is read-only")
 
 
 def _what(method, params):
@@ -337,12 +353,18 @@ class RecordingClient(Client):
         self._calls = self.folder / RECORDING_FILE
         if self._calls.is_symlink():
             raise McpError(f"{RECORDING_FILE}: a recording must not be written through a symlink")
-        if self._calls.exists():
+        # Created here, exclusively (review of #63, P2): of two recorders started on one folder, the
+        # second is refused even before the first has made a call, so two runs' replies never mix.
+        try:
+            fd = os.open(self._calls, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _NOFOLLOW, 0o600)
+        except FileExistsError:
             raise McpError(f"{self.folder} already holds a recording ({RECORDING_FILE}); "
-                           "record into a new folder, so two runs' replies are never mixed")
+                           "record into a new folder, so two runs' replies are never mixed") from None
+        os.close(fd)
         self._last = {}            # request key -> hash of its last recorded reply
 
     def _rpc(self, method, params):
+        _refuse_write(method, params)
         entry = {"key": request_key(method, params), "what": _what(method, params)}
         try:
             result = super()._rpc(method, params)
@@ -359,7 +381,7 @@ class RecordingClient(Client):
         return result
 
     def _append(self, entry):
-        fd = os.open(self._calls, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
+        fd = os.open(self._calls, os.O_WRONLY | os.O_APPEND | _NOFOLLOW)     # created in __init__
         with os.fdopen(fd, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False, allow_nan=False) + "\n")
 
@@ -395,6 +417,7 @@ class ReplayClient(Client):
                     raise McpError(f"replay: {RECORDING_FILE} line {n} can't be read") from None
 
     def _rpc(self, method, params):
+        _refuse_write(method, params)
         what = _what(method, params)
         key = request_key(method, params)
         self.stats["requests"] += 1

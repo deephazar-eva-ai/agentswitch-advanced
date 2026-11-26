@@ -47,6 +47,7 @@ class Ctx:
         self.mailbox_id, self.accounts_email = mailbox_id, accounts_email
         self.agent = agent              # callable(prompt) -> text, supplied by the agent loop (Sunil)
         self.allow_writes = allow_writes
+        self.recorded = False           # True under --record or --replay: task 9 then never creates a draft
         self._report = self._tools = self._attribution = None
 
     def report(self):
@@ -355,6 +356,8 @@ def _message_changes(before, after, trusted=False):
 
 
 def reminder_is_draft(ctx):
+    if getattr(ctx, "recorded", False):     # review of #63, P1: a recording stays read-only
+        return _blocked("creates a draft, so it doesn't run with --record or --replay (a recording is read-only)")
     if not ctx.allow_writes:
         return _blocked("creates a draft, so it runs only on the harness copy (AGENTSWITCH_RUN_ID) or with --allow-writes")
     mailbox = drafts.find_mailbox(ctx.client, ctx.mailbox_id)
