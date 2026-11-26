@@ -2,7 +2,7 @@
 
     uv run python -m data_steward.dedupe                      # Keystone, or the harness runner's instance
     uv run python -m data_steward.dedupe --instance keystone
-    uv run python -m data_steward.dedupe --prompt "<request>"  # how the course harness runs it; the request is ignored
+    uv run python -m data_steward.dedupe --prompt "<request>"  # how the course harness runs it (see "Requests")
 
 Writes local/dedupe-<instance>.json (the record of truth) and local/dedupe-<instance>.md (made from it). Both hold
 real party data, which is why they go to the git-ignored local/. Also writes local/dedupe-<instance>-pairs.json: every
@@ -11,25 +11,44 @@ carries counts only. A failure exits 1 with one plain error line on standard err
 harness runner) shows a traceback for an error this command does not expect. A failed scan leaves earlier files as
 they were; a failed write removes all three, so old and new files are never mixed.
 
-Inputs read from local/, never written: test-tags.txt (one confirmed test-run tag per line: the tag is the
+Requests: with --prompt the request is read by fixed rules (router.py) and nothing is written to local/. A request
+to change anything, or one not recognised as a read, is refused before any login or call. A scan reads the records
+the request names and prints counts. A recount reads one table and prints its count; the ids go on the last line
+only under the harness runner (IDS_ALLOWED, on since 23 Nov; local runs never print them). A prompted run that does
+not fail ends with an `AGENT_RESULT {"claim": ...}` line: the harness reads its claim for an honesty label, and a
+recount's answer is what its recount grader checks. A recount uses the client's default timeouts, not the scan's
+4-minute limit.
+
+Inputs read from local/ by the full scan, never written: test-tags.txt (one confirmed test-run tag per line: the tag is the
 first word, and the rest of the line, if any, says where the read showed it came from) and dedupe-labels.json
 ({"<pair id>": "accepted" | "rejected"}, or {"<pair id>": {"label": ..., "note": ...}}).
 """
 import argparse
+import contextlib
 import html
 import http.client
 import json
 import os
 import re
+import signal
 import sys
 import tempfile
+import threading
+import time
 from collections import Counter
 from pathlib import Path
 
-from . import config, dedupe, proposals
+from . import checks, config, dedupe, proposals, router
 from .mcp_client import AuthExpired, McpClient, McpError, Session
 
 TABLES = {"party": "Party", "item": "Item"}
+
+# Record ids in the run output: on since 23 Nov by the person's decision, before the instructor's answer to question
+# 8.5 (a recount task cannot pass without them). Set False to withhold them again: a recount under the runner then
+# says its answer is withheld and claims "failed", never "done" without an answer. Ids still print only under the
+# runner and only on a recount.
+IDS_ALLOWED = True
+RESULT_PREFIX = "AGENT_RESULT "
 LABELS = ("accepted", "rejected")
 
 # Plain words for the matcher's and proposals' short values, for the Markdown only: the values themselves stay as
@@ -93,7 +112,7 @@ def load_labels(path: Path) -> dict[str, dict]:
         return {}
     raw = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(raw, dict):
-        raise ValueError(f"{path.name}: expected an object of pair id -> label")
+        raise ValueError(f"{path.name}: expected a mapping of pair id to label")
     labels, bad = {}, []
     for pair_id, value in raw.items():
         entry = value if isinstance(value, dict) else {"label": value}
@@ -106,9 +125,9 @@ def load_labels(path: Path) -> dict[str, dict]:
     return labels
 
 
-def scan(client, entity: str, test_tags) -> dict:
+def scan(client, entity: str, test_tags, rows=None) -> dict:
     """One table: rows read, the matcher's result, and a proposal per listed pair."""
-    rows = client.list_all(TABLES[entity])
+    rows = client.list_all(TABLES[entity]) if rows is None else rows
     result = dedupe.find_duplicates(entity, rows, test_tags=test_tags)
     refs, unreadable = {}, 0
     for rid in proposals.proposed_ids(result):
@@ -129,8 +148,10 @@ def scan(client, entity: str, test_tags) -> dict:
     }
 
 
-def build_report(instance: str, date: str, sections: dict, labels: dict, test_tags: dict | None = None) -> dict:
-    """Labels are shown beside their pair and never change its score, band or survivor."""
+def build_report(instance: str, date: str, sections: dict, labels: dict, test_tags: dict | None = None,
+                 orphan_check: dict | None = None) -> dict:
+    """Labels are shown beside their pair and never change its score, band or survivor. The orphan check sits beside
+    "sections", never inside it: the exporter requires exactly the two tables there."""
     listed = set()
     for section in sections.values():
         for p in section["proposals"]:
@@ -144,7 +165,7 @@ def build_report(instance: str, date: str, sections: dict, labels: dict, test_ta
         "test_tags": [{"tag": t, "source": src} for t, src in sorted((test_tags or {}).items())],
         "sections": sections,
         "labels": {"applied": len(listed & labels.keys()), "not_in_this_run": sorted(labels.keys() - listed)},
-    }
+    } | ({"orphan_check": orphan_check} if orphan_check is not None else {})
 
 
 def summary(report: dict) -> dict:
@@ -160,6 +181,8 @@ def summary(report: dict) -> dict:
             "excluded": dict(sorted(Counter(p["reason"] for p in s["excluded"]).items())),
             **s["counts"],
         }
+    if "orphan_check" in report:
+        out["orphan_check"] = {k: v for k, v in report["orphan_check"].items() if k != "orphan_item_ids"}
     return out
 
 
@@ -347,11 +370,24 @@ def render_markdown(report: dict) -> str:
                   f"- Values shared too widely to count as evidence: {_shared(c['ignored_shared'])}",
                   f"- Groups not compared because they are too common: {c['skipped_blocks']}",
                   f"- Records whose linked-record counts could not be read: {c['references_unreadable']}", ""]
+    if "orphan_check" in report:
+        lines += _orphans_md(report["orphan_check"])
     stale = report["labels"]["not_in_this_run"]
     lines += ["## Saved labels", "", f"Labels shown beside pairs: {report['labels']['applied']}. "
               f"Labels with no matching pair in this report: {len(stale)}"
               + (f" ({', '.join(_code(i) for i in stale)})" if stale else "") + "."]
     return "\n".join(lines) + "\n"
+
+
+def _orphans_md(o: dict) -> list[str]:
+    head = ["## Items whose preferred vendor is missing", ""]
+    if o["status"] == "incomplete":
+        return head + ["Not checked: the party table was cut off, so a missing vendor could be on an unread page.", ""]
+    lines = head + [f"Item vendor links checked: {o['links_checked']}. Vendors not found among the parties this login "
+                    f"can list: {o['orphans']}."
+                    + (" The item table was cut off, so there may be more." if o["status"] == "partial" else ""), ""]
+    lines += [f"- {_code(i)}" for i in o["orphan_item_ids"]]
+    return lines + ([""] if o["orphan_item_ids"] else [])
 
 
 def _write_private(path: Path, text: str) -> None:
@@ -371,12 +407,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--instance", choices=sorted(config.INSTANCES),
                         help="default: the harness runner's instance, else keystone")
-    # The course harness appends --prompt "<request>" to the command. There is no model yet, so every request gets
-    # the same read-only duplicate scan; the text is neither printed nor saved.
-    parser.add_argument("--prompt", help="the harness's request; ignored for now")
+    # The course harness appends --prompt "<request>". Its text is never printed or saved.
+    parser.add_argument("--prompt", help="the harness's request, read by fixed rules")
     args = parser.parse_args(argv)
     try:
-        return _run(args.instance)
+        # An empty request is still a request: it is not recognised, so it gets no scan.
+        return _run(args.instance) if args.prompt is None else _answer(args.prompt, args.instance)
     except Exception as e:
         line = _error_line(e)
         if line is None:
@@ -386,6 +422,174 @@ def main(argv: list[str] | None = None) -> int:
             line = f"internal error: {type(e).__name__}"
         print(line, file=sys.stderr)
         return 1
+
+
+def _result(claim: str, answer: dict | None = None) -> None:
+    """The last line on standard output, at column 0, one line of compact JSON. Nothing is printed after it."""
+    value = {"claim": claim} | ({"answer": answer} if answer is not None else {})
+    print(RESULT_PREFIX + json.dumps(value, separators=(",", ":"), sort_keys=True), flush=True)
+
+
+def _answer(prompt: str, instance: str | None) -> int:
+    request = router.classify(prompt)
+    if request["route"] == "refuse":
+        # Decided before any setting is read, any login or any call. Exit 0: a non-zero exit is an infrastructure
+        # failure to the harness. The request itself is never printed (it holds record ids).
+        print("refused: only supported read requests can run; nothing was read or changed")
+        _result("refused")
+        return 0
+    platform = config.platform()
+    instance = instance or (platform["instance"] if platform else "keystone")
+    if request["route"] == "scan":
+        return _scan_named(instance, request["entity"], request["ids"], request.get("record", False))
+    return _recount(McpClient(Session(instance)), request["answer"])
+
+
+# The harness stops a task at 5 minutes and counts that as an infrastructure failure, so a scan stops itself first.
+SCAN_SECONDS = 240
+# One call that takes all of this is a service failure (exit 1); one cut short by the time left is the time limit.
+CALL_SECONDS = 30
+
+
+class ScanDeadline(Exception):
+    """The scan's time is up. Raised between calls, or by the timer in the middle of one."""
+
+
+class _NotOne(Exception):
+    """A lookup that could not establish exactly one row for a named id."""
+
+
+@contextlib.contextmanager
+def _timer(seconds: float):
+    """Interrupt whatever the scan is doing (connecting, reading a slow reply, waiting) once the time is up. A call's
+    own socket timeout cannot do this: a reply that keeps trickling in never times out."""
+    if not hasattr(signal, "setitimer") or threading.current_thread() is not threading.main_thread():
+        yield  # no timer here: the per-call budget alone bounds the scan
+        return
+
+    def expired(signum, frame):
+        raise ScanDeadline
+
+    old = signal.signal(signal.SIGALRM, expired)
+    try:
+        signal.setitimer(signal.ITIMER_REAL, seconds)
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old)
+
+
+def _service_failure(e: McpError) -> bool:
+    """An HTTP 5xx, or the JSON-RPC internal and server errors: the platform failed, not the lookup."""
+    code = e.code
+    return isinstance(code, int) and (code >= 500 or code == -32603 or -32099 <= code <= -32000)
+
+
+def _lookup(client, table: str, arguments: dict) -> list:
+    try:
+        reply = client.call(f"{table}.list", arguments)
+    except McpError as e:
+        if _service_failure(e):
+            raise
+        raise _NotOne from None  # e.g. the id filter refused: nothing is known about the record
+    rows = reply.get("data") if isinstance(reply, dict) else reply  # list_all takes a bare list too
+    if not isinstance(rows, list):
+        raise _NotOne
+    return rows
+
+
+def _find(client, entity: str | None, rid: str) -> tuple[str, dict]:
+    """The one row of a named id, read with the id filter. A second page must be empty: a server may cap a page below
+    the limit asked, and a second row for the id (a withheld copy, or an ignored filter) makes the answer unclear."""
+    for table in [entity] if entity else ["Party", "Item"]:
+        first = _lookup(client, table, {"id": rid, "limit": 2, "offset": 0})
+        if not first:
+            continue  # not in this table
+        if len(first) != 1 or not isinstance(first[0], dict) or str(first[0].get("id")) != rid:
+            raise _NotOne
+        if _lookup(client, table, {"id": rid, "limit": 1, "offset": 1}):
+            raise _NotOne
+        return table, first[0]
+    raise _NotOne  # not found
+
+
+def _scan_named(instance: str, entity: str | None, ids: list[str], record: bool = False) -> int:
+    """The matcher on the named records only: no reference counts, tags, labels or files, counts on standard output.
+    Every named id must be read, or the scan says so and gives no counts. Setup failures and platform outages exit 1;
+    a lookup that cannot establish one row, or the time limit, ends with claim "failed" and exit 0."""
+    deadline = time.monotonic() + SCAN_SECONDS
+    cut = False  # whether the last call's budget was cut to the time left
+
+    def budget() -> float:
+        nonlocal cut
+        left = deadline - time.monotonic()
+        if left <= 0:
+            raise ScanDeadline
+        cut = left < CALL_SECONDS
+        return min(CALL_SECONDS, left)
+
+    found: dict[str, list] = {}
+    sections: dict[str, dict] = {}
+    try:
+        with _timer(SCAN_SECONDS):
+            client = McpClient(Session(instance, budget=budget))  # login, initialize and the tool list: setup
+            client.tools()
+            try:
+                for rid in ids:
+                    table, row = _find(client, entity, rid)
+                    found.setdefault(table, []).append(row)
+            except _NotOne:
+                not_one = True
+            else:
+                not_one = False
+                for table, rows in found.items():  # the matcher runs inside the time limit too
+                    result = dedupe.find_duplicates(table.lower(), rows)
+                    sections[table.lower()] = {
+                        "records": len(rows), "pairs": dict(Counter(p["band"] for p in result["pairs"])),
+                        "excluded": len(result["excluded"]), "withheld_private": result["withheld_private"]}
+    except ScanDeadline:
+        return _out_of_time()
+    except OSError as e:
+        reason = getattr(e, "reason", e)
+        if cut and isinstance(reason, TimeoutError):
+            return _out_of_time()  # the call had only the time left, not its full budget
+        raise
+    # Printed only after the timer is disarmed, so the result line is never cut short.
+    if not_one:
+        print("could not read exactly one row for every named record; no counts are given")
+        _result("failed")
+        return 0
+    print(json.dumps({"request": "scan", "records_named": len(ids), "sections": sections}, indent=2, sort_keys=True))
+    print("pairs are compared among the named records only; nothing was changed or recorded on the platform")
+    if record and any(s["pairs"] for s in sections.values()):
+        # The request asked for the proposal to be recorded, and this agent records none: claiming "done" would say
+        # it did what was asked.
+        print("merge proposal not recorded: the request asked to record one, but this agent does not record proposals")
+        _result("failed")
+        return 0
+    _result("done")
+    return 0
+
+
+def _out_of_time() -> int:
+    print("stopped at the time limit before every named record was read; no counts are given")
+    _result("failed")
+    return 0
+
+
+def _recount(client, answer: str) -> int:
+    table, check = checks.RECOUNTS[answer]
+    rows = client.list_all(table)
+    if rows.truncated:
+        raise RuntimeError(f"the {table} table was incomplete; no partial answer is given")
+    ids = check(rows)
+    print(json.dumps({"request": "recount", "answer": answer, "found": len(ids)}, sort_keys=True))
+    if config.on_platform() and IDS_ALLOWED:
+        _result("done", {answer: ids})
+    else:
+        print("record ids withheld: they print only under the harness runner, and only while IDS_ALLOWED is set")
+        _result("failed")
+    return 0
 
 
 # The kinds McpError works out itself. Any other kind is the reply's own "code" field, which can be a record's (an
@@ -421,8 +625,10 @@ def _run(instance: str | None) -> int:
     labels = load_labels(config.LOCAL_DIR / "dedupe-labels.json")
 
     client = McpClient(Session(instance))
-    sections = {entity: scan(client, entity, tuple(test_tags)) for entity in TABLES}
-    report = build_report(instance, config.today().isoformat(), sections, labels, test_tags)
+    rows = {entity: client.list_all(table) for entity, table in TABLES.items()}
+    sections = {entity: scan(client, entity, tuple(test_tags), rows[entity]) for entity in TABLES}
+    orphans = checks.orphan_vendors(rows["item"], rows["party"], rows["item"].truncated, rows["party"].truncated)
+    report = build_report(instance, config.today().isoformat(), sections, labels, test_tags, orphans)
 
     # Always local/, which is git-ignored: the report holds real party data and the repository is public. Record ids
     # are platform data too, so the pair list goes there as well and never to standard output.

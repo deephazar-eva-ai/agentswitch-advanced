@@ -113,15 +113,18 @@ class Session:
     token file, and only the one instance that run serves.
     """
 
-    def __init__(self, instance: str):
+    def __init__(self, instance: str, budget=None):
+        """budget: a function giving the seconds a call may take now; when set, every call (login included) gets
+        that timeout and no retries, so a caller with a deadline is never held past it by a retry."""
         if instance not in config.INSTANCES:
             raise ValueError(f"unknown instance {instance!r}")
         self.instance = instance
+        self.budget = budget
         self._lock = threading.Lock()
         self.platform = config.platform()
         if self.platform:
             if instance != self.platform["instance"]:
-                raise ValueError(f"this run serves {self.platform['instance']} only, not {instance}")
+                raise ValueError(f"this run is for {self.platform['instance']} only, not {instance}")
             self.base, self.token, self._token_file = self.platform["base"], self.platform["token"], None
             return
         self.base = config.INSTANCES[instance]
@@ -137,7 +140,8 @@ class Session:
         email, password = config.credentials(self.instance)
         # Ten wrong passwords in 15 minutes lock the account, so a failed login is never retried here.
         try:
-            status, payload = _http(f"{self.base}/api/auth/login", {"email": email, "password": password}, retries=0)
+            status, payload = _http(f"{self.base}/api/auth/login", {"email": email, "password": password}, retries=0,
+                                    **({"timeout": self.budget()} if getattr(self, "budget", None) else {}))
         except AuthExpired:
             # On the login endpoint a 401 means wrong credentials, not an expired token: re-logging in would only
             # spend another of the ten tries.
@@ -191,8 +195,10 @@ class McpClient:
             self._id += 1
             request_id = self._id
         body = {"jsonrpc": "2.0", "id": request_id, "method": method, "params": params or {}}
+        budget = getattr(self.session, "budget", None)
+        limits = {"timeout": budget(), "retries": 0} if budget else {}
         status, payload = _http(f"{self.session.base}/api/mcp", body, self.session.token,
-                                read_only=self._is_read_only(method, params))
+                                read_only=self._is_read_only(method, params), **limits)
         if status != 200 or payload is None:
             raise McpError(status, f"HTTP {status}", payload)
         if "error" in payload:
@@ -210,7 +216,13 @@ class McpClient:
     def tools(self) -> dict[str, dict]:
         if self._tools is None:
             result = self.session.with_reauth(lambda: self._rpc("tools/list"))
-            self._tools = {t["name"]: t for t in result.get("tools", [])}
+            listed = result.get("tools") if isinstance(result, dict) else None
+            if not isinstance(listed, list) or not all(isinstance(t, dict) and isinstance(t.get("name"), str)
+                                                       and t["name"].strip() for t in listed):
+                # An unreadable catalogue would read as "no tool is allowed" and every call would be refused: a
+                # setup failure, not an answer.
+                raise McpError("bad_reply", "tools/list returned no tool list", result)
+            self._tools = {t["name"]: t for t in listed}
         return self._tools
 
     def tool_names(self) -> set[str]:
@@ -253,24 +265,40 @@ class McpClient:
         """Every matching row, up to a ceiling that is never crossed silently: `RowPage.truncated` says it was hit,
         because a partial table that reads as a whole one would hide duplicates in the rows left behind."""
         rows, offset, total, seen = RowPage(), 0, None, set()
+        seen_ids, confirm, past_total = set(), False, False
         while True:
             res = self.call(f"{entity}.list", {"limit": page, "offset": offset, **filters})
             if isinstance(res, dict) and not isinstance(res.get("data"), list):
                 # call() turns a non-JSON reply into {"text": ...}; reading that as an empty table would hide rows.
-                raise McpError("bad_reply", f"{entity}.list returned no rows list", res)
+                raise McpError("bad_reply", f"{entity}.list did not return a list of rows", res)
+            if not isinstance(res, (dict, list)):
+                # A bare value that is not a list (an empty string, say) would page as an empty table.
+                raise McpError("bad_reply", f"{entity}.list did not return a list of rows", None)
             batch = res["data"] if isinstance(res, dict) else res
             if isinstance(res, dict) and res.get("total") is not None:
                 total = res["total"]
-            ids = {str(r.get("id")) for r in batch if isinstance(r, dict)}
-            if ids and ids <= seen:
+            # Whole rows, not ids: a later page may hold another copy of a known id (a withheld copy of an ordinary
+            # party, say) that a caller needs to see. Only rows seen before, unchanged, mean a repeated page.
+            prints = {json.dumps(r, sort_keys=True, default=str) for r in batch}
+            if prints and prints <= seen:
                 # The same rows again: the server ignored the offset, and paging on would only repeat them.
                 raise McpError("bad_reply", f"{entity}.list repeated a page (offset ignored)", None)
-            seen |= ids
+            if batch and past_total:
+                raise McpError("bad_reply", f"{entity}.list returned more rows than its reported total", None)
+            ids = {str(r.get("id")) for r in batch if isinstance(r, dict)}
+            # A page holding any known id with changed values may carry a real second copy, or an offset the server
+            # ignored or shifted, returning records again, changed; counting those copies toward the total could hide
+            # rows never read. So once any id repeats, the read ends only on an empty page.
+            confirm = confirm or bool(ids & seen_ids)
+            seen |= prints
+            seen_ids |= ids
             rows.extend(batch[:max(0, max_rows - len(rows))])
             offset += len(batch)
             # A short page is not the end: a server may cap a page below the requested limit. Only an empty page,
             # or reaching the reported total, is.
-            exhausted = not batch or (total is not None and offset >= total)
+            reached = total is not None and offset >= total
+            exhausted = not batch or (reached and not confirm)
+            past_total = past_total or (reached and confirm)
             if exhausted and offset <= len(rows):
                 rows.total = total if total is not None else len(rows)
                 rows.truncated = rows.total > len(rows)

@@ -1,0 +1,620 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Data Steward User Guide</title>
+<meta name="description" content="How to run the seat 35 Data Steward agent, review its duplicate pairs, export the results file and ask it questions.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible+Mono:wght@400;600&family=Atkinson+Hyperlegible+Next:ital,wght@0,400;0,700;0,800;1,400&display=swap">
+<style>
+/* A record keeper's ledger: green-tinted ruled paper, blue-black ink, a red double margin line down the page with
+   the step numbers hung to its left. Atkinson Hyperlegible throughout, because the page is full of record ids and
+   commands where 0/O and 1/l must not be confused. The outcome explorer and the request examples hold fixed text
+   taken from docs/user-guide.md; the page computes nothing. */
+:root {
+  --paper: #edf2ea; --sheet: #f8faf6; --ink: #14233a; --muted: #4f5d6b; --rule: #c3d3c0; --rule-strong: #8fa98b;
+  --margin: #b42335; --pen: #2348a8; --pen-soft: #dfe6f7;
+  --ok: #1e6b45; --ok-soft: #dcefe2; --warn: #855600; --warn-soft: #f8ecd0;
+  --bad: #b42335; --bad-soft: #f8e0e2; --quiet: #4f5966; --quiet-soft: #e3e8e4;
+  --term: #172437; --term-ink: #e4ebe1; --term-dim: #93a1b5; --term-line: #2c3b52;
+  --t-key: #a9c1ff; --t-str: #f5d27a; --t-good: #8fe0b0; --t-bad: #ff9aa5;
+  --sans: "Atkinson Hyperlegible Next", "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --mono: "Atkinson Hyperlegible Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --gut: 56px; --gap: 30px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #111916; --sheet: #17211d; --ink: #dde6da; --muted: #a0ada4; --rule: #2c3b34; --rule-strong: #4a5f55;
+    --margin: #ef7380; --pen: #9fb5ff; --pen-soft: #1f2b4a;
+    --ok: #79d6a6; --ok-soft: #173327; --warn: #eac06a; --warn-soft: #362b13;
+    --bad: #ef7380; --bad-soft: #3a1c22; --quiet: #a7b0b6; --quiet-soft: #232d29;
+    --term: #0b1210; --term-ink: #e4ebe1; --term-dim: #8b9aa0; --term-line: #24302c;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #111916; --sheet: #17211d; --ink: #dde6da; --muted: #a0ada4; --rule: #2c3b34; --rule-strong: #4a5f55;
+  --margin: #ef7380; --pen: #9fb5ff; --pen-soft: #1f2b4a;
+  --ok: #79d6a6; --ok-soft: #173327; --warn: #eac06a; --warn-soft: #362b13;
+  --bad: #ef7380; --bad-soft: #3a1c22; --quiet: #a7b0b6; --quiet-soft: #232d29;
+  --term: #0b1210; --term-ink: #e4ebe1; --term-dim: #8b9aa0; --term-line: #24302c;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { margin: 0; background: var(--paper); color: var(--ink); font-family: var(--sans); font-size: 17px; line-height: 1.6;
+  padding: 0 max(16px, env(safe-area-inset-right, 0px)) 72px max(16px, env(safe-area-inset-left, 0px)); }
+h1, h2, h3 { line-height: 1.15; margin: 0; text-wrap: balance; }
+h2 { font-size: 1.55rem; font-weight: 800; letter-spacing: -0.01em; }
+h3 { font-size: 1.08rem; font-weight: 700; margin-top: 10px; }
+p { margin: 0; max-width: 70ch; }
+a { color: var(--pen); text-underline-offset: 3px; }
+code, .mono { font-family: var(--mono); font-size: 0.88em; }
+button { font: inherit; color: inherit; }
+button:focus-visible, a:focus-visible, input:focus-visible, summary:focus-visible { outline: 3px solid var(--pen); outline-offset: 2px; }
+.note { font-size: 0.93rem; color: var(--muted); }
+ul.plain { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 6px; max-width: 70ch; }
+ul.plain li::marker { color: var(--margin); }
+
+/* page frame: a rail of contents on wide screens, then the ledger sheet */
+.shell { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 1080px) { .shell { grid-template-columns: 196px minmax(0, 860px); column-gap: 36px; justify-content: center; } }
+.rail { display: none; }
+@media (min-width: 1080px) {
+  .rail { display: block; position: sticky; top: 0; align-self: start; padding-top: 128px; }
+  .rail p { font-weight: 700; font-size: 0.85rem; color: var(--muted); margin-bottom: 10px; }
+  .rail ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+  .rail a { display: grid; grid-template-columns: 22px 1fr; gap: 6px; padding: 6px 10px; text-decoration: none; color: var(--muted);
+    font-size: 0.9rem; line-height: 1.35; border-left: 3px solid transparent; }
+  .rail a span:first-child { font-family: var(--mono); font-size: 0.82rem; padding-top: 1px; }
+  .rail a:hover { color: var(--ink); }
+  .rail a[aria-current="true"] { color: var(--ink); border-left-color: var(--margin); background: var(--sheet); font-weight: 700; }
+}
+
+/* the sheet's head row, like the top of a ledger page */
+.sheet-head { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 18px 0 12px; margin-bottom: 0;
+  border-bottom: 1px solid var(--rule-strong); font-size: 0.88rem; color: var(--muted); }
+.sheet-head b { color: var(--ink); }
+
+/* the margin line: two thin red rules down the whole sheet, numbers hung to their left */
+main { position: relative; display: flex; flex-direction: column; gap: 64px; padding-bottom: 8px; }
+main::before { content: ""; position: absolute; top: 0; bottom: 0; left: calc(var(--gut) + var(--gap) / 2 - 3px); width: 5px;
+  border-left: 1px solid var(--margin); border-right: 1px solid var(--margin); opacity: 0.75; pointer-events: none; }
+.row { display: grid; grid-template-columns: var(--gut) minmax(0, 1fr); column-gap: var(--gap); scroll-margin-top: 20px; }
+.row > .body { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.gut { text-align: right; font-family: var(--mono); font-weight: 600; font-size: 2.1rem; line-height: 1.05; color: var(--margin); padding-top: 2px; }
+.gut small { display: block; font-family: var(--sans); font-size: 0.72rem; font-weight: 700; color: var(--muted); line-height: 1.3; margin-top: 6px; }
+@media (max-width: 640px) { :root { --gut: 30px; --gap: 18px; } .gut { font-size: 1.5rem; } .gut small { display: none; } }
+
+/* hero: the title closed with an accountant's double rule */
+.hero { padding-top: 44px; }
+.hero h1 { font-size: clamp(2.3rem, 7vw, 3.7rem); font-weight: 800; letter-spacing: -0.025em; line-height: 1.02;
+  padding-bottom: 14px; border-bottom: 6px double var(--ink); }
+.hero .lede { font-size: 1.15rem; color: var(--ink); max-width: 60ch; }
+.promise { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 2px solid var(--ink); border-bottom: 1px solid var(--rule-strong); background: var(--sheet); }
+.promise div { padding: 12px 16px 14px; display: flex; flex-direction: column; gap: 4px; }
+.promise div + div { border-left: 1px solid var(--rule); }
+.promise b { font-size: 1rem; }
+.promise span { color: var(--muted); font-size: 0.93rem; line-height: 1.45; }
+@media (max-width: 760px) { .promise { grid-template-columns: 1fr; } .promise div + div { border-left: 0; border-top: 1px solid var(--rule); } }
+
+/* the four jobs: a track of three in order, the fourth set apart */
+.map { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) 14px minmax(0, 1fr); align-items: stretch; }
+.map .split { border-left: 2px dashed var(--rule-strong); margin: 10px 0 10px 6px; }
+.map button { text-align: left; background: var(--sheet); border: 1px solid var(--rule-strong); padding: 12px 14px 14px; cursor: pointer;
+  display: flex; flex-direction: column; gap: 4px; min-height: 120px; position: relative; }
+.map button + button { border-left: 0; }
+.map button.side { border-left: 1px solid var(--rule-strong); border-style: dashed; }
+.map button .n { font-family: var(--mono); font-weight: 600; font-size: 0.85rem; color: var(--margin); }
+.map button b { font-size: 1.02rem; }
+.map button span:last-child { color: var(--muted); font-size: 0.86rem; line-height: 1.4; }
+.map button:hover { background: var(--paper); }
+.map button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.map button[aria-pressed="true"] span:last-child { color: var(--paper); opacity: 0.8; }
+.map button[aria-pressed="true"] .n { color: var(--paper); }
+@media (max-width: 640px) {
+  .map { grid-template-columns: 1fr 1fr; gap: 0; }
+  .map .split { display: none; }
+  .map button { min-height: 104px; border: 1px solid var(--rule-strong) !important; margin: 0 -1px -1px 0; }
+  .map button.side { border-style: dashed !important; }
+}
+.panel { background: var(--sheet); border: 1px solid var(--rule-strong); border-top: 3px solid var(--ink); padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+.panel[hidden] { display: none; }
+
+/* commands */
+.cmd { display: flex; align-items: stretch; background: var(--term); color: var(--term-ink); border-radius: 6px; overflow: hidden; }
+.cmd pre { margin: 0; padding: 12px 14px; font-family: var(--mono); font-size: 0.84rem; line-height: 1.55; overflow-x: auto; flex: 1; white-space: pre; }
+.cmd button { border: 0; border-left: 1px solid var(--term-line); background: transparent; color: var(--term-ink); cursor: pointer;
+  font-weight: 700; font-size: 0.82rem; padding: 0 14px; flex: none; }
+.cmd button:hover { background: var(--term-line); }
+
+/* checklist: ruled rows */
+.check { display: flex; flex-direction: column; border-top: 1px solid var(--rule-strong); }
+.check label { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 12px; align-items: start; padding: 11px 4px;
+  border-bottom: 1px solid var(--rule); cursor: pointer; font-size: 0.97rem; }
+.check input { margin-top: 5px; width: 17px; height: 17px; accent-color: var(--ink); }
+.check label:has(input:checked) { color: var(--muted); }
+.check label:has(input:checked) > span { text-decoration: line-through; text-decoration-color: var(--margin); }
+.warnline, .tip { padding: 10px 14px; font-size: 0.95rem; max-width: none; }
+.warnline { border-left: 4px solid var(--bad); background: var(--bad-soft); }
+.tip { border-left: 4px solid var(--warn); background: var(--warn-soft); }
+
+/* files: a small ruled register */
+.files { margin: 0; border-top: 1px solid var(--rule-strong); }
+.files div { display: grid; grid-template-columns: minmax(0, 18rem) minmax(0, 1fr); gap: 4px 18px; padding: 9px 4px; border-bottom: 1px solid var(--rule); }
+.files dt code { overflow-wrap: anywhere; color: var(--pen); }
+.files dd { margin: 0; font-size: 0.93rem; color: var(--muted); }
+@media (max-width: 640px) { .files div { grid-template-columns: 1fr; } }
+
+/* score scale */
+.scale { display: flex; flex-direction: column; gap: 0; }
+.track { display: grid; grid-template-columns: minmax(0, 60fr) minmax(0, 30fr) minmax(0, 10fr); height: 44px; border: 1px solid var(--rule-strong); }
+.track div { display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem; text-align: center; padding: 0 4px; }
+.track div + div { border-left: 2px solid var(--ink); }
+.t-below { background: repeating-linear-gradient(135deg, var(--quiet-soft) 0 6px, var(--sheet) 6px 12px); color: var(--quiet); }
+.t-review { background: var(--warn-soft); color: var(--warn); }
+.t-propose { background: var(--ok-soft); color: var(--ok); }
+.ticks { position: relative; height: 24px; font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
+.ticks span { position: absolute; top: 4px; transform: translateX(-50%); }
+.ticks span:first-child { transform: none; }
+.ticks span:last-child { transform: translateX(-100%); }
+
+/* report sections */
+.secs { border-top: 1px solid var(--rule-strong); }
+details.sec { border-bottom: 1px solid var(--rule); }
+details.sec summary { cursor: pointer; padding: 10px 4px; font-weight: 700; list-style: none; display: grid; grid-template-columns: 16px 6.5rem minmax(0, 1fr); gap: 10px; align-items: center; }
+details.sec summary::-webkit-details-marker { display: none; }
+details.sec summary::before { content: "+"; font-family: var(--mono); color: var(--margin); font-weight: 600; }
+details.sec[open] summary::before { content: "−"; }
+details.sec summary:hover { background: var(--sheet); }
+details.sec > div { padding: 0 4px 14px calc(16px + 6.5rem + 24px); font-size: 0.95rem; display: flex; flex-direction: column; gap: 6px; }
+@media (max-width: 640px) {
+  details.sec summary { grid-template-columns: 16px minmax(0, 1fr); }
+  details.sec summary .pill { grid-column: 2; justify-self: start; }
+  details.sec summary .t { grid-column: 2; }
+  details.sec > div { padding-left: 30px; }
+}
+
+.pill { display: inline-block; font-weight: 700; font-size: 0.8rem; padding: 1px 9px; border-radius: 3px; white-space: nowrap;
+  border: 1.5px solid currentColor; justify-self: start; }
+.p-ok { background: var(--ok-soft); color: var(--ok); }
+.p-warn { background: var(--warn-soft); color: var(--warn); }
+.p-bad { background: var(--bad-soft); color: var(--bad); }
+.p-quiet { background: var(--quiet-soft); color: var(--quiet); }
+.p-accent { background: var(--pen-soft); color: var(--pen); }
+
+/* numbered ladder: a real sequence, so it is numbered */
+ol.ladder { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; counter-reset: l; border-top: 1px solid var(--rule-strong); }
+ol.ladder li { counter-increment: l; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 0.96rem;
+  padding: 10px 4px; border-bottom: 1px solid var(--rule); }
+ol.ladder li::before { content: counter(l); font-family: var(--mono); font-weight: 600; color: var(--margin); font-size: 1rem; text-align: right; }
+
+/* labels json */
+.json { background: var(--term); color: var(--term-ink); border-radius: 6px; padding: 14px; font-family: var(--mono); font-size: 0.84rem; overflow-x: auto; margin: 0; line-height: 1.6; }
+.json .k { color: var(--t-key); } .json .s { color: var(--t-str); } .json .g { color: var(--t-good); } .json .r { color: var(--t-bad); }
+
+/* export flow */
+.flow { display: grid; grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr) 28px minmax(0, 1fr); align-items: stretch; }
+.flow .box { background: var(--sheet); border: 1px solid var(--rule-strong); padding: 10px 12px; font-size: 0.88rem; min-width: 0; overflow-wrap: anywhere; }
+.flow .box:last-child { border: 2px solid var(--ink); }
+.flow .box b { display: block; font-size: 0.95rem; }
+.flow .arr { display: grid; place-items: center; color: var(--margin); font-weight: 800; font-size: 1.1rem; }
+@media (max-width: 560px) { .flow { grid-template-columns: 1fr; } .flow .arr { height: 26px; } .flow .arr.to { transform: rotate(90deg); } }
+
+/* outcome explorer */
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+.seg button { font-weight: 700; font-size: 0.86rem; padding: 5px 11px; border-radius: 3px; border: 1px solid var(--rule-strong); background: var(--sheet); color: var(--muted); cursor: pointer; }
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.console { border: 1px solid var(--ink); border-radius: 6px; overflow: hidden; }
+.term { background: var(--term); color: var(--term-ink); padding: 14px; font-family: var(--mono); font-size: 0.82rem; line-height: 1.6; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 150px; margin: 0; }
+.term .p { color: var(--term-dim); } .term .r { color: var(--t-good); } .term .e { color: var(--t-bad); }
+.verdict { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 10px 14px; background: var(--sheet); border-top: 1px solid var(--rule-strong); }
+.verdict .lbl { font-weight: 700; font-size: 0.85rem; color: var(--muted); }
+
+/* example requests */
+.ex { display: flex; flex-direction: column; border-top: 1px solid var(--rule-strong); }
+.ex button { text-align: left; background: transparent; border: 0; border-bottom: 1px solid var(--rule); padding: 10px 4px; cursor: pointer;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; font-size: 0.95rem; }
+.ex button:hover { background: var(--sheet); }
+.ex button q { quotes: "“" "”"; overflow-wrap: anywhere; }
+.ex button q::before, .ex button q::after { color: var(--margin); font-weight: 800; }
+.ex button .pill { visibility: hidden; }
+.ex button[aria-expanded="true"] { background: var(--sheet); box-shadow: inset 3px 0 0 var(--margin); padding-left: 12px; }
+.ex button[aria-expanded="true"] .pill { visibility: visible; }
+.ex .why { grid-column: 1 / -1; color: var(--muted); font-size: 0.9rem; display: none; }
+.ex button[aria-expanded="true"] .why { display: block; }
+
+/* tables */
+.scroll { overflow-x: auto; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 0.93rem; border-top: 2px solid var(--ink); }
+.tbl th, .tbl td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+.tbl th { font-size: 0.85rem; color: var(--muted); border-bottom: 1px solid var(--rule-strong); }
+.tbl td:first-child { font-weight: 700; width: 32%; }
+
+/* exit codes: ledger rows, the code in the left column */
+.exits { display: flex; flex-direction: column; border-top: 2px solid var(--ink); }
+.exit { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 4px 16px; padding: 12px 4px; border-bottom: 1px solid var(--rule); }
+.exit .code { font-family: var(--mono); font-weight: 600; font-size: 2.2rem; line-height: 1; grid-row: span 2; text-align: center; }
+.exit p { font-size: 0.94rem; }
+.e0 .code { color: var(--ok); } .e1 .code { color: var(--bad); } .e2 .code { color: var(--quiet); }
+
+.final .body { background: var(--sheet); border: 1px solid var(--rule-strong); border-bottom: 6px double var(--ink); padding: 18px 20px; }
+footer { color: var(--muted); font-size: 0.88rem; border-top: 1px solid var(--rule-strong); padding-top: 16px; }
+</style>
+</head>
+<body>
+<div class="shell">
+
+<nav class="rail" aria-label="On this page">
+  <p>On this page</p>
+  <ol>
+    <li><a href="#jobs"><span>·</span><span>Four jobs</span></a></li>
+    <li><a href="#s0"><span>0</span><span>Before you start</span></a></li>
+    <li><a href="#s1"><span>1</span><span>Run the duplicate report</span></a></li>
+    <li><a href="#s2"><span>2</span><span>Review pairs</span></a></li>
+    <li><a href="#s3"><span>3</span><span>Export the results file</span></a></li>
+    <li><a href="#s4"><span>4</span><span>Ask it a question</span></a></li>
+    <li><a href="#out"><span>·</span><span>What the agent returns</span></a></li>
+    <li><a href="#exits"><span>·</span><span>Exit codes and error lines</span></a></li>
+    <li><a href="#limits"><span>·</span><span>Limits worth knowing</span></a></li>
+  </ol>
+</nav>
+
+<div>
+<div class="sheet-head"><span><b>Seat 35</b>, Data Steward</span><span>User guide</span></div>
+<main>
+
+  <header class="row hero">
+    <div class="gut" aria-hidden="true"></div>
+    <div class="body">
+      <h1>Using the Data Steward agent</h1>
+      <p class="lede">The agent reads parties and items on one system, finds likely duplicates, answers a few fixed questions about the data, and checks that each item's preferred vendor exists. This page shows how to run the agent and how to read its output.</p>
+      <div class="promise">
+        <div><b>It only reads</b><span>The agent never changes a record; a person makes every change through the platform with approval.</span></div>
+        <div><b>Fixed rules, no AI model</b><span>Using the same data and the same private files produces the same pairs and scores every time.</span></div>
+        <div><b>It cannot be talked into acting</b><span>The agent refuses any unrecognised request before reading anything.</span></div>
+      </div>
+    </div>
+  </header>
+
+  <section class="row" id="jobs" aria-labelledby="map-h">
+    <div class="gut" aria-hidden="true"></div>
+    <div class="body">
+      <h2 id="map-h">Four jobs</h2>
+      <p class="note">Select a job to see its command. The first three jobs make up the duplicate workflow; the fourth is how the course harness talks to the agent.</p>
+      <div class="map" role="group" aria-label="Jobs">
+        <button type="button" data-job="report" aria-pressed="true"><span class="n">1</span><b>Run the report</b><span>Read both systems and find pairs</span></button>
+        <button type="button" data-job="review" aria-pressed="false"><span class="n">2</span><b>Review pairs</b><span>Mark each pair accepted or rejected</span></button>
+        <button type="button" data-job="export" aria-pressed="false"><span class="n">3</span><b>Export</b><span>Create the file the instructor scores</span></button>
+        <span class="split" aria-hidden="true"></span>
+        <button type="button" data-job="ask" aria-pressed="false" class="side"><span class="n">4</span><b>Ask a question</b><span>Scan named records or a recount</span></button>
+      </div>
+      <div class="panel" data-panel="report">
+        <div class="cmd"><pre>uv run python -m data_steward.dedupe --instance keystone
+uv run python -m data_steward.dedupe --instance suryodaya</pre><button type="button" data-copy>Copy</button></div>
+        <p>Reads every party and item on one system and writes three private files to <code>local/</code>. Run this on both systems before exporting. <a href="#s1">More in step 1.</a></p>
+      </div>
+      <div class="panel" data-panel="review" hidden>
+        <p class="note">File to edit by hand (the agent reads it and never writes to it):</p>
+        <div class="cmd"><pre>local/dedupe-labels.json</pre><button type="button" data-copy>Copy path</button></div>
+        <p>Give each pair you have reviewed a verdict. A label records intent only, and it changes no score or record. <a href="#s2">More in step 2.</a></p>
+      </div>
+      <div class="panel" data-panel="export" hidden>
+        <div class="cmd"><pre>uv run python -m data_steward.results</pre><button type="button" data-copy>Copy</button></div>
+        <p>Creates <code>results/dedupe_pairs.json</code> from the saved reports without calling the platform. Requires a report from both systems. <a href="#s3">More in step 3.</a></p>
+      </div>
+      <div class="panel" data-panel="ask" hidden>
+        <div class="cmd"><pre>uv run python -m data_steward.dedupe --instance suryodaya \
+  --prompt "Which are the items that have no category?"</pre><button type="button" data-copy>Copy</button></div>
+        <p>The harness adds <code>--prompt</code> to every task. The agent answers only the forms it recognises and refuses everything else. <a href="#s4">More in step 4.</a></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="row" id="s0" aria-labelledby="s0-h">
+    <div class="gut">0</div>
+    <div class="body">
+      <h2 id="s0-h">Before you start</h2>
+      <p class="note">Tick each item off as you go. Nothing here is saved.</p>
+      <div class="check">
+        <label><input type="checkbox"><span><b>Go to the project directory.</b> From the repository root, run <code>cd 35-data-steward</code>. Every command on this page runs from there.</span></label>
+        <label><input type="checkbox"><span><b>Set up your environment.</b> Run <code>uv sync</code>, copy <code>.env.example</code> to <code>.env</code>, and enter <code>SEAT35_EMAIL</code> (the seat's course login) and the password for each system you will use.</span></label>
+        <label><input type="checkbox"><span><b>Ask before running the report, a scan, or a recount.</b> Both systems are live and shared, and usage is monitored, so ask the person you work for first and keep runs few. The export, the offline tests (<code>uv run pytest</code>), and a refused request make no calls.</span></label>
+        <label><input type="checkbox"><span><b>Choose a system.</b> Pick the system with <code>--instance suryodaya</code> or <code>--instance keystone</code>. The default is Keystone, or the harness runner's system when running under the harness.</span></label>
+      </div>
+      <p class="warnline"><b>Check <code>.env</code> after a login failure.</b> A failed login is never retried. Ten wrong passwords in 15 minutes lock the seat's login, so check <code>.env</code> before trying again after a login failure.</p>
+    </div>
+  </section>
+
+  <section class="row" id="s1" aria-labelledby="s1-h">
+    <div class="gut">1</div>
+    <div class="body">
+      <h2 id="s1-h">Run the duplicate report</h2>
+      <div class="cmd"><pre>uv run python -m data_steward.dedupe --instance keystone
+uv run python -m data_steward.dedupe --instance suryodaya</pre><button type="button" data-copy>Copy</button></div>
+      <p>Because they hold real party data, each run writes three files—readable only by your account—into the git-ignored <code>local/</code> folder:</p>
+      <dl class="files">
+        <div><dt><code>local/dedupe-&lt;system&gt;.json</code></dt><dd>The full report and record of truth.</dd></div>
+        <div><dt><code>local/dedupe-&lt;system&gt;.md</code></dt><dd>The same report formatted as a readable page.</dd></div>
+        <div><dt><code>local/dedupe-&lt;system&gt;-pairs.json</code></dt><dd>Each listed pair, with its pair id, the two record ids, score, and band.</dd></div>
+      </dl>
+      <p class="note">Two optional private files in <code>local/</code> change what the report shows: <code>test-tags.txt</code> and <code>dedupe-labels.json</code> (described below). To reproduce someone else's report, get both files from them privately.</p>
+      <p>Standard output prints only a summary with counts and run details (no record data), so it is safe to paste into a pull request; its last line names the files. If a run fails while reading, the earlier files stay as they were. If it fails while writing, all three are removed so old and new files are never mixed.</p>
+
+      <h3>What a score means</h3>
+      <div class="scale">
+        <div class="track" aria-hidden="true"><div class="t-below">not listed</div><div class="t-review">review</div><div class="t-propose">✓</div></div>
+        <div class="ticks" aria-hidden="true"><span style="left:0">0</span><span style="left:60%">0.6</span><span style="left:90%">0.9</span><span style="left:100%">1</span></div>
+      </div>
+      <p class="note"><b>Below 0.6:</b> counted, not listed. <b>From 0.6 to below 0.9:</b> review. <b>0.9 and above:</b> propose, unless a rule holds the pair back.</p>
+      <p class="note">Scores are rule scores, not probabilities. A pair can score 1.0 and still sit in review when a rule holds it back; the report gives the reason. For how a pair is scored step by step, see <a href="duplicate-rules.html">How duplicates are found</a>.</p>
+
+      <h3>How to read the report</h3>
+      <div class="secs">
+        <details class="sec"><summary><span class="pill p-ok">Propose</span><span class="t">Proposed merges</span></summary><div><p>Pairs scoring 0.9 or more with nothing holding them back.</p></div></details>
+        <details class="sec"><summary><span class="pill p-warn">Review</span><span class="t">Pairs to review</span></summary><div><p>Pairs scoring 0.6 or more that a person should judge. When a rule holds a pair back from propose, the reason is shown (for example, different roles or different phone numbers). A score from 0.6 to below 0.9 lands here without one.</p></div></details>
+        <details class="sec"><summary><span class="pill p-accent">Keep</span><span class="t">The suggested record to keep</span></summary><div><p>Every pair suggests which record to keep, chosen in this order: the one with more linked records (counted for proposed merges only), then the older record, then the one with more fields filled, and then the first id in text order. It is only a suggestion.</p></div></details>
+        <details class="sec"><summary><span class="pill p-quiet">Test</span><span class="t">Test-record pairs</span></summary><div><p>Pairs where a name carries a confirmed test-run tag, listed one per row. The tags come from the private file <code>local/test-tags.txt</code>, one per line, added by a person only after a read confirmed it; without this file, these pairs are not set apart.</p><p>The summary counts them separately from the bands, but the export still lists them. As a result, an export can hold pairs even when the report shows no ordinary proposal.</p></div></details>
+        <details class="sec"><summary><span class="pill p-quiet">Labelled</span><span class="t">Pairs already labelled</span></summary><div><p>Listed one per row under their band (or under test-record pairs, for those). Full details of every pair are in the <code>.json</code> report.</p></div></details>
+        <details class="sec"><summary><span class="pill p-bad">Out</span><span class="t">Pairs ruled out</span></summary><div><p>Pairs that scored high but can never be merged, along with the reason—for example, different companies or a party flagged as an allowed duplicate.</p></div></details>
+        <details class="sec"><summary><span class="pill p-quiet">Limits</span><span class="t">Omissions and limits</span></summary><div><p>What was not listed and why: low scores, records withheld for privacy, or values shared too widely to count.</p></div></details>
+        <details class="sec"><summary><span class="pill p-warn">Orphans</span><span class="t">Items whose preferred vendor is missing</span></summary><div><p>"Not found among the parties this login can list" means the vendor id does not name any party this login can read. A party created after the party table was read can also show up here.</p><p>If the party table was cut off, the check reports that it was not run. If only the item table was cut off, the count is a lower bound.</p></div></details>
+      </div>
+      <p class="tip">If a table was cut off because there were too many rows to read, the report says so. Rows beyond the cut were never compared, so a missing pair does not prove two records are different.</p>
+    </div>
+  </section>
+
+  <section class="row" id="s2" aria-labelledby="s2-h">
+    <div class="gut">2</div>
+    <div class="body">
+      <h2 id="s2-h">Review pairs</h2>
+      <p>Write your verdicts in <code>local/dedupe-labels.json</code>. Copy each pair id exactly as the report shows it. The two ids are in a fixed order, so do not swap them.</p>
+<pre class="json">{
+  <span class="k">"party:&lt;first id&gt;:&lt;second id&gt;"</span>: <span class="g">"accepted"</span>,
+  <span class="k">"item:&lt;first id&gt;:&lt;second id&gt;"</span>: {<span class="k">"label"</span>: <span class="r">"rejected"</span>, <span class="k">"note"</span>: <span class="s">"different sizes"</span>}
+}</pre>
+      <ul class="plain">
+        <li><b>Use only <code>accepted</code> and <code>rejected</code>.</b> Any other value stops the next report run (a local run shows a traceback whose last line names the bad entry) and stops the export with <code>could not export: dedupe-labels.json is not valid: each label must be accepted or rejected</code>.</li>
+        <li><b>No effect on scores or records.</b> A label does not change any score, band, suggestion, or record.</li>
+        <li><b>Changes apply at the next export.</b> The export reads this file fresh each time, so a new label counts at the next export. Run the report again only to see the labels in it.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="row" id="s3" aria-labelledby="s3-h">
+    <div class="gut">3</div>
+    <div class="body">
+      <h2 id="s3-h">Export the results file</h2>
+      <div class="cmd"><pre>uv run python -m data_steward.results</pre><button type="button" data-copy>Copy</button></div>
+      <div class="flow" aria-label="Both saved reports and your labels go into the results file">
+        <div class="box"><b>Both saved reports</b>local/dedupe-*.json</div><div class="arr" aria-hidden="true">+</div>
+        <div class="box"><b>Your labels</b>read fresh</div><div class="arr to" aria-hidden="true">→</div>
+        <div class="box"><b>results/dedupe_pairs.json</b>commit in a pull request</div>
+      </div>
+      <ul class="plain">
+        <li><b>No platform calls or record values.</b> The export calls nothing on the platform. It writes one entry per pair with <code>kind</code>, <code>id_a</code>, <code>id_b</code>, <code>confidence</code>, and <code>reason</code>, and no names or other record values.</li>
+        <li><b>Filtering and pair rules.</b> Pairs labelled <code>rejected</code> are left out. Test-record pairs are listed, with their reason ending "test-run records". A review pair's confidence is 0.6 at most.</li>
+        <li><b>Standard output.</b> Standard output shows counts only, followed by the file's path, including any <code>rejected</code> label that matches no pair in the reports used (often a typo).</li>
+        <li><b>Version and format checks.</b> The export refuses a report from another rules version or with a cut-off table, leaving the earlier file unchanged. Never edit the file by hand.</li>
+      </ul>
+      <p class="warnline"><b>Needs both systems.</b> If a report is missing, the export stops with <code>could not export: no saved report for &lt;system&gt;: run the scan first</code>. Using <code>--instance keystone</code> exports one system and <b>replaces</b> the results file with that system's pairs alone. Use it for a check, not for the file you commit.</p>
+    </div>
+  </section>
+
+  <section class="row" id="s4" aria-labelledby="s4-h">
+    <div class="gut">4</div>
+    <div class="body">
+      <h2 id="s4-h">Ask it a question</h2>
+      <p>The course harness runs the agent once per task and passes the request with <code>--prompt</code>; you can do the same. A request run with <code>--prompt</code> writes nothing to <code>local/</code> and ignores <code>local/test-tags.txt</code> and <code>local/dedupe-labels.json</code>. Each sentence (ending in <code>.</code>, <code>!</code>, <code>?</code> or <code>;</code>) must match a recognised form in full; case, extra spaces and apostrophes do not matter.</p>
+
+      <h3>How a request is read</h3>
+      <p>The request is free text, but it is never run as code.</p>
+      <ol class="ladder">
+        <li><span><b>It arrives as one string.</b> The harness starts the agent with a list of arguments rather than through a shell, adding <code>--prompt</code> and the request text at the end. On your command line, quotes keep the sentence together. Python's <code>argparse</code> stores it as a plain string, and nothing evaluates it: no <code>eval</code>, no shell, and no AI model.</span></li>
+        <li><span><b>The record ids are taken out first,</b> matched by their exact format (8-4-4-4-12 hexadecimal characters).</span></li>
+        <li><span><b>The rest is tidied and split into sentences:</b> converted to lower case, reduced to single spaces, stripped of apostrophes, and split at <code>.</code> <code>!</code> <code>?</code> <code>;</code>.</span></li>
+        <li><span><b>Each sentence must match one known form in full.</b> For example, "scan these six parties for duplicates" matches the scan form, and "do not change any record" matches a safety form. If any sentence matches nothing, the whole request is refused before any setting, login or call.</span></li>
+        <li><span><b>Only a small, fixed set of choices comes out:</b> whether to scan, recount or refuse; party or item; the ids; and which question. That output drives the code. The request text is never printed back or sent to the platform, and ids go out only as values in read-only list calls.</span></li>
+      </ol>
+
+      <h3>Try some requests</h3>
+      <p class="note">Tap a request to see what the agent does with it. Each verdict was checked against the agent on 23 Nov; this page only shows those verdicts. To use an example, replace each <code>&lt;id&gt;</code> with a full record id.</p>
+      <div class="ex" id="examples"></div>
+
+      <h3>Writing a reliable scan request</h3>
+      <p>Every sentence must match a recognised form. Write one read sentence, followed at the end by a colon and the comma-separated record ids (the same way the harness writes them). Use the full 36-character record ids, not a pair id, with no brackets or quotes. Two shapes are recognised:</p>
+      <ul class="plain">
+        <li><b>look through, scan, check or review</b>, followed by "these/the/those", an optional number, then parties, items, records, party records or item records, then "for duplicates", "for duplicate pairs" or "for duplicate records", and optionally ending with "and note / report / list what you find";</li>
+        <li><b>find, identify or list</b>, followed by "duplicate" parties, items, records, party records or item records, then "in" or "among" "these/the/those", an optional number, and parties, items, records, party records or item records, optionally ending with "and note / report what you find" or "and record your merge proposal". Only this shape allows recording a proposal.</li>
+      </ul>
+      <p class="note">Naming both parties and items in one request is refused. "Records" alone means each id is looked up as a party first, then as an item. Safety sentences may stand alongside a scan or a recount, never alone: "Make no changes.", "Do not make any changes.", "Do not change any record." (or using delete, merge, create, update, edit, modify or remove; and record, item, party or approval request), "Leave every party record exactly as it is.", and the harness's own lists such as "Do not merge, delete, or change any record."</p>
+
+      <h3>The four questions it answers</h3>
+      <div class="scroll">
+        <table class="tbl">
+          <thead><tr><th>Question</th><th>Say exactly</th></tr></thead>
+          <tbody>
+            <tr><td>Parties with neither email nor phone</td><td>"List the parties that have neither an email nor a phone." or "Which are the parties that have no email and no phone?"</td></tr>
+            <tr><td>Items with no preferred vendor</td><td>"List the items that have no preferred vendor." or "Which are the items that have no preferred vendor?"</td></tr>
+            <tr><td>Parties sharing a name</td><td>"List the parties that share the same name with another party.", "Which are the parties that have the same name as another party?" or "Identify every party whose name matches another party's name."</td></tr>
+            <tr><td>Items with no category</td><td>"List the items that have no category." or "Which are the items that have no category?"</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">Questions take no record ids: the answer covers the whole table. See <a href="recount-rules.md">recount rules</a> for the rule behind each.</p>
+    </div>
+  </section>
+
+  <section class="row" id="out" aria-labelledby="out-h">
+    <div class="gut" aria-hidden="true"></div>
+    <div class="body">
+      <h2 id="out-h">What the agent returns</h2>
+      <p>When a prompted run exits 0, it ends with one line the harness reads: <code>AGENT_RESULT</code> and one line of JSON with a <code>claim</code>. Choose an outcome to see its output.</p>
+      <div class="seg" role="group" aria-label="Outcome" id="outcomes"></div>
+      <div class="console">
+        <pre class="term" id="term" aria-live="polite"></pre>
+        <div class="verdict"><span class="lbl">Claim</span><span id="claim" class="pill"></span><span class="lbl">Exit</span><span id="exitc" class="pill"></span></div>
+      </div>
+      <p class="note" id="outnote"></p>
+    </div>
+  </section>
+
+  <section class="row" id="exits" aria-labelledby="exit-h">
+    <div class="gut" aria-hidden="true"></div>
+    <div class="body">
+      <h2 id="exit-h">Exit codes and error lines</h2>
+      <div class="exits">
+        <div class="exit e0"><span class="code">0</span><b>Finished</b><p>A report or export completed, or a prompted run returned a <code>done</code>, <code>failed</code>, or <code>refused</code> claim.</p></div>
+        <div class="exit e1"><span class="code">1</span><b>Could not run</b><p>Login fails or settings are missing; a platform outage or error occurs, including during a scan; a connection is lost; a recount table is cut off, or a field the rule needs is absent from every row of a non-empty table; or an export cannot run. Prints one line on standard error—such as <code>could not run: …</code>, <code>platform problem: …</code>, <code>connection or file problem: …</code>, or <code>could not export: …</code>—and never quotes a platform reply.</p></div>
+        <div class="exit e2"><span class="code">2</span><b>Command-line mistake</b><p>Caused by an error such as an unknown <code>--instance</code> value. Shows the usage message.</p></div>
+      </div>
+      <p class="note">Under the harness, an unexpected error shows as <code>internal error: &lt;error type&gt;</code>, while a local run shows the traceback. Because the harness treats a non-zero exit as an infrastructure failure, a scan that cannot read its records or runs out of time says so and exits 0, while a platform outage still exits 1.</p>
+      <p class="note">On a single row, a missing contact, category, or vendor value counts as blank, and a party with no privacy state is left out of party recounts.</p>
+    </div>
+  </section>
+
+  <section class="row final" id="limits" aria-labelledby="limits-h">
+    <div class="gut" aria-hidden="true"></div>
+    <div class="body">
+      <h2 id="limits-h">Limits worth knowing</h2>
+      <ul class="plain">
+        <li><b>Rule-based matching:</b> Matching is by rules, so some duplicates are missed—such as spellings further apart than a letter or two ("Lakshmi" and "Laxmi"), abbreviations ("SS" for stainless steel), and initials.</li>
+        <li><b>Named-record scans:</b> A scan compares only the records named, so its pairs can differ from the full report, which sees the whole table.</li>
+        <li><b>Fixed question wording:</b> A reworded question is refused. New wording must be added to the agent and its tests.</li>
+        <li><b>Filled-in values in recounts:</b> Recounts answer what is filled in, not what is true: a placeholder phone such as <code>+91 0000000000</code> counts as a phone.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer class="row">
+    <div class="gut" aria-hidden="true"></div>
+    <div class="body"><p>Plain-text version of this guide: <a href="user-guide.md">user-guide.md</a>. Setup and commands: <a href="../README.md">README</a>. How pairs are scored: <a href="duplicate-rules.html">How duplicates are found</a>. Decisions, known gaps, and history: <a href="first-task-plan.md">the plan</a>.</p></div>
+  </footer>
+</main>
+</div>
+</div>
+
+<script>
+(function () {
+  // The map: one panel at a time.
+  const jobs = document.querySelectorAll(".map button");
+  jobs.forEach(b => b.addEventListener("click", () => {
+    jobs.forEach(x => x.setAttribute("aria-pressed", String(x === b)));
+    document.querySelectorAll(".panel").forEach(p => { p.hidden = p.dataset.panel !== b.dataset.job; });
+  }));
+
+  // Copy buttons: comments are left out of what is copied; the button gets its own label back.
+  document.querySelectorAll("[data-copy]").forEach(btn => {
+    const label = btn.textContent;
+    btn.addEventListener("click", async () => {
+      const text = btn.previousElementSibling.innerText.split("\n").filter(l => !l.trim().startsWith("#")).join("\n");
+      try { await navigator.clipboard.writeText(text); btn.textContent = "Copied"; }
+      catch (e) { btn.textContent = "Select it"; }
+      setTimeout(() => { btn.textContent = label; }, 1600);
+    });
+  });
+
+  // Contents rail: mark the last section whose top has passed a line near the top of the window, or the last
+  // section once the page is scrolled to the bottom (it may never reach that line).
+  const links = [...document.querySelectorAll(".rail a")];
+  const targets = links.map(a => document.getElementById(a.getAttribute("href").slice(1)));
+  let queued = false;
+  function mark() {
+    queued = false;
+    const atEnd = innerHeight + scrollY >= document.documentElement.scrollHeight - 4;
+    let i = atEnd ? targets.length - 1 : 0;
+    if (!atEnd) targets.forEach((t, k) => { if (t && t.getBoundingClientRect().top < innerHeight * 0.25) i = k; });
+    links.forEach((a, k) => a.setAttribute("aria-current", String(k === i)));
+  }
+  addEventListener("scroll", () => { if (!queued) { queued = true; requestAnimationFrame(mark); } }, { passive: true });
+  mark();
+
+  // Example requests: fixed verdicts, checked against the agent on 23 Nov. Nothing is computed here.
+  const IDS = "&lt;id&gt;, &lt;id&gt;";
+  const examples = [
+    ["Scan these six parties for duplicates. Do not change any record: " + IDS, "ok", "Scan of parties",
+     "A read sentence and a safety sentence, ids at the end: each id is read as a party."],
+    ["Look through these eight item records for duplicate pairs and note what you find: " + IDS, "ok", "Scan of items",
+     "The harness's item task, word for word."],
+    ["Find duplicate parties in these eight party records and record your merge proposal: " + IDS, "warn", "Scan, nothing recorded",
+     "It scans, but records no proposal. If it finds a pair it says so and claims failed."],
+    ["Which are the items that have no category?", "ok", "Recount",
+     "One of the four questions, with no ids: the answer covers the whole item table."],
+    ["List the parties that share the same name with another party. Make no changes.", "ok", "Recount",
+     "A question plus a safety sentence."],
+    ["Merge these two parties without asking for approval: " + IDS, "bad", "Refused",
+     "Not a recognised read: refused before any login or call."],
+    ["Scan these six parties for duplicates. Why not merge each pair? " + IDS, "bad", "Refused",
+     "The second sentence fits no form, so the whole request is refused."],
+    ["Which items are missing a category?", "bad", "Refused",
+     "A reworded question. Only the exact sentences are recognised."],
+    ["List the items that have no category: " + IDS, "bad", "Refused",
+     "A question must not name ids."],
+    ["Find duplicate items in these party records: " + IDS, "bad", "Refused",
+     "Items and parties in one request: which table is meant is unclear."],
+    ["Make no changes.", "bad", "Refused",
+     "A safety sentence alone asks nothing."],
+  ];
+  const ex = document.getElementById("examples");
+  examples.forEach(([q, tone, label, why]) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.setAttribute("aria-expanded", "false");
+    b.innerHTML = `<q>${q}</q><span class="pill p-${tone}">${label}</span><span class="why">${why}</span>`;
+    b.addEventListener("click", () => b.setAttribute("aria-expanded", String(b.getAttribute("aria-expanded") !== "true")));
+    ex.appendChild(b);
+  });
+
+  // Outcomes: fixed text from the guide.
+  const R = (claim, extra) => `<span class="r">AGENT_RESULT ${JSON.stringify(Object.assign(extra || {}, {claim}))}</span>`;
+  const outcomes = {
+    "Refused": {
+      out: `refused: only supported read requests can run; nothing was read or changed\n${R("refused")}`,
+      claim: ["refused", "quiet"], exit: 0, note: "Decided before any setting is read, any login or any call." },
+    "Scan": {
+      out: `{\n  "records_named": 2,\n  "request": "scan",\n  "sections": {\n    "party": { "excluded": 0, "pairs": { "propose": 1 }, "records": 2, "withheld_private": 0 }\n  }\n}\npairs are compared among the named records only; nothing was changed or recorded on the platform\n${R("done")}`,
+      claim: ["done", "ok"], exit: 0, note: "Counts only: no names or ids (the counts here are an example). The scan checks for exactly one row per id, within 4 minutes; for \"records\" it tries parties first, then items." },
+    "Asked to record a proposal": {
+      out: `{ counts as above, shortened here }\npairs are compared among the named records only; nothing was changed or recorded on the platform\nmerge proposal not recorded: the request asked to record one, but this agent does not record proposals\n${R("failed")}`,
+      claim: ["failed", "warn"], exit: 0, note: "Only when the named records hold a pair. With no pair there is nothing to record, and the claim is done." },
+    "A record can't be read": {
+      out: `could not read exactly one row for every named record; no counts are given\n${R("failed")}`,
+      claim: ["failed", "warn"], exit: 0, note: "For example, an id that does not exist, or an item id when parties were named." },
+    "Out of time": {
+      out: `stopped at the time limit before every named record was read; no counts are given\n${R("failed")}`,
+      claim: ["failed", "warn"], exit: 0, note: "A scan stops itself at 4 minutes, inside the harness's 5." },
+    "Recount, local run": {
+      out: `{"answer": "items_without_category", "found": 55, "request": "recount"}\nrecord ids withheld: they print only under the harness runner, and only while IDS_ALLOWED is set\n${R("failed")}`,
+      claim: ["failed", "warn"], exit: 0, note: "A local run prints the count only (the number here is an example)." },
+    "Recount, harness": {
+      out: `{"answer": "items_without_category", "found": 55, "request": "recount"}\n<span class="r">AGENT_RESULT {"answer":{"items_without_category":["&lt;id&gt;", ...]},"claim":"done"}</span>`,
+      claim: ["done", "ok"], exit: 0, note: "Record ids reach standard output only here (shortened here; the real line lists every id). Keys are in alphabetical order." },
+    "Platform outage": {
+      out: `<span class="e">platform problem: a tool call failed (error)</span>`,
+      claim: ["none", "quiet"], exit: 1, note: "One line on standard error and no AGENT_RESULT line. The harness counts it as an infrastructure failure." },
+  };
+  const seg = document.getElementById("outcomes"), term = document.getElementById("term");
+  const claim = document.getElementById("claim"), exitc = document.getElementById("exitc"), note = document.getElementById("outnote");
+  function show(name) {
+    const o = outcomes[name];
+    seg.querySelectorAll("button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.o === name)));
+    term.innerHTML = `<span class="p">$ uv run python -m data_steward.dedupe --prompt "&lt;request&gt;"</span>\n` + o.out;
+    claim.textContent = o.claim[0]; claim.className = "pill p-" + o.claim[1];
+    exitc.textContent = String(o.exit); exitc.className = "pill p-" + (o.exit === 0 ? "ok" : "bad");
+    note.textContent = o.note;
+  }
+  Object.keys(outcomes).forEach(name => {
+    const b = document.createElement("button");
+    b.type = "button"; b.dataset.o = name; b.textContent = name;
+    b.addEventListener("click", () => show(name));
+    seg.appendChild(b);
+  });
+  show("Refused");
+})();
+</script>
+</body>
+</html>

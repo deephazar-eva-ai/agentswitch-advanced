@@ -297,3 +297,99 @@ def test_reauth_skips_login_when_another_call_already_refreshed(monkeypatch, tmp
 
     assert session.with_reauth(call_that_failed_before_the_refresh) == "ok"
     assert len(logins) == 1
+
+
+def test_a_budgeted_session_gives_every_call_its_time_left_and_no_retries(monkeypatch, tmp_path):
+    # The prompted scan has a deadline: a retry or the default 120 s timeout could hold it past the harness's limit.
+    monkeypatch.setattr(mcp_client, "TOKEN_DIR", tmp_path)
+    (tmp_path / "seat35-keystone.token").write_text("cached")
+    left = iter([30, 20, 12.5])
+    _http, calls = fake_http([ok({}), ok({"tools": TOOLS}), ok({"data": []})])
+    monkeypatch.setattr(mcp_client, "_http", _http)
+    c = McpClient(mcp_client.Session("keystone", budget=lambda: next(left)))
+    c.call("Party.list", {"id": "x"})
+    assert [(k["timeout"], k["retries"]) for k in calls] == [(30, 0), (20, 0), (12.5, 0)]
+
+
+def test_an_unbudgeted_session_keeps_the_default_timeout_and_retries(monkeypatch, tmp_path):
+    monkeypatch.setattr(mcp_client, "TOKEN_DIR", tmp_path)
+    (tmp_path / "seat35-keystone.token").write_text("cached")
+    _http, calls = fake_http([ok({}), ok({"tools": TOOLS})])
+    monkeypatch.setattr(mcp_client, "_http", _http)
+    McpClient(mcp_client.Session("keystone")).tools()
+    assert all("timeout" not in k and "retries" not in k for k in calls)
+
+
+def test_a_relogin_late_in_a_budgeted_scan_gets_only_the_time_left(monkeypatch, tmp_path):
+    monkeypatch.setattr(mcp_client, "TOKEN_DIR", tmp_path)
+    monkeypatch.setattr(mcp_client.config, "credentials", lambda instance: ("seat@example.test", "pw"))
+    (tmp_path / "seat35-keystone.token").write_text("stale")
+    _http, calls = fake_http([AuthExpired("mcp"), (200, {"token": "fresh"}), ok({})])
+    monkeypatch.setattr(mcp_client, "_http", _http)
+    McpClient(mcp_client.Session("keystone", budget=lambda: 5))
+    login = calls[1]
+    assert login["body"] == {"email": "seat@example.test", "password": "pw"}
+    assert login["timeout"] == 5 and login["retries"] == 0
+
+
+@pytest.mark.parametrize("result", [{}, {"tools": None}, {"tools": [{"no": "name"}]}, [], {"tools": [{"name": None}]},
+                                    {"tools": [{"name": " "}]}, {"tools": [{"name": 7}]}])
+def test_an_unreadable_tool_list_is_an_error_not_an_empty_catalogue(monkeypatch, result):
+    # An empty catalogue would refuse every call, which a caller could mistake for an answer about the records.
+    _http, _ = fake_http([ok({}), ok(result)])
+    monkeypatch.setattr(mcp_client, "_http", _http)
+    with pytest.raises(McpError, match="no tool list"):
+        McpClient(FakeSession()).tools()
+
+
+def test_a_later_page_with_a_changed_copy_of_a_known_id_is_read_not_called_a_repeat(monkeypatch):
+    # The recount rules let two rows of one id disagree; a withheld copy on page two must reach the privacy rule.
+    c, _ = client(monkeypatch, [ok({"structuredContent": [{"id": 1, "privacy_state": "normal"}]}),
+                                ok({"structuredContent": [{"id": 1, "privacy_state": "restricted"}]}),
+                                ok({"structuredContent": []})])
+    rows = c.list_all("Party", page=1)
+    assert [r["privacy_state"] for r in rows] == ["normal", "restricted"] and rows.truncated is False
+
+
+def test_an_ignored_offset_returning_a_changed_row_never_reads_as_a_whole_table(monkeypatch):
+    # Two records, total 2, one row a page; the server ignores the offset and returns A again with a value changed.
+    # Counting that copy toward the total would report A twice as the whole table and never read B.
+    a, changed = {"id": "A", "updated_at": "1"}, {"id": "A", "updated_at": "2"}
+    for third in ([{"id": "A", "updated_at": "3"}], [a]):
+        c, _ = client(monkeypatch, [ok({"data": [a], "total": 2}), ok({"data": [changed], "total": 2}),
+                                    ok({"data": third, "total": 2})])
+        with pytest.raises(McpError, match="more rows than its reported total|repeated a page"):
+            c.list_all("Party", page=1)
+
+
+@pytest.mark.parametrize("after", [[{"id": "D"}], []])
+def test_a_page_partly_repeating_known_ids_needs_an_empty_page_to_end(monkeypatch, after):
+    # Total 4: [A, B] then [B changed, C]. Reaching 4 must not end the read, or D is never asked for.
+    pages = [ok({"data": [{"id": "A"}, {"id": "B", "v": 1}], "total": 4}),
+             ok({"data": [{"id": "B", "v": 2}, {"id": "C"}], "total": 4}), ok({"data": after, "total": 4})]
+    c, _ = client(monkeypatch, pages)
+    if after:
+        with pytest.raises(McpError, match="more rows than its reported total"):
+            c.list_all("Party", page=2)
+    else:  # a server whose total counts both copies of B: all four rows, complete
+        rows = c.list_all("Party", page=2)
+        assert len(rows) == 4 and rows.truncated is False
+
+
+def test_a_changed_copy_within_the_total_still_ends_on_an_empty_page(monkeypatch):
+    c, calls = client(monkeypatch, [ok({"data": [{"id": "A", "privacy_state": "normal"}], "total": 2}),
+                                    ok({"data": [{"id": "A", "privacy_state": "restricted"}], "total": 2}),
+                                    ok({"data": [], "total": 2})])
+    rows = c.list_all("Party", page=1)
+    assert len(rows) == 2 and rows.truncated is False and len(calls) == 3
+
+
+def test_an_empty_tool_list_is_a_real_answer(monkeypatch):
+    c, _ = client(monkeypatch, [], tools=[])
+    assert c.tools() == {}
+
+
+def test_a_list_reply_that_is_not_rows_is_an_error_not_an_empty_table(monkeypatch):
+    c, _ = client(monkeypatch, [ok({"content": [{"type": "text", "text": '""'}]})])
+    with pytest.raises(McpError, match="did not return a list of rows"):
+        c.list_all("Party")

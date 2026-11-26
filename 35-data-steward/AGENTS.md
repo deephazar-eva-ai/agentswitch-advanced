@@ -63,11 +63,16 @@ description which pull request it builds on; until that one merges, the new one 
 | `data_steward/probe.py` | read-only login and tool list per system |
 | `data_steward/dedupe.py` | the duplicate matcher: normalize, group, score, band, exclusions. Pure functions, no network |
 | `data_steward/proposals.py` | merge proposals: suggested survivor, field differences, reference counts (read-only calls) |
-| `data_steward/report.py` | the scan and the JSON and Markdown report behind `python -m data_steward.dedupe` |
+| `data_steward/report.py` | the scan and the JSON and Markdown report behind `python -m data_steward.dedupe`, and the answers to harness requests |
+| `data_steward/router.py` | reads a harness request with fixed rules: scan, recount or refuse. Pure, no network |
+| `data_steward/checks.py` | recount checks (tasks 9 to 12, see `docs/recount-rules.md`) and the orphan check. Pure, no network |
 | `data_steward/results.py` | offline export of the saved reports to `results/dedupe_pairs.json`, the file the instructor scores |
 | `results/dedupe_pairs.json` | committed: one entry per proposed pair, ids only (see "The repository is public") |
 | `docs/first-task-plan.md` | the first-task plan: decisions, signals, exclusions, build steps |
-| `tests/` | offline tests; every network call is faked. `tests/data/dedupe_tuning.json` is the made-up tuning set; `dedupe_heldback*.json` are the held-back sets (see the plan) |
+| `docs/recount-rules.md` | the written recount rules handed to the Eval Harness seat, with the supported request wording |
+| `docs/user-guide.md` | for people using the agent: report, labels, export, the requests it answers, outputs and exit codes. Update it, and its visual version `docs/using-the-agent.html` (fixed text, no agent logic), when behaviour changes |
+| `docs/user-facing-messages.md` | every fixed message the agent prints for people, grouped by where it appears, with its source file. Update it when a message changes; the tests and both user guides quote some word for word |
+| `tests/` | offline tests; every network call is faked. `tests/data/dedupe_tuning.json` is the made-up tuning set; `dedupe_heldback*.json` are the held-back sets (see the plan); `recount_rows.json` holds made-up rows and expected ids for the recount rules |
 | `local/` | git-ignored platform-derived output: tool lists, reads, reports, test tags, labels |
 
 ## Commands
@@ -98,9 +103,22 @@ uv run python -m data_steward.results  # offline: saved reports in local/ -> res
   refuses a report from another rules version, with a cut-off table or with a malformed pair. A failure prints one
   fixed line, quoting no value or id from the input, and leaves the earlier file as it was. Standard output is counts
   only, including rejected labels that match no pair in the loaded reports (a typo would otherwise list the pair).
-- `--prompt "<request>"`, which the course harness appends, is accepted and ignored (the instructor said on 10 Nov
-  that the harness contract does not apply to seat 35 for 15 Nov; kept for version 1): every request gets the same
-  read-only scan until a model reads requests (version 1). A failure exits 1 with one line on standard error. That
+- The full report also holds `orphan_check` (beside `sections`, never inside it: the exporter requires exactly the
+  two tables there): items whose preferred vendor is not among the parties read. A cut-off party table means
+  "incomplete", never orphans.
+- `--prompt "<request>"`, which the course harness appends, is read by fixed rules in `router.py`, no model (version
+  1). It is an allowlist: a request runs only if every sentence is one of a few read or safety forms; anything else
+  is refused before any setting, login or call, with `AGENT_RESULT {"claim":"refused"}` and exit 0. Do not loosen it
+  into a list of forbidden words: that let write requests through in review. A scan reads only the named records,
+  two id-filtered list calls each, within a 4-minute limit (`SCAN_SECONDS`, a timer that interrupts a slow call); a
+  recount reads one table. Prompted runs write nothing to `local/` and print counts only. Record ids reach standard
+  output only on a recount, only under the runner, and only while `IDS_ALLOWED` is true (on since 23 Nov by the
+  person's decision, before the instructor's answer to question 8.5; set it False to withhold them). Exit codes: a lookup that cannot show one row per id, or the time limit, is claim
+  "failed" with exit 0 (a non-zero exit fails a task the harness would otherwise pass); setup failures, platform
+  outages (HTTP 5xx, JSON-RPC -32603 and -32000 to -32099) and a cut-off recount table exit 1. A recount's wording
+  must match `docs/recount-rules.md`; once the Eval Harness seat writes the task text, add it to
+  `tests/test_router.py` word for word (a test there reads their `suites/seat35/suite.toml` and fails when a prompt
+  no longer routes as its task kind says). A failure exits 1 with one line on standard error. That
   line never quotes a platform reply or its error code (either can hold record data: an item's SKU is its `code`);
   under the runner an unforeseen error names only its type, and only a local run shows its traceback. A failed write
   removes all three files rather than mix old and new; a failed scan leaves earlier files as they were.
@@ -116,7 +134,8 @@ uv run python -m data_steward.results  # offline: saved reports in local/ -> res
   repository. Each system has its own password (`SEAT35_PASSWORD_SURYODAYA`, `SEAT35_PASSWORD_KEYSTONE` in `.env`)
   and its own token, cached in
   `.tokens/seat35-<instance>.token`. A token lasts 7 days; on a 401 the client logs in once and retries.
-- `OPENAI_*` in `.env` are only for local runs once a model is in the loop; nothing reads them yet.
+- `OPENAI_*` in `.env`: nothing reads them; version 1 has no model. The harness still needs all three `OPENAI_*`
+  settings in its run, or it marks the trial an infrastructure failure even for an agent with no model.
 - Python 3.11 locally; runtime code (`data_steward/`) must also run on 3.10 because the harness runner does not say
   which Python it uses. `.env` values win over the shell, except under the harness runner (`AGENTSWITCH_TOKEN` set),
   where `.env` is not read at all and the runner's `AGENTSWITCH_*` and `OPENAI_*` values are used.
@@ -126,7 +145,8 @@ uv run python -m data_steward.results  # offline: saved reports in local/ -> res
 The course harness runs a suite against a throwaway copy of one instance with no internet, and reads `results.json`.
 The format (harness toml, environment variables, `results.json` fields, limits) is in
 [../34-eval-harness/TASK_FORMAT.md](../34-eval-harness/TASK_FORMAT.md). A task passes only when a check on the
-resulting data confirms it, never because of the agent's wording.
+resulting data confirms it, never because of the agent's wording; a recount task is graded on the ids in the agent's
+`AGENT_RESULT` answer, which the harness compares with ids it works out itself from platform rows.
 
 ## Reporting problems
 
