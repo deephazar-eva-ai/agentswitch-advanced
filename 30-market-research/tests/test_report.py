@@ -10,7 +10,7 @@ from pathlib import Path
 from unittest import mock
 
 from brief import __main__ as cli
-from brief import changes, deals, report
+from brief import changes, deals, explain, report
 from tests.fakes import PIPELINES, FakeClient, deal
 
 AS_OF = date(2026, 11, 30)
@@ -59,13 +59,37 @@ class BuildTest(unittest.TestCase):
         for d in b["deals"]:
             self.assertEqual(d["changes"], [])
             self.assertIn(d["next_step"]["rule"], ("close_date_passed", "overdue_activity", "no_recent_contact",
-                                                   "fix_record", "negotiation", "keep_moving"))
+                                                   "fix_record", "proposal_waiting", "negotiation", "keep_moving"))
             self.assertIn("source", d["account"])
 
     def test_account_not_found_is_a_data_issue(self):
         b = self.build()        # pa14 has no Party record
         self.assertIn({"deal_id": "d14", "issue": "account: not found"}, b["data_issues"])
         self.assertEqual(b["data_issue_deals"], 1)
+
+    def test_bad_activity_dates_add_one_issue_per_shown_deal(self):
+        activities = [
+            {"id": "a1", "party_id": "pa14", "due_date": "private text"},
+            {"id": "a2", "party_id": "pa14", "due_date": "2026-02-30"},
+            {"id": "a3", "party_id": "pa13", "due_date": ""},
+            {"id": "a4", "party_id": "pa13", "due_date": None},
+            {"id": "a5", "party_id": "pa13", "due_date": "bad", "done": True},
+            {"id": "a6", "party_id": "pa13", "due_date": "bad", "cancelled": True},
+            {"id": "a7", "deal_id": "d01", "due_date": "bad"},  # outside the top ten
+        ]
+        c = client(activities=activities)
+        b = self.build(c)
+        issue = "account activity: due date is not a date"
+        self.assertEqual(b["data_issues"], [{"deal_id": "d14", "issue": "account: not found"},
+                                            {"deal_id": "d14", "issue": issue}])
+        open_activities = b["deals"][0]["account"]["open_activities"]
+        self.assertEqual([(a["id"], a["due_date"], a["overdue"]) for a in open_activities],
+                         [("a1", None, False), ("a2", None, False)])
+        self.assertNotIn("private text", report.to_markdown(b))
+        out = io.StringIO()
+        self.assertEqual(explain.run(c, "d14", AS_OF, top=10, out=out), 0)
+        self.assertIn(issue, out.getvalue())
+        self.assertNotIn("private text", out.getvalue())
 
     def test_left_out_counted(self):
         b = self.build(client(extra=[deal(50, value=0), deal(51, stage="nope")]))

@@ -16,7 +16,8 @@ records, so the rules below must match that table exactly:
 - last_contact: the latest done call, meeting or email (type trimmed, any letter case) dated on or
   before as_of; ties on the date go to the highest activity id, compared as text.
 - open_activities: every activity not done, {id, subject, due_date, overdue}; overdue means due
-  before as_of. A due date that isn't a date shows no due date and is not overdue (BUG-30-001).
+  before as_of. A malformed due date stays empty and never counts as overdue. The brief lists
+  one data issue per affected deal (OBS-30-002).
 - pinned_note: a pinned note on the deal, else a pinned note on the account itself (no deal);
   the latest updated wins, ties on the id as text. Only {id, title}: note content never goes
   into the brief.
@@ -67,6 +68,7 @@ def facts(client, row, as_of, data=None):
 
     address = _address(party) if found else {}
     pool, source = _activities(row, data["activities"])
+    open_activities, invalid_due_date = _open_activities(pool, as_of)
     return {
         "party_id": row.party_id,
         "found": found,
@@ -80,7 +82,8 @@ def facts(client, row, as_of, data=None):
         "contacts": field("contacts", _contacts(row, party, data)),
         "other_open_deals": _other_open_deals(row, data.get("rows")),
         "last_contact": _last_contact(pool, as_of),
-        "open_activities": _open_activities(pool, as_of),
+        "open_activities": open_activities,
+        "has_invalid_activity_due_date": invalid_due_date,
         "pinned_note": _pinned_note(row, data.get("notes")),
         "redacted": redacted,
         "source": source,
@@ -89,9 +92,13 @@ def facts(client, row, as_of, data=None):
 
 def issues(row, account):
     """Data issues the account facts add for one deal: [{deal_id, issue}]."""
-    if isinstance(account, dict) and not account.get("found"):
-        return [{"deal_id": row.id, "issue": ACCOUNT_NOT_FOUND}]
-    return []
+    issues = []
+    if isinstance(account, dict):
+        if not account.get("found"):
+            issues.append({"deal_id": row.id, "issue": ACCOUNT_NOT_FOUND})
+        if account.get("has_invalid_activity_due_date"):
+            issues.append({"deal_id": row.id, "issue": "account activity: due date is not a date"})
+    return issues
 
 
 def contact_type(value):
@@ -138,14 +145,19 @@ def _last_contact(pool, as_of):
 
 def _open_activities(pool, as_of):
     out = []
+    invalid_due_date = False
     for a in pool:
         if a.get("done") is True:
             continue
-        day = _day(a.get("due_date"))
+        raw_date = a.get("due_date")
+        day = _day(raw_date)
+        if day is None and raw_date not in (None, ""):
+            invalid_due_date = True
         out.append({"id": str(a.get("id")), "subject": _subject(a),
                     "due_date": None if day is None else day.isoformat(),
                     "overdue": day is not None and day < as_of})
-    return sorted(out, key=lambda x: (x["due_date"] is None, x["due_date"] or "", x["id"]))
+    out.sort(key=lambda x: (x["due_date"] is None, x["due_date"] or "", x["id"]))
+    return out, invalid_due_date
 
 
 def _contacts(row, party, data):

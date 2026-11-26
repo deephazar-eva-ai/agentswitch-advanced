@@ -10,11 +10,8 @@ Rules, in order (RULES below is the list the tests and PLAN.md refer to):
   3 no_recent_contact   no contact recorded, or the last one is 30 or more days old
   4 fix_record          no close date, a probability of 0, a probability of 100 on a deal that is
                         still open, a probability outside 0-100, or a value the brief could not read
-  5 proposal_waiting    in the proposal stage with no movement for 14 or more days. ON HOLD
-                        (PROPOSAL_WAITING_ON): the platform's counter may track the deal's age,
-                        not its time in the stage (instructor question 15). While on hold the
-                        deal falls through to the next rule, so the brief makes no claim about
-                        how long it has been in the stage.
+  5 proposal_waiting    in the proposal stage with a platform counter of 14 days or more.
+                        The reason identifies the counter as the platform's (instructor answer 15).
   6 negotiation         in the negotiation stage
   7 keep_moving         none of the above
 
@@ -42,7 +39,7 @@ RULES = ("close_date_passed", "overdue_activity", "no_recent_contact", "fix_reco
 CLOSED = ("closed_won", "closed_lost")
 NO_CONTACT_DAYS = 30
 PROPOSAL_WAIT_DAYS = 14
-PROPOSAL_WAITING_ON = False   # rule 5 on hold until the instructor says what resets the counter
+PROPOSAL_WAITING_ON = True
 SUBJECT_MAX = 80
 STAGE_MAX = 40                     # longest stage label or key the reasons will name
 PLAIN_KEY = re.compile(r"[a-z0-9_]{1,%d}" % STAGE_MAX)
@@ -159,14 +156,15 @@ def _fix_record(row, facts, as_of):
 
 def _proposal_waiting(row, facts, as_of):
     if not PROPOSAL_WAITING_ON:
-        return None, "on hold (PROPOSAL_WAITING_ON is off until instructor question 15 is answered)"
+        return None, "proposal-waiting rule is disabled"
     if row.stage != "proposal":
         return None, f"stage {row.stage!r} is not proposal"
-    if row.rot_days is None or row.rot_days < PROPOSAL_WAIT_DAYS:
-        return None, f"no movement for {row.rot_days} days (under {PROPOSAL_WAIT_DAYS}, or unknown)"
-    return (_out("proposal_waiting", "Follow up on the proposal with the main contact",
-                 f"In {_stage_words(row)} with no movement for {_days(row.rot_days)}"),
-            f"proposal with no movement for {row.rot_days} days")
+    if row.rot_days is None:
+        return None, "platform counter unavailable"
+    if row.rot_days < PROPOSAL_WAIT_DAYS:
+        return None, f"platform counter is {_days(row.rot_days)} (under {PROPOSAL_WAIT_DAYS})"
+    reason = f"In {_stage_words(row)}: the platform's own counter reports {_days(row.rot_days)} without movement"
+    return _out("proposal_waiting", "Follow up on the proposal with the main contact", reason), reason
 
 
 def _negotiation(row, facts, as_of):
