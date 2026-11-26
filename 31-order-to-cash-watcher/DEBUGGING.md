@@ -73,6 +73,7 @@ python3 -m o2c.suite --instance keystone --record reports/recordings/keystone-<d
 python3 -m o2c.suite --replay reports/recordings/keystone-<date> --debug
 ```
 
+- `--record` needs a new or empty folder: one that already holds a recording is refused, so two runs' replies are never mixed.
 - Replay uses the recording's system, date and days unless they're given. It refuses a different system.
 - Every rerun sees exactly the same data, takes about a second, and can be used with `git bisect` or to try a fix before a live run.
 - If the code now asks for something the recorded run didn't, replay stops with `replay: no recorded reply for …`. Record a new run.

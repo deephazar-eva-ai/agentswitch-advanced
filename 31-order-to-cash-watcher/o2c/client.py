@@ -337,6 +337,9 @@ class RecordingClient(Client):
         self._calls = self.folder / RECORDING_FILE
         if self._calls.is_symlink():
             raise McpError(f"{RECORDING_FILE}: a recording must not be written through a symlink")
+        if self._calls.exists():
+            raise McpError(f"{self.folder} already holds a recording ({RECORDING_FILE}); "
+                           "record into a new folder, so two runs' replies are never mixed")
         self._last = {}            # request key -> hash of its last recorded reply
 
     def _rpc(self, method, params):

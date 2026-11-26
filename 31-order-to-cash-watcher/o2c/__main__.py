@@ -11,9 +11,9 @@ Exit 4 means the report was produced but the ID list may be missing orders; stde
 The last line is `AGENT_RESULT {...}` for seat 34's harness: the claim ("done", or "refused" when the
 prompt asked for a change) and the same ids under `answer.orders_not_invoiced`.
 
-Exit 1 is an unexpected error: the traceback, then one plain line, `o2c: unexpected error: <type>:
-<message>`, which seat 34's harness reports as the reason (agent contract, section 5), then
-`AGENT_RESULT {"claim":"failed"}`. Exit 3 is a platform that can't be read. --debug also prints, on
+Exit 1 is an unexpected error: the traceback, then `AGENT_RESULT {"claim":"failed"}`, then one plain
+line, `o2c: unexpected error: <type>: <message>`, last, which seat 34's harness reports as the reason
+(agent contract, section 5). Exit 3 is a platform that can't be read. --debug also prints, on
 stderr, each retry, any request over 10 s, any blocked write, and the traceback of a platform error
 (o2c/debug.py). Seat 34's harness adds only --prompt, so --debug goes in the command seat 31 registers.
 
@@ -40,15 +40,19 @@ FAILED_RESULT = 'AGENT_RESULT {"claim":"failed"}'
 
 
 def unexpected(prog, error):
-    """The traceback, then one plain reason line (stderr), then a "failed" claim (stdout, last).
-    Every line goes through display_text, so server text can't put control characters on the
-    terminal (bug hunt E2). No token can be in it: client errors name settings, never values."""
+    """The traceback (stderr), a "failed" claim (stdout), then one plain reason line (stderr, last).
+    Seat 34's harness merges stderr into stdout and reports the last line with a letter in it as the
+    reason, so the reason line must come after the claim; the claim is found by scanning back for
+    AGENT_RESULT, so it needn't be last. Every line goes through display_text, so server text can't
+    put control characters on the terminal (bug hunt E2). No token can be in it: client errors name
+    settings, never values."""
     for line in traceback.format_exception(type(error), error, error.__traceback__):
         for part in line.rstrip("\n").split("\n"):
             print(display_text(part), file=sys.stderr)
+    sys.stderr.flush()
+    print(FAILED_RESULT, flush=True)
     print(f"{prog}: unexpected error: {type(error).__name__}: {' '.join(display_text(error).split())}",
           file=sys.stderr, flush=True)
-    print(FAILED_RESULT, flush=True)
 
 
 def write_report(rep, md, out, instance):

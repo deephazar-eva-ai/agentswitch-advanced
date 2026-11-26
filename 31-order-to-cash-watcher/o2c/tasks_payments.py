@@ -152,7 +152,7 @@ def overdue_invoices(ctx):
         rows_by_id = {r["id"]: r for r in sec["rows"]}
         _show_sets("overdue invoice", expected, got,
                    lambda i: {k: (by_id.get(i) or {}).get(k) for k in ("due_date", "outstanding", "status")},
-                   lambda i: {k: rows_by_id.get(i, {}).get(k) for k in ("due_date", "balance", "days_overdue")})
+                   lambda i: {k: rows_by_id.get(i, {}).get(k) for k in ("due_date", "outstanding", "days_overdue")})
     return _ok(passed, f"verifier=invoice_recount; overdue expected={len(expected)} got={len(got)} ({_diff(expected, got)}); "
                        f"no_due_date expected={len(expected_no_due)} got={len(got_no_due)}; "
                        f"supplier_bills_checked={len(bills)} leaked={len(leaked)}")

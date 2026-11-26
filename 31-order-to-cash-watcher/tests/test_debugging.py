@@ -93,6 +93,14 @@ class PlatformStats(Base):
 
 
 class RecordReplay(Base):
+    def test_a_folder_that_already_holds_a_recording_is_refused(self):
+        """Recording twice into one folder would mix run 1's replies with run 2's recording.json. Review of #63."""
+        Recording(self.tmp / "rec", lists=[[{"id": "so1"}]]).call("SalesOrder.list")
+        before = (self.tmp / "rec" / C.RECORDING_FILE).read_bytes()
+        with self.assertRaisesRegex(C.McpError, "already holds a recording"):
+            Recording(self.tmp / "rec")
+        self.assertEqual((self.tmp / "rec" / C.RECORDING_FILE).read_bytes(), before)
+
     def test_replay_gives_the_same_replies_in_order_without_a_network(self):
         rec = Recording(self.tmp / "rec", lists=[[{"id": "so1"}], [{"id": "so1"}, {"id": "so2"}]])
         live = [rec.tool_names(), rec.call("SalesOrder.list"), rec.call("SalesOrder.list")]
@@ -257,6 +265,17 @@ class ReportCommand(Base):
         self.assertIn("Traceback (most recent call last)", err)
         self.assertEqual(err.strip().splitlines()[-1], "o2c: unexpected error: KeyError: 'rows'")
 
+    def test_with_stderr_merged_into_stdout_the_reason_is_the_last_line(self):
+        """Seat 34's harness merges stderr into stdout and reports the last line with a letter as the
+        reason; parse_reported scans back for AGENT_RESULT. Review of #63."""
+        both = io.StringIO()
+        with redirect_stdout(both), redirect_stderr(both):
+            cli.unexpected("o2c", KeyError("rows"))
+        lines = [ln for ln in both.getvalue().splitlines() if any(ch.isalpha() for ch in ln)]
+        self.assertEqual(lines[-1], "o2c: unexpected error: KeyError: 'rows'")
+        self.assertEqual(next(ln for ln in reversed(lines) if ln.startswith("AGENT_RESULT ")),
+                         'AGENT_RESULT {"claim":"failed"}')
+
     def test_server_text_in_an_error_is_cleaned(self):
         _, _, err = self.run_cli(build=mock.Mock(side_effect=ValueError("bad\x1b[31m reply\nPASS")))
         self.assertNotIn("\x1b", err)
@@ -306,11 +325,23 @@ class WantGot(Base):
     def test_task5_a_leaked_bill(self):
         bill = dict(TP.inv("B1", "2026-10-01", 50.0), direction="payable")
         c = TP.ctx({"Invoice": TP.INVOICES + [bill]}, tools={"Invoice.list"})
-        c.report()["sections"]["invoices_overdue"]["rows"].append({"id": "B1", "number": "B1", "days_overdue": 45})
+        c.report()["sections"]["invoices_overdue"]["rows"].append(
+            {"id": "B1", "number": "B1", "due_date": "2026-10-01", "outstanding": 50.0, "days_overdue": 45})
         res, err = self.err_of(tasks_payments.overdue_invoices, c)
         self.assertFalse(res["passed"])
         self.assertIn('debug: B1 unexpected overdue invoice: want {"due_date": "2026-10-01", "outstanding": 50.0', err)
-        self.assertIn('| got {"balance": null, "days_overdue": 45, "due_date": null}', err)
+        self.assertIn('| got {"days_overdue": 45, "due_date": "2026-10-01", "outstanding": 50.0}', err)
+
+    def test_task5_got_shows_the_balance_the_report_holds(self):
+        """The report's rows keep the balance under "outstanding" (report.invoices_overdue); review of #63."""
+        c = TP.ctx({"Invoice": TP.INVOICES}, tools={"Invoice.list"})
+        row = c.report()["sections"]["invoices_overdue"]["rows"][0]
+        self.assertIn("outstanding", row)
+        self.assertNotIn("balance", row)
+        c.report()["sections"]["invoices_overdue"]["rows"] = [dict(row, id="X9")]
+        res, err = self.err_of(tasks_payments.overdue_invoices, c)
+        self.assertFalse(res["passed"])
+        self.assertRegex(err, r'debug: X9 unexpected overdue invoice: want \{[^|]*\} \| got \{[^}]*"outstanding": \d')
 
     def test_task6_wrong_days(self):
         c = TP.ctx({"Invoice": TP.INVOICES}, tools={"Invoice.list"})
