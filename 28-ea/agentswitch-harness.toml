@@ -1,0 +1,7 @@
+# Seat 28 (EA) v1 test suite, in the course format (34-eval-harness/TASK_FORMAT.md).
+# Guide: agent/suite/TEST_SUITE_GUIDE.md. The run is expected to start in this folder (28-ea/); not yet confirmed.
+install = "python --version"
+run     = "cd agent && python -m suite.runner --out results.json"
+results = "agent/results.json"
+instances = ["keystone"]
+timeout_minutes = 25
