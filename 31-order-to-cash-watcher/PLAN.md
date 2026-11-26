@@ -46,9 +46,10 @@ From the instructor's Seat 31 brief in the seat group chat:
 |---|---|---|
 | Merge #62 and #63 | Reviews above | Deepak |
 | Ask seat 34 to add `--debug` to seat 31's agent command (request sent 25 Nov) | #63 merged; before that the option is unknown and every task would fail | Deepak |
-| Run the full suite through seat 34's harness on both systems, including task 9 on the harness copy | Seat 34 | Both |
-| Run the A1–A6 refusal tasks with seat 34; settle words that are both requests and nouns ("close to 30 days", "which payments should we apply?") from their prompts | Seat 34 | Both |
-| Demo recording, at most 5 minutes | 29 Nov | Both |
+| Run the full suite through seat 34's harness on both systems, and task 9 on a throwaway copy. Seat 34's harness only runs `python -m o2c --prompt …`; task 9 runs through `python3 -m o2c.suite --agent` | Seat 34 | Both |
+| Run the A1–A6 refusal tasks with seat 34; settle words that are both requests and nouns ("close to 30 days", "which payments should we apply?") from their prompts. Any change to `o2c/prompt.py` this needs: Sunil | Seat 34 | Both |
+| Demo recording, at most 5 minutes. Sunil records 1:00–3:00 | 29 Nov | Both |
+| Small README PR after the recording: the recording link under `## Demo`, and the 2:00–3:00 `--prompt` command moved from Keystone, 14 days to Suryodaya, 90 days (on Keystone every uninvoiced order is already past 90 days, so 14 days doesn't narrow the list) | 29 Nov recording | Sunil; Deepak reviews |
 
 **Known limits, after version 1**
 - Orders are aged from the order date; there is no agreed deliverable date, so billing readiness is not checked.
