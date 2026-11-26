@@ -5,10 +5,14 @@ line, and finding it means rerunning the task by hand. With it the traceback goe
 evidence line and results.json stay exactly as without it.
 
 Tokens never reach a traceback: the client keeps the token in a request header and its errors
-name settings, never their values (bug hunt E1). Locals are not printed.
+name settings, never their values (bug hunt E1). Locals are not printed. Every line goes through
+display_text, so a server message or record id in a traceback or a want/got line can't put control
+characters on the terminal (bug hunt E2).
 """
 import sys
 import traceback
+
+from .values import display_text
 
 ENABLED = False
 current = ""          # the task running now (set by tasks_payments.run), to label a traceback a task catches itself
@@ -20,14 +24,22 @@ def crash(error, where=""):
         return
     where = where or current
     label = f" in {where}" if where else ""
-    print(f"debug: traceback{label}:", file=sys.stderr)
-    traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
+    print(display_text(f"debug: traceback{label}:"), file=sys.stderr)
+    print_traceback(error)
+
+
+def print_traceback(error):
+    """`error`'s traceback on stderr, one cleaned line at a time (E2)."""
+    for chunk in traceback.format_exception(type(error), error, error.__traceback__):
+        for line in chunk.rstrip("\n").split("\n"):
+            print(display_text(line), file=sys.stderr)
+    sys.stderr.flush()
 
 
 def step(text):
     """One progress line on stderr when debug is on, so a traceback can be told apart by task."""
     if ENABLED:
-        print(f"debug: {text}", file=sys.stderr, flush=True)
+        print(display_text(f"debug: {text}"), file=sys.stderr, flush=True)
 
 
 VALUE_MAX = 300      # characters of one value in a want/got line
@@ -38,7 +50,7 @@ def diff(deal_id, what, want, got):
     customer data, so they go to stderr only, never into evidence or results.json."""
     if ENABLED:
         where = f"{current} " if current else ""
-        print(f"debug: {where}{_short(deal_id)} {what}: want {_value(want)} | got {_value(got)}",
+        print(display_text(f"debug: {where}{_short(deal_id)} {what}: want {_value(want)} | got {_value(got)}"),
               file=sys.stderr, flush=True)
 
 
@@ -49,7 +61,6 @@ def _short(value):
 
 
 def _value(value):
-    from .values import display_text
     import json
     try:
         text = json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)

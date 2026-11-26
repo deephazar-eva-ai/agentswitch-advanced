@@ -92,6 +92,45 @@ class PlatformStats(Base):
         self.assertEqual(C.stats_of(None)["requests"], 0)
 
 
+class DebugOutputIsCleaned(Base):
+    """Bug hunt 26 Nov: --debug printed server text and record ids raw (E2)."""
+    def test_traceback_want_got_and_step_lines_carry_no_control_characters(self):
+        debug.ENABLED, err = True, io.StringIO()
+        with redirect_stderr(err):
+            try:
+                C.tool_result({"isError": True, "content": [{"type": "text", "text": "denied\x1b[2J\x1b]0;x\x07"}]},
+                              "Invoice.list")
+            except C.McpError as e:
+                debug.crash(e, "o2c")
+            debug.diff("INV\x1b[31m1", "outstanding", 1, 2)
+            debug.step("task \x1b[1mbold")
+        text = err.getvalue()
+        self.assertNotIn("\x1b", text)
+        self.assertNotIn("\x07", text)
+        self.assertIn("Traceback (most recent call last)", text)
+        self.assertIn("McpError: Invoice.list: denied", text)
+
+
+class SuiteExitCode(Base):
+    """Bug hunt 26 Nov: the suite exited 0 with failed tasks, so `git bisect run` saw every commit as good."""
+    def run_main(self, task):
+        with mock.patch.object(suite, "Client", lambda: Scripted()), \
+                mock.patch.object(suite, "all_tasks", lambda: [("overdue_invoices", "T5", task)]), \
+                mock.patch.dict("os.environ", {"AGENTSWITCH_BASE_URL": "http://x", "AGENTSWITCH_TOKEN": TOKEN}, clear=True), \
+                redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as ran:
+            suite.main(["--instance", "keystone", "--date", "2026-11-30"])
+        return ran.exception.code
+
+    def test_zero_when_every_task_passes_one_when_any_fails(self):
+        self.assertEqual(self.run_main(lambda ctx: tasks_payments._ok(True, "fine")), 0)
+        self.assertEqual(self.run_main(lambda ctx: tasks_payments._ok(False, "wrong")), 1)
+
+    def test_a_crashed_task_is_a_failure(self):
+        def boom(ctx):
+            raise KeyError("rows")
+        self.assertEqual(self.run_main(boom), 1)
+
+
 class RecordReplay(Base):
     def test_a_folder_that_already_holds_a_recording_is_refused(self):
         """Recording twice into one folder would mix run 1's replies with run 2's recording.json. Review of #63."""
@@ -194,8 +233,9 @@ class RunAndSuite(Base):
         err = io.StringIO()
         with mock.patch.dict("os.environ", env, clear=True), mock.patch.object(suite, "Client", lambda: Scripted(fails=1)), \
                 mock.patch.object(suite, "all_tasks", lambda: [("overdue_invoices", "T5", ok_task)]), \
-                redirect_stdout(io.StringIO()), redirect_stderr(err):
+                redirect_stdout(io.StringIO()), redirect_stderr(err), self.assertRaises(SystemExit) as ran:
             suite.main(["--instance", "keystone", "--date", "2026-11-30", "--out", str(self.tmp / "results.json"), "--debug"])
+        self.assertEqual(ran.exception.code, 0)
         results = json.loads((self.tmp / "results.json").read_text())
         raw = (self.tmp / "results.meta.json").read_text()
         meta = json.loads(raw)
@@ -230,8 +270,9 @@ class RunAndSuite(Base):
                         replay=isinstance(ctx.client, C.ReplayClient))
             return {"tasks": [], "summary": "suryodaya: 0/0 tasks passed"}
         with mock.patch.object(suite, "run_suite", fake_run_suite), redirect_stdout(io.StringIO()), \
-                mock.patch.dict("os.environ", {}, clear=True):
+                mock.patch.dict("os.environ", {}, clear=True), self.assertRaises(SystemExit) as ran:
             suite.main(["--replay", str(self.tmp / "rec")])
+        self.assertEqual(ran.exception.code, 0)
         self.assertEqual(seen, {"instance": "suryodaya", "date": date(2026, 11, 24), "days": 9, "replay": True})
         err = io.StringIO()
         with self.assertRaises(SystemExit), redirect_stderr(err), mock.patch.dict("os.environ", {}, clear=True):
@@ -275,6 +316,20 @@ class ReportCommand(Base):
         self.assertEqual(lines[-1], "o2c: unexpected error: KeyError: 'rows'")
         self.assertEqual(next(ln for ln in reversed(lines) if ln.startswith("AGENT_RESULT ")),
                          'AGENT_RESULT {"claim":"failed"}')
+
+    def test_an_unexpected_error_in_explain_gives_a_reason_line_and_no_claim(self):
+        """Bug hunt 26 Nov: --explain caught only platform errors, so anything else was a raw traceback."""
+        env = {"AGENTSWITCH_BASE_URL": "http://x", "AGENTSWITCH_TOKEN": TOKEN}
+        out, err = io.StringIO(), io.StringIO()
+        with mock.patch.object(cli, "Client", lambda: Scripted()), \
+                mock.patch.object(cli.explain, "run", mock.Mock(side_effect=TypeError("bad\x1b[31m row"))), \
+                mock.patch.dict("os.environ", env, clear=True), redirect_stdout(out), redirect_stderr(err), \
+                self.assertRaises(SystemExit) as ran:
+            cli.main(["--explain", "SO-1"])
+        self.assertEqual(ran.exception.code, 1)
+        self.assertEqual(err.getvalue().strip().splitlines()[-1], "o2c --explain: unexpected error: TypeError: bad[31m row")
+        self.assertNotIn("\x1b", err.getvalue())
+        self.assertNotIn("AGENT_RESULT", out.getvalue())
 
     def test_server_text_in_an_error_is_cleaned(self):
         _, _, err = self.run_cli(build=mock.Mock(side_effect=ValueError("bad\x1b[31m reply\nPASS")))

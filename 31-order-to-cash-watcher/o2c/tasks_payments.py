@@ -554,6 +554,14 @@ def run(ctx, tasks=TASKS, timings=None):
     return results
 
 
+EXIT_FAILED = 1       # a task failed (0: every task passed; 2: bad options; 3: the platform can't be read)
+
+
+def exit_code(results):
+    """0 when every task passed, else EXIT_FAILED, so `git bisect run` and scripts see a failed suite."""
+    return 0 if all(r["passed"] for r in results) else EXIT_FAILED
+
+
 def command_agent(ap, wanted):
     """The agent hook when --agent is given, else None (guardrail-only, 0.5 at most). A usage error if the
     platform settings it needs are missing."""
@@ -595,6 +603,7 @@ def main():
         # Evidence quotes record numbers: no escape sequences reach the terminal (E2).
         print(display_text(f"{'PASS' if r['passed'] else 'FAIL'} {r['score']:.1f} {r['id']}: {r['evidence']}"))
     print(out["summary"])
+    raise SystemExit(exit_code(results))
 
 
 if __name__ == "__main__":

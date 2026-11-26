@@ -20,8 +20,8 @@ from datetime import date
 from . import debug, drafts, report
 from .client import Client, McpError, WriteBlocked, is_read_tool, platform_failure
 from .output import days_option, safe_console
-from .tasks_payments import Ctx, _agent_failed, _agent_mode, _blocked, _diff, _ok, _our_login, command_agent, run
-from .values import business_date
+from .tasks_payments import Ctx, _agent_failed, _agent_mode, _blocked, _diff, _ok, _our_login, command_agent, exit_code, run
+from .values import business_date, display_text
 
 SUBMITTED = 1
 NOT_INVOICED = {"unbilled", "partially_invoiced"}
@@ -296,8 +296,9 @@ def main():
         with open(args.out, "w", encoding="utf-8") as f:
             json.dump(out, f, indent=2)
     for r in results:
-        print(f"{'PASS' if r['passed'] else 'FAIL'} {r['score']:.1f} {r['id']}: {r['evidence']}")
+        print(display_text(f"{'PASS' if r['passed'] else 'FAIL'} {r['score']:.1f} {r['id']}: {r['evidence']}"))
     print(out["summary"])
+    raise SystemExit(exit_code(results))
 
 
 if __name__ == "__main__":

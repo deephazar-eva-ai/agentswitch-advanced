@@ -26,6 +26,9 @@ separate process that talks to the platform itself, so its calls are neither rec
 With --out, the run is also described in <out>.meta.json beside it: commit, start and end, the
 source (live, record or replay), platform totals, and per task its seconds, calls and retries.
 results.json keeps exactly the TASK_FORMAT.md shape.
+
+Exit 0 when every task passed, 1 when any failed (so `git bisect run` can use a replay), 2 for bad
+options, 3 when the platform (or the recording) can't be read.
 """
 import argparse
 import json
@@ -38,7 +41,7 @@ from pathlib import Path
 from . import debug, report, tasks_orders, tasks_payments
 from .client import Client, McpError, RecordingClient, ReplayClient, platform_failure, stats_of
 from .output import days_option, safe_console
-from .tasks_payments import Ctx, command_agent, run
+from .tasks_payments import Ctx, command_agent, exit_code, run
 from .values import display_text
 
 
@@ -231,6 +234,7 @@ def main(argv=None):
     for r in out["tasks"]:
         print(display_text(f"{'PASS' if r['passed'] else 'FAIL'} {r['score']:.1f} {r['id']}: {r['evidence']}"))
     print(out["summary"])
+    raise SystemExit(exit_code(out["tasks"]))
 
 
 if __name__ == "__main__":

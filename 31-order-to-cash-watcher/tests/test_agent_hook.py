@@ -193,8 +193,9 @@ class CommandLine(unittest.TestCase):
         with mock.patch("sys.argv", ["o2c.tasks_orders", "--instance", "t", "--date", "2026-11-15"]), \
                 mock.patch.object(tasks_orders, "Client"), \
                 mock.patch.object(tasks_orders, "run", return_value=[]) as run, \
-                contextlib.redirect_stdout(io.StringIO()):
+                contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as ran:
             tasks_orders.main()
+        self.assertEqual(ran.exception.code, 0)     # no task failed
         self.assertIsNone(run.call_args.args[0].agent)
 
 

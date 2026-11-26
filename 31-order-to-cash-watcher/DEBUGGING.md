@@ -10,6 +10,7 @@ One page: a failed suite or report run, and what to do first. Run every command 
 | Exit code 2 | Bad options. The line above it says which one |
 | `python3 -m o2c` exits 1 with `o2c: unexpected error: <type>: <message>` | A crash in the report. The traceback is just above that line; rerun with `--debug` for retries and slow requests too |
 | `python3 -m o2c.drafts` exits 1 with `o2c.drafts: unexpected error: …` | A crash in the drafts command. If it says "Saved N of M drafts before this", check the mailbox before running `--create` again: the draft in progress may have been created |
+| `python3 -m o2c.suite` exits 1 | At least one task failed; its `FAIL` line says which (exit 0 means every task passed). `o2c.tasks_orders` and `o2c.tasks_payments` do the same |
 | `python3 -m o2c` exits 4 | The report was produced, but the order list may be incomplete. Stderr says why |
 | `outcome=infrastructure; <Error>: <message>` on one task | A crash in that task. Rerun just that task with `--only <task> --debug` (section 2) and read the traceback |
 | `outcome=blocked; …` | The login can't read what the task needs. Not a failure of the report |
@@ -75,7 +76,7 @@ python3 -m o2c.suite --replay reports/recordings/keystone-<date> --debug
 
 - `--record` needs a new or empty folder: one that already holds a recording is refused, so two runs' replies are never mixed.
 - Replay uses the recording's system, date and days unless they're given. It refuses a different system.
-- Every rerun sees exactly the same data, takes about a second, and can be used with `git bisect` or to try a fix before a live run.
+- Every rerun sees exactly the same data, takes about a second, and can be used with `git bisect run` (the suite exits 1 when a task fails) or to try a fix before a live run.
 - If the code now asks for something the recorded run didn't, replay stops with `replay: no recorded reply for …`. Record a new run.
 - `--agent` can't be combined with `--record` or `--replay`: the agent runs as a separate process that talks to the platform itself.
 - A recording holds customer records. `--record` refuses any folder git would track, so keep recordings under `reports/` (gitignored), and delete them when they're no longer needed.

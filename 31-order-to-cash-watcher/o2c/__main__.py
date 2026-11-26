@@ -25,7 +25,6 @@ import argparse
 import json
 import os
 import sys
-import traceback
 from datetime import date
 from pathlib import Path
 
@@ -39,18 +38,16 @@ nonnegative_days = days_option   # older name, kept for callers
 FAILED_RESULT = 'AGENT_RESULT {"claim":"failed"}'
 
 
-def unexpected(prog, error):
+def unexpected(prog, error, claim=True):
     """The traceback (stderr), a "failed" claim (stdout), then one plain reason line (stderr, last).
     Seat 34's harness merges stderr into stdout and reports the last line with a letter in it as the
     reason, so the reason line must come after the claim; the claim is found by scanning back for
     AGENT_RESULT, so it needn't be last. Every line goes through display_text, so server text can't
     put control characters on the terminal (bug hunt E2). No token can be in it: client errors name
-    settings, never values."""
-    for line in traceback.format_exception(type(error), error, error.__traceback__):
-        for part in line.rstrip("\n").split("\n"):
-            print(display_text(part), file=sys.stderr)
-    sys.stderr.flush()
-    print(FAILED_RESULT, flush=True)
+    settings, never values. claim=False (--explain) prints no AGENT_RESULT."""
+    debug.print_traceback(error)
+    if claim:
+        print(FAILED_RESULT, flush=True)
     print(f"{prog}: unexpected error: {type(error).__name__}: {' '.join(display_text(error).split())}",
           file=sys.stderr, flush=True)
 
@@ -93,6 +90,9 @@ def explain_main(ap, args):
     except McpError as e:
         debug.crash(e, "o2c --explain")
         platform_failure("o2c", e)
+    except Exception as e:                           # a reason line, never a raw traceback (D2, E2)
+        unexpected("o2c --explain", e, claim=False)
+        raise SystemExit(1)
     raise SystemExit(code)
 
 
