@@ -741,11 +741,14 @@ class SelectiveReplay(Base):
 
     def test_task12_recorded_with_a_mailbox_replays_with_the_same_verdict(self):
         """Review of #63 (2nd), end to end: the real task 12, recorded with --mailbox-id while another
-        login edits a payment, replayed without --mailbox-id, gives the same pass and exit code."""
+        login edits an order and a payment, replayed without --mailbox-id, gives the same pass and exit code."""
         me, other = "U-31", "U-30"
         data = {"Payment": [{"id": "A", "number": "A", "type": "receive", "docstatus": 1, "amount": 50.0,
                              "unallocated": 50.0, "status": "submitted", "date": "2026-11-01", "party_id": "P1",
                              "updated_by": "U-SEED"}],
+                "SalesOrder": [{"id": "SO-1", "number": "SO-1", "docstatus": 1, "status": "submitted",
+                                "date": "2026-11-01", "party_id": "P1", "grand_total": 100.0, "per_billed": 0,
+                                "updated_by": "U-SEED"}],
                 "EmailMessage": [{"id": "m1", "folder": "inbox"}]}
         mailboxes = [{"id": "M", "email": "ar@seller.example", "company_id": "C", "user_id": me}]
         tools = ["SalesOrder.list", "Payment.list", "EmailMessage.list", "Mailbox.list", "Mailbox.get"]
@@ -776,6 +779,7 @@ class SelectiveReplay(Base):
         real_build = tasks_payments.report.build
 
         def build_while_another_login_edits(client, **kw):
+            data["SalesOrder"][0].update(remarks="edited by another seat", updated_by=other)   # Sunil's case
             data["Payment"][0].update(notes="seat 30 edit", updated_by=other)
             return real_build(client, **kw)
 
@@ -792,7 +796,8 @@ class SelectiveReplay(Base):
             code, out = main("--record", rec, "--only", "report_read_only", "--mailbox-id", "M")
         self.assertEqual(code, 0, out)
         self.assertIn("login=known", out)
-        self.assertIn("changed_by_other_logins=1", out)
+        self.assertIn("changed_by_this_run=0", out)
+        self.assertIn("changed_by_other_logins=2", out)                # the order and the payment
         verdicts = [l for l in out.splitlines() if l.startswith(("PASS", "FAIL"))]
         for args in ((), ("--only", "report_read_only")):              # never --mailbox-id
             code, again = main("--replay", rec, *args)
