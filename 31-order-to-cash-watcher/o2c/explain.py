@@ -22,6 +22,7 @@ import sys
 from pathlib import Path
 
 from . import report
+from .client import ReplayGap
 from .report import CANCELLED, NOT_INVOICED, RECEIVABLE, SUBMITTED
 from .values import display_text
 
@@ -178,7 +179,7 @@ def find(client, wanted, names):
         try:
             rows = client.list_all(entity)
         except Exception as e:                    # replay without this read, or a platform error
-            if "replay:" in str(e):
+            if isinstance(e, ReplayGap):
                 notes.append(f"the recording has no unfiltered {entity} read, so records the report never reads "
                              "can't be checked offline")
                 continue

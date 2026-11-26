@@ -12,7 +12,8 @@ harness run needs no date; `o2c.tasks_orders` and `o2c.tasks_payments` (one half
 --only runs just the tasks named (ids as in NUMBERED, comma-separated), in suite order; results.json then
 lists only those. An unknown id is a usage error. With --replay, the tasks recorded before the named ones
 run first, quietly, so each named task sees the same replies and the same shared report as when it was
-recorded (review of #63, P2); results.json still lists only the named tasks.
+recorded (review of #63, P2); results.json still lists only the named tasks. Without --only, --replay
+runs the tasks the recording lists (a recording without that list: every task).
 
 Debugging (DEBUGGING.md):
 --debug prints, on stderr, a line as each task starts and ends (its time, platform calls and
@@ -24,8 +25,11 @@ what was recorded); --replay DIR runs the suite from it, with no platform and no
 data every time. DIR holds customer records: it must be a folder git ignores (e.g. reports/recordings/
 <instance>-<date>) or outside the repo. --agent can't be combined with either: the agent runs as a
 separate process that talks to the platform itself, so its calls are neither recorded nor replayed.
-A recorded or replayed run is read-only: --allow-writes can't be combined with either, and task 9
-(which creates a draft) is reported as blocked, also when AGENTSWITCH_RUN_ID is set.
+Replay uses the recorded system, date, days and --mailbox-id unless given; a different system or mailbox
+is a usage error, because it makes different reads. A request the recording lacks stops the task as
+infrastructure (ReplayGap), never as "unknown". A recorded or replayed run is read-only: --allow-writes
+can't be combined with either, and task 9 (which creates a draft) is reported as blocked, also when
+AGENTSWITCH_RUN_ID is set.
 
 With --out, the run is also described in <out>.meta.json beside it: commit, start and end, the
 source (live, record or replay), platform totals, and per task its seconds, calls and retries.
@@ -216,6 +220,15 @@ def main(argv=None):
             args.date = date.fromisoformat(recorded["date"])     # replay on the recorded date unless told otherwise
         if args.days is None and recorded.get("days") is not None:
             args.days = days_option(str(recorded["days"]))
+        # Review of #63: the mailbox decides which reads task 12 makes (Mailbox.get or Mailbox.list), so a
+        # replay uses the recorded one. A different one can't be replayed. Recordings without it: as given.
+        if "mailbox_id" in recorded:
+            if args.mailbox_id is None:
+                args.mailbox_id = recorded["mailbox_id"]
+            elif args.mailbox_id != recorded["mailbox_id"]:
+                ap.error(f"--replay: the recording was made with --mailbox-id "
+                         f"{display_text(recorded['mailbox_id']) if recorded['mailbox_id'] else '(none)'}; "
+                         "a different mailbox makes different reads, so it can't be replayed")
     if args.days is None:
         try:
             args.days = days_option(os.environ.get("O2C_DAYS", "7"))
@@ -226,6 +239,8 @@ def main(argv=None):
     plan = None
     if args.replay and args.only is not None:
         plan = replay_plan(ap, recorded, args.only)
+    elif args.replay and isinstance(recorded.get("tasks"), list):
+        plan = replay_plan(ap, recorded, recorded["tasks"])     # review of #63: the tasks that were recorded
     if args.agent and (args.record or args.replay):
         ap.error("--agent can't be combined with --record or --replay: the agent runs as a separate process "
                  "that talks to the platform itself, so its calls are neither recorded nor replayed")
@@ -252,6 +267,7 @@ def main(argv=None):
         write_results(Path(args.record) / RECORDING_META,
                       {"instance": args.instance, "date": report_date.isoformat(), "days": args.days,
                        "tasks": [t[0] for t in all_tasks() if args.only is None or t[0] in args.only],
+                       "mailbox_id": args.mailbox_id,
                        "recorded_at": started.isoformat(timespec="seconds"), "commit": _commit()})
     ctx = Ctx(
         client,

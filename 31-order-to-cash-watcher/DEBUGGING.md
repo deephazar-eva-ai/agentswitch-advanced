@@ -78,7 +78,9 @@ python3 -m o2c.suite --replay reports/recordings/keystone-<date> --debug
 - `--record` needs a new or empty folder: one that already holds a recording is refused, so two runs' replies are never mixed. The recording file is reserved as the run starts, so two runs started on one folder at once can't both record into it.
 - A recorded or replayed run is read-only. Nothing but a read is sent or saved, and `--allow-writes` can't be combined with `--record` or `--replay`. Task 9, which creates a draft, is reported as blocked, also when `AGENTSWITCH_RUN_ID` is set.
 - `--replay DIR --only <task>` gives the verdict that task had when recorded. The tasks recorded before it run first, quietly and unreported, because replies are served in recorded order and one report is shared by every task. A task that isn't in the recording, or a recording made before the task list was saved in `recording.json`, is refused: replay it whole, or record again.
-- Replay uses the recording's system, date and days unless they're given. It refuses a different system.
+- Replay uses the recording's system, date, days and `--mailbox-id` unless they're given. It refuses a different system or mailbox, because a different mailbox makes different reads.
+- Without `--only`, replay runs the tasks the recording lists, in recorded order. So a recording made with `--only` replays as that run, not as all 12 tasks. An older recording without the list replays every task.
+- A request the recording lacks stops that task as `outcome=infrastructure; ReplayGap: …`. It never counts as an unknown login or an empty result.
 - Every rerun sees exactly the same data, takes about a second, and can be used with `git bisect run` (the suite exits 1 when a task fails) or to try a fix before a live run.
 - If the code now asks for something the recorded run didn't, replay stops with `replay: no recorded reply for …`. Record a new run.
 - `--agent` can't be combined with `--record` or `--replay`: the agent runs as a separate process that talks to the platform itself.

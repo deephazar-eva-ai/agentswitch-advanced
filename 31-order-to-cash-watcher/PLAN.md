@@ -35,16 +35,16 @@ From the instructor's Seat 31 brief in the seat group chat:
 |---|---|---|---|
 | #54 | Bug-hunt fixes B–G, live-tested drafts, suite task 12 | Deepak | Merged 23 Nov |
 | #59 | Version 1: order ID list, `--prompt`, tasks 1–4 and 11, the 12-task runner | Sunil | Merged 23 Nov |
-| #62 | The client never follows a redirect, so the token stays with the platform | Deepak | Open, waiting for the instructor's approval |
-| #63 | Debugging tools: `--debug`, `--record`/`--replay`, `--only`, `--explain`, `DEBUGGING.md` | Deepak | Open, waiting for Sunil's review (asked before the 29 Nov recording) |
+| #62 | The client never follows a redirect, so the token stays with the platform | Deepak | Merged 26 Nov |
+| #63 | Debugging tools: `--debug`, `--record`/`--replay`, `--only`, `--explain`, `DEBUGGING.md` | Deepak | Open: rebased onto `main` after #62 (26 Nov); Sunil's review points fixed; waiting for his approval, then the instructor's merge |
 
-#62 and #63 change neighbouring lines in `o2c/client.py`; whichever merges second is rebased to keep both.
+#62 and #63 changed neighbouring lines in `o2c/client.py`. #62 merged first, and #63 was rebased to keep both (26 Nov).
 
 **Still to do for version 1 (30 Nov)**
 
 | Item | Depends on | Owner |
 |---|---|---|
-| Merge #62 and #63 | Reviews above | Deepak |
+| Merge #63 (#62 merged 26 Nov) | Sunil's approval, then the instructor | Deepak |
 | Ask seat 34 to add `--debug` to seat 31's agent command (request sent 25 Nov) | #63 merged; before that the option is unknown and every task would fail | Deepak |
 | Run the full suite through seat 34's harness on both systems, and task 9 on a throwaway copy. Seat 34's harness only runs `python -m o2c --prompt …`; task 9 runs through `python3 -m o2c.suite --agent` | Seat 34 | Both |
 | Run the A1–A6 refusal tasks with seat 34; settle words that are both requests and nouns ("close to 30 days", "which payments should we apply?") from their prompts. Any change to `o2c/prompt.py` this needs: Sunil | Seat 34 | Both |

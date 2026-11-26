@@ -52,6 +52,11 @@ class UnstablePaginationError(PaginationError):
     """A changing source may succeed after a bounded full restart."""
 
 
+class ReplayGap(McpError):
+    """A replay asked for a request the recording doesn't have: the replayed run differs from the
+    recorded one. Never swallowed as "unknown" (review of #63): it means the replay can't be trusted."""
+
+
 class PlatformUnavailable(McpError):
     """The platform could not be reached or kept failing after the bounded retries."""
 
@@ -424,7 +429,7 @@ class ReplayClient(Client):
         self.stats["by_tool"][(params or {}).get("name") or method] += 1
         replies = self._replies.get(key)
         if not replies:
-            raise McpError(f"replay: no recorded reply for {what} (the recorded run never asked for it)")
+            raise ReplayGap(f"replay: no recorded reply for {what} (the recorded run never asked for it)")
         entry = replies[min(self._served[key], len(replies) - 1)]
         self._served[key] += 1
         if "error" in entry:

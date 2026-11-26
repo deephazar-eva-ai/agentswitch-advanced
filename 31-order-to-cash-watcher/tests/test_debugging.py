@@ -687,6 +687,58 @@ class SelectiveReplay(Base):
         self.assertNotIn("overdue_invoices", out)                       # the quiet task isn't reported
         self.assertIn("keystone: 1/1 tasks passed", out)
 
+    def test_a_plain_replay_runs_the_tasks_the_recording_lists(self):
+        """Review of #63 (2nd): a recording made with --only replays as that run, not as all 12 tasks."""
+        rec = str(self.tmp / "rec")
+        self.assertEqual(self.main("--record", rec, "--only", "overdue_invoices")[0], 0)
+        code, out = self.main("--replay", rec)
+        self.assertEqual(code, 0, out)
+        self.assertIn("keystone: 1/1 tasks passed", out)
+        self.assertNotIn("overdue_ageing", out)
+
+    def test_a_recording_without_a_task_list_still_replays_every_task(self):
+        rec = self.tmp / "rec"
+        self.assertEqual(self.main("--record", str(rec))[0], 0)
+        meta = json.loads((rec / "recording.json").read_text())
+        del meta["tasks"]
+        (rec / "recording.json").write_text(json.dumps(meta))
+        code, out = self.main("--replay", str(rec))
+        self.assertIn("keystone: 2/2 tasks passed", out)
+
+    def test_replay_uses_the_recorded_mailbox_and_refuses_another(self):
+        """Review of #63 (2nd): the mailbox decides whether Mailbox.get or Mailbox.list is read."""
+        seen = []
+
+        def mailbox_task(ctx):
+            seen.append(ctx.mailbox_id)
+            ctx.client.call("Mailbox.get" if ctx.mailbox_id else "Mailbox.list", {"id": ctx.mailbox_id} if ctx.mailbox_id else {})
+            return {"passed": True, "score": 1.0, "evidence": "mailbox read"}
+        self.TASKS = [("report_read_only", "T12", mailbox_task)]
+        rec = str(self.tmp / "rec")
+        self.assertEqual(self.main("--record", rec, "--mailbox-id", "mb")[0], 0)
+        self.assertEqual(json.loads((self.tmp / "rec" / "recording.json").read_text())["mailbox_id"], "mb")
+        code, out = self.main("--replay", rec)
+        self.assertEqual((code, seen[-1]), (0, "mb"), out)
+        err = io.StringIO()
+        with redirect_stderr(err), self.assertRaises(SystemExit) as ran, \
+                mock.patch.dict("os.environ", {}, clear=True), redirect_stdout(io.StringIO()), \
+                mock.patch.object(suite, "all_tasks", lambda: list(self.TASKS)):
+            suite.main(["--replay", rec, "--mailbox-id", "other"])
+        self.assertEqual(ran.exception.code, 2)
+        self.assertIn("recording was made with --mailbox-id mb", err.getvalue())
+
+    def test_a_replay_gap_is_never_an_unknown_login(self):
+        """Review of #63 (2nd): _our_login() used to swallow a missing recorded reply, so task 12 blamed
+        this run for another login's change. A gap now stops the task as infrastructure."""
+        Recording(self.tmp / "rec").tool_names()
+        ctx = tasks_payments.Ctx(C.ReplayClient(self.tmp / "rec"), "keystone", date(2026, 11, 30), mailbox_id=None)
+        with self.assertRaises(C.ReplayGap):
+            tasks_payments._our_login(ctx)
+        res = tasks_payments.run(ctx, [("report_read_only", "T12", tasks_payments.report_read_only)])
+        self.assertIn("outcome=infrastructure; ReplayGap: replay: no recorded reply", res[0]["evidence"])
+        broken = tasks_payments.Ctx(Scripted(reject=True), "keystone", date(2026, 11, 30))
+        self.assertIsNone(tasks_payments._our_login(broken))          # a platform error: still "unknown"
+
     def test_a_quiet_task_runs_in_its_recorded_place(self):
         order = []
         tasks = [(n, n, lambda ctx, n=n: (order.append(n), {"passed": True, "score": 1.0, "evidence": n})[1])

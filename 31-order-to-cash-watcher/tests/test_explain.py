@@ -8,6 +8,7 @@ from datetime import date
 from unittest import mock
 
 from o2c import __main__ as cli, explain, report
+from o2c import client as C
 
 DAY = date(2026, 11, 25)
 
@@ -156,7 +157,7 @@ class Explains(unittest.TestCase):
         class NoUnfiltered(Fake):
             def list_all(self, entity, filters=None):
                 if not filters and entity in ("SalesOrder", "Invoice", "Payment"):
-                    raise cli.McpError(f"replay: no recorded reply for tools/call {entity}.list")
+                    raise C.ReplayGap(f"replay: no recorded reply for tools/call {entity}.list")
                 return super().list_all(entity, filters)
         code, text = run(NoUnfiltered(orders=[order(docstatus=0)]), "SO-1")
         self.assertEqual(code, explain.EXIT_NOT_FOUND)

@@ -22,7 +22,7 @@ from .values import business_date, currency_code, money, money_number
 
 from . import drafts, report
 from . import debug
-from .client import Client, McpError, WriteBlocked, is_read_tool, platform_failure, stats_of
+from .client import Client, McpError, ReplayGap, WriteBlocked, is_read_tool, platform_failure, stats_of
 from .output import days_option, safe_console
 from .values import display_text
 
@@ -467,6 +467,8 @@ def _our_login(ctx):
     (checked 20 Nov: our own draft's created_by equals the mailbox user_id). None if unknown."""
     try:
         return (drafts.find_mailbox(ctx.client, ctx.mailbox_id) or {}).get("user_id")
+    except ReplayGap:
+        raise              # review of #63: the replay differs from the recording; never "unknown login"
     except Exception:  # noqa: BLE001 - unknown login means every change counts against us
         return None
 
