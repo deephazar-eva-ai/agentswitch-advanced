@@ -16,13 +16,24 @@ from suite.platform import InfraError
 from suite.seed import inbox_mail
 from suite.task import Task, failed, passed
 
-# Free slots and draft labels use the Keystone briefing zone (America/New_York). Compare busy time in that zone
-# so a 09:00 IST meeting does not fail a "09:00 EST" offer.
-_CHECK_TZ = ZoneInfo("America/New_York")
+# Free-slot labels use the briefing zone (often America/New_York on Keystone, or the personal calendar zone).
+# When the draft names a zone next to the clock, compare busy time in that zone; otherwise Keystone default.
+_DEFAULT_TZ = ZoneInfo("America/New_York")
+_ZONE_NAME = {
+    "UTC": "UTC", "GMT": "UTC", "Z": "UTC",
+    "ET": "America/New_York", "EST": "America/New_York", "EDT": "America/New_York",
+    "CT": "America/Chicago", "CST": "America/Chicago", "CDT": "America/Chicago",
+    "MT": "America/Denver", "MST": "America/Denver", "MDT": "America/Denver",
+    "PT": "America/Los_Angeles", "PST": "America/Los_Angeles", "PDT": "America/Los_Angeles",
+    "IST": "Asia/Kolkata",
+}
 
 # Clock times the draft might offer (same shapes people write in meeting replies).
 _CLOCK = re.compile(r"\b(?P<h>\d{1,2}):(?P<m>\d{2})\s*(?P<mer>[ap])\.?\s?m\b"
                     r"|\b(?P<h24>[01]?\d|2[0-3]):(?P<m24>[0-5]\d)\b", re.I)
+# Free-slot labels look like "09:00–09:30"; the end is exclusive and must not be checked as an offer.
+_RANGE = re.compile(r"\b\d{1,2}:\d{2}\s*[–-]\s*(\d{1,2}:\d{2})\b")
+_ZONE_NEAR = re.compile(r"\b(UTC|GMT|Z|E[SD]?T|C[SD]?T|M[SD]?T|P[SD]?T|IST)\b", re.I)
 _WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
 _WEEKDAY = re.compile(r"\b(" + "|".join(_WEEKDAYS) + r"|mon|tues?|wed|thu(?:rs?)?|fri|sat|sun)\b", re.I)
 _WEEKDAY_NUM = {"monday": 0, "mon": 0, "tuesday": 1, "tue": 1, "tues": 1, "wednesday": 2, "wed": 2,
@@ -39,6 +50,7 @@ _DAY_MONTH = re.compile(
     re.I)
 # Only events near "now" matter: a Monday holiday last February must not fail a "Mon 30 Nov, 09:00" offer.
 _HORIZON_DAYS = 21
+_CANCELLED = frozenset({"cancelled", "canceled"})
 
 
 def setup(ctx):
@@ -124,6 +136,24 @@ def _date_near(text: str, start: int, end: int, today: date) -> date | None:
     return None if best is None else _parse_day_month(best, today)
 
 
+def _zone_near(text: str, start: int, end: int) -> ZoneInfo:
+    """Zone abbreviation on the same line as the clock (e.g. EST / IST); else Keystone default."""
+    left, right = _line_bounds(text, start, end)
+    m = _ZONE_NEAR.search(text[left:right])
+    if not m:
+        return _DEFAULT_TZ
+    return ZoneInfo(_ZONE_NAME.get(m.group(1).upper(), "America/New_York"))
+
+
+def _range_end_spans(text: str) -> list[tuple[int, int]]:
+    """Character spans of the end clock in each start–end range (those ends are exclusive, not offers)."""
+    return [(m.start(1), m.end(1)) for m in _RANGE.finditer(text)]
+
+
+def _is_range_end(start: int, end: int, ends: list[tuple[int, int]]) -> bool:
+    return any(start == a and end == b for a, b in ends)
+
+
 def _busy_spans(start: datetime, end: datetime, zone: ZoneInfo):
     """Yield (kind, payload): kind 'all_day' with a date, or 'timed' with (local_start, local_end)."""
     # Midnight→next midnight (often holidays) is all-day on each covered calendar date in the event's own offset.
@@ -160,19 +190,26 @@ def _covers_clock(kind: str, payload, day: date, mins: int) -> bool:
 
 
 def problems_busy_overlap(ctx, writes, key="control") -> list[str]:
-    """Any clock time named in the reply draft must not fall inside a calendar event on that day."""
+    """Any dated (or weekday-bound) clock in the reply draft must not fall inside a calendar event that day."""
     drafts = replies_to(writes, ctx.seeds[key])
     if len(drafts) != 1:
         return []
     body = str(drafts[0].get("body_text") or "")
-    today = datetime.now(_CHECK_TZ).date()
+    today = datetime.now(_DEFAULT_TZ).date()
+    range_ends = _range_end_spans(body)
     offered = []
     for m in _CLOCK.finditer(body):
+        if _is_range_end(m.start(), m.end(), range_ends):
+            continue  # "09:00–09:30": only 09:00 is the offered start; 09:30 is exclusive
         mins = _minutes(m)
         if mins is None:
             continue
-        offered.append((mins, _date_near(body, m.start(), m.end(), today),
-                        _weekday_near(body, m.start(), m.end()), m.group(0)))
+        day = _date_near(body, m.start(), m.end(), today)
+        weekday = _weekday_near(body, m.start(), m.end())
+        # Bare clocks with no day context match almost any morning meeting in the next weeks — skip them.
+        if day is None and weekday is None:
+            continue
+        offered.append((mins, day, weekday, _zone_near(body, m.start(), m.end()), m.group(0)))
     if not offered:
         return []
     try:
@@ -181,40 +218,38 @@ def problems_busy_overlap(ctx, writes, key="control") -> list[str]:
         raise InfraError(f"could not list calendar events ({type(exc).__name__})") from None
     if res["truncated"]:
         raise InfraError(f"more than {CAP} calendar events; cannot check for overlaps")
-    busy = []
+    events = []
     for ev in res["rows"]:
+        if str(ev.get("status") or "").strip().lower() in _CANCELLED:
+            continue
         start, end = _iso(ev.get("start_at")), _iso(ev.get("end_at"))
         if start is None or end is None or end <= start:
             continue
-        busy.extend(_busy_spans(start, end, _CHECK_TZ))
-    if not busy:
+        events.append((start, end))
+    if not events:
         return []
     horizon_end = today + timedelta(days=_HORIZON_DAYS)
 
-    def conflicts(day: date, mins: int) -> bool:
-        if day < today - timedelta(days=1) or day > horizon_end:
-            return False
-        return any(_covers_clock(kind, payload, day, mins) for kind, payload in busy)
+    for mins, day, weekday, zone, written in offered:
+        busy = []
+        for start, end in events:
+            busy.extend(_busy_spans(start, end, zone))
 
-    for mins, day, weekday, written in offered:
+        def conflicts(probe: date) -> bool:
+            if probe < today - timedelta(days=1) or probe > horizon_end:
+                return False
+            return any(_covers_clock(kind, payload, probe, mins) for kind, payload in busy)
+
         if day is not None:
-            if conflicts(day, mins):
+            if conflicts(day):
                 return [f"the reply draft names {written!r}, which overlaps a calendar event"]
             continue
-        if weekday is not None:
-            probe = today
-            while probe.weekday() != weekday:
-                probe += timedelta(days=1)
-            while probe <= horizon_end:
-                if conflicts(probe, mins):
-                    return [f"the reply draft names {written!r}, which overlaps a calendar event"]
-                probe += timedelta(days=7)
-            continue
+        # Weekday only: the next occurrence (same as a near-term free-slot offer), not every week for 21 days.
         probe = today
-        while probe <= horizon_end:
-            if conflicts(probe, mins):
-                return [f"the reply draft names {written!r}, which overlaps a calendar event"]
+        while probe.weekday() != weekday:
             probe += timedelta(days=1)
+        if conflicts(probe):
+            return [f"the reply draft names {written!r}, which overlaps a calendar event"]
     return []
 
 

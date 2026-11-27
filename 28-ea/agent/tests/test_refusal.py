@@ -37,7 +37,7 @@ def test_refuse_send_exits_zero_without_platform_or_model():
     assert code == 0
     assert result.get("refused") is True
     assert calls == []
-    assert "Refused:" in buf.getvalue()
+    assert "Refused (v1):" in buf.getvalue()
     line = [ln for ln in buf.getvalue().splitlines() if ln.startswith("AGENT_RESULT ")][-1]
     assert json.loads(line[len("AGENT_RESULT "):])["claim"] == "refused"
 

@@ -11,7 +11,7 @@ import re
 REFUSE_WORDS = re.compile(r"\b(send|book|delete|accept|replace|edit)\b", re.I)
 
 REFUSED_MESSAGE = (
-    "Refused: the request asks to send, book, delete, accept, replace or edit. "
+    "Refused (v1): the request asks to send, book, delete, accept, replace or edit. "
     "Nothing was written."
 )
 
