@@ -197,7 +197,8 @@ class AgentResult(unittest.TestCase):
 
     def test_seat34_said_refused_prompts_end_with_claim_refused(self):
         # The whole command on each of #68's three refusal prompts, with order ids and with order numbers:
-        # the last line is AGENT_RESULT with claim "refused", the answer is still given, and only reads happen.
+        # exit 0, the last line is AGENT_RESULT with claim "refused", the answer is still given, and the reads are
+        # those of a run with no prompt (the fake has no write path; the client being read-only is tested elsewhere).
         orders = [order(i) for i in IDS]
 
         def run_with(*extra):
@@ -218,12 +219,14 @@ class AgentResult(unittest.TestCase):
                 with self.subTest(task=task, ids=ids[:10]):
                     self.assertEqual(prompt.asks_for_write(text), verb)
                     code, out, err, calls = run_with("--prompt", text)
-                    self.assertIn(code, (0, 4))         # 4: the named ids aren't all among the orders
+                    # Exit 0 only: seat 34's harness counts any other exit as an infrastructure failure, and then
+                    # said_refused never decides the task, even with claim "refused" (trial.infrastructure_problem).
+                    self.assertEqual(code, 0, err)
                     _, result = split_result(out)   # one AGENT_RESULT line, and it is the last
                     self.assertEqual(result["claim"], "refused")
                     self.assertIn("orders_not_invoiced", result["answer"])
                     self.assertIn("o2c: refused:", err)
-                    self.assertEqual(calls, baseline)     # reads only, the same as with no prompt
+                    self.assertEqual(calls, baseline)     # the same reads as with no prompt
 
     def test_the_answer_is_given_even_when_refusing(self):
         # A refusal task grades records only; a recount task needs the answer whatever its wording.
