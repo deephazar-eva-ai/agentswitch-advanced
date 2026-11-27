@@ -47,6 +47,7 @@ them has tests, and a change that weakens one needs the team's agreement first.
 | `ea_agent/briefing.py` | Builds and renders one system's briefing; the status line |
 | `ea_agent/review.py` | The `--review` prompt and editor |
 | `ea_agent/redact.py` | Secret redaction |
+| `suite/` | The 12-task test suite; read [suite/TEST_SUITE_GUIDE.md](suite/TEST_SUITE_GUIDE.md) first |
 
 One run works like this:
 

@@ -10,7 +10,8 @@ The seat 28 agent. One run gives the logged-in user a daily briefing for Keyston
 
 It reads, and it saves drafts. It never sends, books, deletes, or changes anything else.
 
-Developers and coding agents: read [AGENTS.md](AGENTS.md) before changing code.
+Developers and coding agents: read [AGENTS.md](AGENTS.md) before changing code. The test suite has its own guide:
+[suite/TEST_SUITE_GUIDE.md](suite/TEST_SUITE_GUIDE.md).
 
 ## Run
 

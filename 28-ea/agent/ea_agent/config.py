@@ -12,6 +12,7 @@ import json
 import os
 import re
 from datetime import date
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 INSTANCES = {
@@ -193,6 +194,19 @@ def _harness(environ: dict, requested: list[str]) -> tuple[str, str, str]:
     return token, instance, base_url.rstrip("/")
 
 
+def _host(url: str) -> str:
+    return (urlsplit(url.strip()).hostname or "").lower().rstrip(".")
+
+
+def is_live_url(url: str) -> bool:
+    """True when `url` points at a live system's host, whatever its case, port, path, userinfo or trailing dot. A URL
+    that cannot be read counts as live, the safe side: then drafts are previewed, never saved."""
+    try:
+        return _host(url) in {_host(u) for u in SYSTEMS.values()}
+    except ValueError:
+        return True
+
+
 def resolve(args, environ) -> dict:
     environ = dict(environ if environ is not None else os.environ)
     requested = _requested_systems(args)
@@ -204,7 +218,7 @@ def resolve(args, environ) -> dict:
         env, platform, systems = environ, True, [label]
         # The contract: local runs use the live shared data, so they must be read-only; only a harness copy may be
         # written to. A live URL here means a local run, so drafts are previewed and never saved.
-        read_only = base_url in {url.rstrip("/") for url in SYSTEMS.values()}
+        read_only = is_live_url(base_url)
         if read_only:
             warnings.append("AGENTSWITCH_BASE_URL is a live system, not a harness copy: drafts are previewed, "
                             "not saved")

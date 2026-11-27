@@ -321,6 +321,25 @@ def test_harness_on_a_live_url_is_read_only(url):
     assert any("live system" in w for w in out["warnings"])
 
 
+@pytest.mark.parametrize("url", [
+    "https://class.agentswitch.theschoolofai.in:443", "https://CLASS.agentswitch.theschoolofai.in",
+    "HTTPS://class.agentswitch.theschoolofai.in", "https://class.agentswitch.theschoolofai.in.",
+    "https://x@class.agentswitch.theschoolofai.in", "http://class.agentswitch.theschoolofai.in",
+    "https://class.agentswitch.theschoolofai.in/api", "https://AgentSwitch.TheSchoolOfAI.in:443/",
+])
+def test_harness_on_a_live_url_variant_is_still_read_only(url):
+    # the live check compares the host, so case, port, scheme case, a trailing dot, userinfo or a path cannot turn
+    # a run on live data into one that saves drafts
+    assert config.resolve(ns(), harness(AGENTSWITCH_BASE_URL=url))["read_only"] is True
+
+
+@pytest.mark.parametrize("url", ["https://copy.invalid", "https://class.agentswitch.theschoolofai.in.copy.invalid",
+                                 "https://class.agentswitch.theschoolofai.in@copy.invalid"])
+def test_harness_on_a_copy_host_may_save(url):
+    # a live host name that is only userinfo or a prefix of another host is not the live host
+    assert config.resolve(ns(), harness(AGENTSWITCH_BASE_URL=url))["read_only"] is False
+
+
 def test_harness_on_a_copy_may_save():
     out = config.resolve(ns(), harness())
     assert out["read_only"] is False and not any("live system" in w for w in out["warnings"])
