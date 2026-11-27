@@ -46,13 +46,13 @@ _UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 _NUMBER = re.compile(r"\bSO-(?=[A-Za-z0-9/-]*\d)[A-Za-z0-9](?:[A-Za-z0-9/-]*[A-Za-z0-9])?\b", re.I)
 # Customer-name clauses (e.g. "Kirloskar Pumps Ltd has a lot of unbilled orders...", "orders for <Customer>").
 _CUSTOMER_HAS = re.compile(
-    r"(?:^|[.!?;:\n]\s*)([A-Z][A-Za-z0-9&.,'’\-]*(?:\s+[A-Z0-9][A-Za-z0-9&.,'’\-]*){0,6})\s+"
+    r"(?:^|[.!?;:\n]\s*)([A-Z][A-Za-z0-9&.,'’\-]*(?:\s+[A-Z0-9&][A-Za-z0-9&.,'’\-]*){0,6})\s+"
     r"has\s+(?:a\s+lot\s+of\s+|many\s+|some\s+|several\s+|any\s+)?"
     r"(?:un-?invoiced|unbilled|open|overdue|pending)?\s*orders?\b"
 )
 _CUSTOMER_FOR = re.compile(
     r"\borders?\s+(?:for|from|of)\s+(?:customer\s+)?"
-    r"([A-Z][A-Za-z0-9&.,'’\-]*(?:\s+[A-Z0-9][A-Za-z0-9&.,'’\-]*){0,6})"
+    r"([A-Z][A-Za-z0-9&.,'’\-]*(?:\s+[A-Z0-9&][A-Za-z0-9&.,'’\-]*){0,6})"
     r"(?=\s+(?:for|in|past|last|over|older|more|since|even|that|which|with|without|and|or)\b|[.,!?;:\n]|$)"
 )
 _NOT_CUSTOMER = frozenset({"the", "all", "these", "those", "them", "this", "that", "our", "my", "any",

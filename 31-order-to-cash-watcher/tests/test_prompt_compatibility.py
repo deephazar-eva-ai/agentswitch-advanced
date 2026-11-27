@@ -596,6 +596,51 @@ class Seat34SuiteRecountAndRefusal(unittest.TestCase):
             "some are not billed for past 7 days",
             "do not hide SO-1042 from the report",
             "do not backdate SO-1042",
+            "do not raise an invoice for SO-1042",
+            "do not bill SO-1042",
+            "do not apply the payment to SO-1042",
         ):
             with self.subTest(read=text):
                 self.assertIsNone(prompt.asks_for_write(text))
+
+    def test_time_window_conflicts_and_range_boundaries(self):
+        # Conflicting windows (months vs since forever, days vs year) are ignored rather than guessed.
+        for text in ("unbilled for the past 3 months or since forever",
+                     "unbilled for the past 30 days and last year"):
+            with self.subTest(conflict=text):
+                asked = prompt.read(text)
+                self.assertEqual((asked.days, asked.any_age), (None, False))
+                self.assertTrue(any("more than one" in n for n in asked.notes))
+        # Equivalent windows (past 30 days + last month -> both 30) are not a conflict.
+        asked = prompt.read("unbilled for the past 30 days, i.e. last month")
+        self.assertEqual((asked.days, asked.any_age), (30, False))
+        # Out-of-range years (> MAX_DAYS=3650) are ignored.
+        asked = prompt.read("unbilled for the past 15 years")
+        self.assertEqual((asked.days, asked.any_age), (None, False))
+        self.assertTrue(any("out of range" in n for n in asked.notes))
+
+    def test_customer_extraction_and_match_boundaries(self):
+        # Ampersand in company name, "orders for <Customer>", and non-customer phrases.
+        self.assertEqual(prompt.read("Bharat Forge & Sons has unbilled orders").customer, "Bharat Forge & Sons")
+        self.assertEqual(prompt.read("Show unbilled orders for Apex Precision Works for the past 30 days").customer,
+                         "Apex Precision Works")
+        self.assertIsNone(prompt.read("Show unbilled orders for SO-2026-00012").customer)
+        self.assertIsNone(prompt.read("Show unbilled orders for the past 7 days").customer)
+        # Longest whole-phrase match wins; short/substring tokens never false-match.
+        names = ["Kirloskar Pumps Ltd", "Kirloskar Pumps Ltd India", "Ace", "AI"]
+        self.assertEqual(prompt.match_customer("Check Kirloskar Pumps Ltd India unbilled orders", names),
+                         "Kirloskar Pumps Ltd India")
+        self.assertIsNone(prompt.match_customer("Check surface orders and AI tools", names))
+
+    def test_customer_filter_isolates_date_gaps_and_any_age_beats_env_days(self):
+        # An undated order for another customer must not make Kirloskar's recount incomplete.
+        orders = [
+            order("k-0", age=0, _party_id_display="Kirloskar Pumps Ltd"),
+            order("a-bad", date=None, _party_id_display="Apex Precision Works"),
+        ]
+        with patch.dict("os.environ", {"O2C_DAYS": "14"}):
+            code, _, _, result = self._run_prompt(
+                orders, "Kirloskar Pumps Ltd has unbilled orders, list them all since forever"
+            )
+        self.assertEqual(code, 0)
+        self.assertEqual(result, {"claim": "done", "answer": {"orders_not_invoiced": ["k-0"]}})
