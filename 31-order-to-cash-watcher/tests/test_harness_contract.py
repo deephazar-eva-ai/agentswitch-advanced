@@ -108,14 +108,23 @@ class FakePlatform:
         self.server.server_close()
 
 
-def harness_run(platform, prompt="", token=TOKEN, extra=(), full=False):
+# Runs `o2c` exactly as `python -m o2c` does, but with time.sleep returning at once. For tests whose platform
+# keeps failing: every retry still happens and is still checked; only the waits between them (1, 2, 4 s) are
+# skipped, so a test doesn't spend its time asleep. No setting in the product code changes.
+NO_WAIT = ("import runpy, time; time.sleep = lambda seconds: None; "
+           "runpy.run_module('o2c', run_name='__main__', alter_sys=True)")
+
+
+def harness_run(platform, prompt="", token=TOKEN, extra=(), full=False, no_wait=False):
     """(exit code, merged output tail) of the seat 31 command, started the way the harness starts it.
-    With full=True, the whole output (seat 34's parse_reported reads that; the recount grader reads the tail)."""
+    With full=True, the whole output (seat 34's parse_reported reads that; the recount grader reads the tail).
+    With no_wait=True, the retry waits are skipped (NO_WAIT); use it only where the platform keeps failing."""
     env = {"PATH": os.environ.get("PATH", "/usr/bin:/bin"), "HOME": os.environ.get("HOME", "/tmp"),
            "AGENTSWITCH_BASE_URL": platform.url, "AGENTSWITCH_TOKEN": token,
            "AGENTSWITCH_INSTANCE": "synthetic", "AGENTSWITCH_RUN_ID": "run-31-test",
            "PYTHONPATH": "../31-order-to-cash-watcher"}
-    p = subprocess.run([sys.executable, "-m", "o2c", "--date", REPORT_DATE, *extra, "--prompt", prompt],
+    start = [sys.executable, "-c", NO_WAIT] if no_wait else [sys.executable, "-m", "o2c"]
+    p = subprocess.run([*start, "--date", REPORT_DATE, *extra, "--prompt", prompt],
                        cwd=HARNESS, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120)
     text = p.stdout.decode("utf-8", "replace")
     return p.returncode, text if full else text[-TAIL:]
@@ -192,7 +201,7 @@ class HarnessContract(unittest.TestCase):
         from o2c.client import PAGE_SIZE
         self.platform.records["SalesOrder"] = [order(n) for n in range(1, PAGE_SIZE + 2)]
         self.platform.fail_from_offset = PAGE_SIZE   # the first page succeeds, the second fails
-        code, out = harness_run(self.platform, full=True)
+        code, out = harness_run(self.platform, full=True, no_wait=True)
         self.assertNotEqual(code, 0)
         self.assertEqual(self.lines_ids(out), [])
         self.assertNotIn("AGENT_RESULT", out)
@@ -221,8 +230,9 @@ class HarnessContract(unittest.TestCase):
         for tool, code in (("SalesOrder.list", 503), ("Payment.list", 500), ("tools/list", 502)):
             with self.subTest(tool=tool):
                 self.platform.status = {tool: code}
-                exit_code, out = harness_run(self.platform)
+                exit_code, out = harness_run(self.platform, no_wait=True)
                 self.assertNotEqual(exit_code, 0)
+                self.assertIn("after 4 tries", out)          # every retry still happened; only the waits were skipped
                 self.assertFalse(any(o["id"] in out for o in self.orders), "a partial list must never look complete")
                 self.assertNotIn(TOKEN, out)
 

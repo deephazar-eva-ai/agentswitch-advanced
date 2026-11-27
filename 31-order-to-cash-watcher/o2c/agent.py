@@ -11,12 +11,20 @@ real agent command the way seat 34's harness does (34-eval-harness/eval_harness/
 
 The reply is the agent's whole output. The last `AGENT_RESULT` line and the exit code of each run are kept, so a
 task can show what the agent said next to what the platform shows.
+
+With --debug (debug.ENABLED) the agent also runs with --debug, and its output, which the task evidence never
+shows, isn't lost: when the agent fails (non-zero exit, time-out, or no AGENT_RESULT line) the last AGENT_TAIL
+lines go to stderr; when it succeeds, only its own `debug:` lines (retries, slow requests) are passed on. Every
+line goes through display_text, so the platform's text can't put control characters on the terminal.
 """
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+
+from . import debug
+from .values import display_text
 
 SEAT_DIR = Path(__file__).resolve().parent.parent
 CONTRACT = ("AGENTSWITCH_BASE_URL", "AGENTSWITCH_TOKEN", "AGENTSWITCH_INSTANCE", "AGENTSWITCH_RUN_ID")
@@ -29,6 +37,7 @@ SYSTEM = (
 )
 RESULT_PREFIX = "AGENT_RESULT "
 TIMEOUT_S = 300
+AGENT_TAIL = 40      # lines of a failed agent run shown with --debug
 
 
 def reported(text):
@@ -55,13 +64,16 @@ class CommandAgent:
         self.timeout, self.python, self.runs = timeout, python, []
 
     def __call__(self, prompt):
+        command = [self.python, "-m", "o2c"] + (["--debug"] if debug.ENABLED else []) + ["--prompt", prompt]
         try:
-            done = subprocess.run([self.python, "-m", "o2c", "--prompt", prompt], cwd=SEAT_DIR, env=self.env,
+            done = subprocess.run(command, cwd=SEAT_DIR, env=self.env,
                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=self.timeout)
             text, code = done.stdout.decode("utf-8", "replace"), done.returncode
         except subprocess.TimeoutExpired as e:
             text, code = (e.output or b"").decode("utf-8", "replace") + "\n[agent: stopped at the time limit]", None
         self.runs.append({"exit_code": code, "result": reported(text)})
+        if debug.ENABLED:
+            show_output(text, code, self.runs[-1]["result"])
         return text
 
     def describe(self):
@@ -73,3 +85,24 @@ class CommandAgent:
         code = "timeout" if last["exit_code"] is None else last["exit_code"]
         claim = (last["result"] or {}).get("claim", "none")
         return f"agent exit={code} claim={claim}"
+
+
+def show_output(text, code, result):
+    """--debug: what the agent printed, on stderr. All of it (the last AGENT_TAIL lines) when the run failed,
+    only its own debug lines when it succeeded. Never into the evidence."""
+    lines = (text or "").splitlines()
+    failed = code != 0 or result is None
+    who = f"{debug.current} agent" if debug.current else "agent"
+    status = "timeout" if code is None else f"exit={code}"
+    if failed:
+        shown = lines[-AGENT_TAIL:]
+        cut = f", last {len(shown)} of {len(lines)} lines" if len(lines) > len(shown) else ""
+        debug.step(f"{who} failed ({status}, claim={(result or {}).get('claim', 'none')}); its output{cut}:")
+    else:
+        shown = [line for line in lines if line.startswith("debug: ")]
+        if not shown:
+            return
+        debug.step(f"{who} ({status}): its debug lines:")
+    for line in shown:
+        print(f"debug:   | {display_text(line)}", file=sys.stderr, flush=True)
+

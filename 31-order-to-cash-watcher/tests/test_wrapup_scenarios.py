@@ -101,8 +101,10 @@ class TasksCommand(unittest.TestCase):
                 mock.patch.object(sys, "argv", ["o2c.tasks_payments", "--instance", "x", "--date", "2026-11-20",
                                                 "--out", str(Path(tmp) / "r.json")]), \
                 redirect_stdout(io.StringIO()) as out:
-            T.main()
+            with self.assertRaises(SystemExit) as ran:
+                T.main()
             results = json.loads((Path(tmp) / "r.json").read_text())
+        self.assertEqual(ran.exception.code, 0 if all(t["passed"] for t in results["tasks"]) else 1)
         self.assertEqual([t["id"] for t in results["tasks"]], [f"x:{t[0]}" for t in T.TASKS])
         self.assertTrue(all({"passed", "score", "evidence", "title"} <= set(t) for t in results["tasks"]))
         self.assertIn("x: ", results["summary"])

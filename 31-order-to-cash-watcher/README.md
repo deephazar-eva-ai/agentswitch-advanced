@@ -157,3 +157,4 @@ A recording of 5 minutes or less (instructor item 4), following the outline agre
 | [docs/p2-review-fixes.md](docs/p2-review-fixes.md) | The receipt-currency and task-7 fixes from the #35 review |
 | [docs/daily-points.md](docs/daily-points.md) | Working guidelines and the module ownership split |
 | [docs/handover-deepak.md](docs/handover-deepak.md) | What Deepak finished, what is left and whose it is, how to run, things that will bite |
+| [DEBUGGING.md](DEBUGGING.md) | A failed suite or report run, and what to do first: `--debug`, the values behind a wrong answer, recording and replaying a run |

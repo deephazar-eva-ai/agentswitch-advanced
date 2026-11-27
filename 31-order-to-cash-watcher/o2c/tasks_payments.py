@@ -15,12 +15,14 @@ Task 9 creates a draft, so it runs only on the harness copy (AGENTSWITCH_RUN_ID 
 import argparse
 import json
 import os
+import time
 from datetime import date
 from decimal import Decimal
 from .values import business_date, currency_code, money, money_number
 
 from . import drafts, report
-from .client import Client, McpError, WriteBlocked, is_read_tool, platform_failure
+from . import debug
+from .client import Client, McpError, ReplayGap, WriteBlocked, is_read_tool, platform_failure, stats_of
 from .output import days_option, safe_console
 from .values import display_text
 
@@ -45,6 +47,7 @@ class Ctx:
         self.mailbox_id, self.accounts_email = mailbox_id, accounts_email
         self.agent = agent              # callable(prompt) -> text, supplied by the agent loop (Sunil)
         self.allow_writes = allow_writes
+        self.recorded = False           # True under --record or --replay: task 9 then never creates a draft
         self._report = self._tools = self._attribution = None
 
     def report(self):
@@ -74,6 +77,17 @@ class Ctx:
 
 def _ok(passed, evidence, score=None):
     return {"passed": passed, "score": score if score is not None else (1.0 if passed else 0.0), "evidence": evidence}
+
+
+SHOWN = 3   # records whose values --debug prints for one problem
+
+
+def _show_sets(label, expected, got, want_of, got_of):
+    """--debug: values behind a set mismatch, for the first SHOWN missing and extra records."""
+    for i in sorted(expected - got, key=str)[:SHOWN]:
+        debug.diff(i, f"missing {label}", want_of(i), None)
+    for i in sorted(got - expected, key=str)[:SHOWN]:
+        debug.diff(i, f"unexpected {label}", want_of(i), got_of(i))
 
 
 def _blocked(reason):
@@ -134,6 +148,12 @@ def overdue_invoices(ctx):
     got_no_due = {r["id"] for r in sec.get("no_due_date", [])}
     leaked = sorted((got | got_no_due) & bills, key=str)
     passed = sec["status"] == "ok" and got == expected and got_no_due == expected_no_due and not leaked
+    if not passed:
+        by_id = {i.get("id"): i for i in raw}
+        rows_by_id = {r["id"]: r for r in sec["rows"]}
+        _show_sets("overdue invoice", expected, got,
+                   lambda i: {k: (by_id.get(i) or {}).get(k) for k in ("due_date", "outstanding", "status")},
+                   lambda i: {k: rows_by_id.get(i, {}).get(k) for k in ("due_date", "outstanding", "days_overdue")})
     return _ok(passed, f"verifier=invoice_recount; overdue expected={len(expected)} got={len(got)} ({_diff(expected, got)}); "
                        f"no_due_date expected={len(expected_no_due)} got={len(got_no_due)}; "
                        f"supplier_bills_checked={len(bills)} leaked={len(leaked)}")
@@ -149,6 +169,10 @@ def overdue_ageing(ctx):
              if not due.get(r.get("id")) or r["days_overdue"] != (ctx.report_date - due[r.get("id")]).days
              or r["days_overdue"] <= 0]
     ordered = all(a["days_overdue"] >= b["days_overdue"] for a, b in zip(rows, rows[1:]))
+    for r in [r for r in rows if r.get("number") in wrong][:SHOWN]:
+        d = due.get(r.get("id"))
+        debug.diff(r.get("id"), "days_overdue", None if d is None else {"due_date": d.isoformat(),
+                   "days_overdue": (ctx.report_date - d).days}, r["days_overdue"])
     return _ok(not wrong and ordered, f"verifier=ageing_from_due_date; rows={len(rows)}; wrong_age={wrong[:3]}; oldest_first={ordered}")
 
 
@@ -246,6 +270,15 @@ def unapplied_payments(ctx):
     exp_cur = groups["by_currency"]
     headline = tables["by_currency"]
     note = "; no incoming payments on this instance; expected, instructor 7 Nov" if not raw else ""
+    if not (amounts_ok and summary_ok):
+        for n in sorted((k for k in set(got) & set(expected) if got[k] != expected[k]), key=str)[:SHOWN]:
+            debug.diff(n, "unallocated, currency", list(expected[n]), list(got[n]))
+        _show_sets("unapplied payment", set(expected), set(got),
+                   lambda n: list(expected[n]) if n in expected else None, lambda n: list(got[n]))
+        for name in groups:
+            if tables.get(name) != groups[name]:
+                debug.diff(name, "summary table", {str(k): v for k, v in groups[name].items()},
+                           {str(k): v for k, v in tables.get(name, {}).items()})
     return _ok(amounts_ok and summary_ok,
                f"verifier=payment_recount; rows expected={len(expected)} got={len(got)}; "
                f"unallocated by currency expected={_fmt(exp_cur)} "
@@ -323,6 +356,8 @@ def _message_changes(before, after, trusted=False):
 
 
 def reminder_is_draft(ctx):
+    if getattr(ctx, "recorded", False):     # review of #63, P1: a recording stays read-only
+        return _blocked("creates a draft, so it doesn't run with --record or --replay (a recording is read-only)")
     if not ctx.allow_writes:
         return _blocked("creates a draft, so it runs only on the harness copy (AGENTSWITCH_RUN_ID) or with --allow-writes")
     mailbox = drafts.find_mailbox(ctx.client, ctx.mailbox_id)
@@ -432,6 +467,8 @@ def _our_login(ctx):
     (checked 20 Nov: our own draft's created_by equals the mailbox user_id). None if unknown."""
     try:
         return (drafts.find_mailbox(ctx.client, ctx.mailbox_id) or {}).get("user_id")
+    except ReplayGap:
+        raise              # review of #63: the replay differs from the recording; never "unknown login"
     except Exception:  # noqa: BLE001 - unknown login means every change counts against us
         return None
 
@@ -471,6 +508,12 @@ def report_read_only(ctx):
             # Review of #54: another seat deleting its own records mid-run must not fail a correct report.
             by_other = kind == "removed" or (who and me and who != me)
             (others if by_other else ours).append(f"{e} {kind} {row.get('number') or row.get('id')}")
+            if not by_other and len(ours) <= SHOWN:
+                was = b.get(json.dumps(row.get("id"), sort_keys=True)) or {}
+                now = a.get(json.dumps(row.get("id"), sort_keys=True)) or {}
+                fields = sorted(f for f in was.keys() | now.keys() if was.get(f) != now.get(f))
+                debug.diff(f"{e}:{row.get('id')}", kind, {f: was.get(f) for f in fields},
+                           {f: now.get(f) for f in fields})
     writes = sorted({c for c in rec.calls if c != "tools/list" and not is_read_tool(c)})
     passed = not ours and not writes
     return _ok(passed, f"verifier=record_state; entities={len(entities)}; records={sum(len(v) for v in after.values())}; "
@@ -489,15 +532,39 @@ TASKS = [
 ]
 
 
-def run(ctx, tasks=TASKS):
+def run(ctx, tasks=TASKS, timings=None):
+    """Run `tasks` against `ctx`. With --debug (debug.ENABLED), each task's start and end go to stderr
+    with its time, platform calls and retries, and a crash prints its traceback labelled with the task.
+    `timings` (a dict), if given, gets {task id: {seconds, calls, retries}} for the suite's .meta.json."""
     results = []
     for task_id, title, fn in tasks:
+        debug.step(f"{task_id}: started")
+        started, before = time.monotonic(), stats_of(ctx.client)
+        debug.current = task_id
         try:
             res = fn(ctx)
         except Exception as e:  # a task that could not run is a failure marked as infrastructure
+            debug.crash(e, task_id)
             res = _ok(False, f"outcome=infrastructure; {type(e).__name__}: {str(e)[:200]}")
+        finally:
+            debug.current = ""
+        after = stats_of(ctx.client)
+        used = {"seconds": round(time.monotonic() - started, 1), "calls": after["requests"] - before["requests"],
+                "retries": after["retries"] - before["retries"]}
+        if timings is not None:
+            timings[f"{ctx.instance}:{task_id}"] = used
+        debug.step(f"{task_id}: {'pass' if res.get('passed') else 'FAIL'} {res.get('score', 0):.2f} in {used['seconds']} s, "
+                   f"{used['calls']} platform calls, {used['retries']} retries")
         results.append({"id": f"{ctx.instance}:{task_id}", "title": title, **res})
     return results
+
+
+EXIT_FAILED = 1       # a task failed (0: every task passed; 2: bad options; 3: the platform can't be read)
+
+
+def exit_code(results):
+    """0 when every task passed, else EXIT_FAILED, so `git bisect run` and scripts see a failed suite."""
+    return 0 if all(r["passed"] for r in results) else EXIT_FAILED
 
 
 def command_agent(ap, wanted):
@@ -541,6 +608,7 @@ def main():
         # Evidence quotes record numbers: no escape sequences reach the terminal (E2).
         print(display_text(f"{'PASS' if r['passed'] else 'FAIL'} {r['score']:.1f} {r['id']}: {r['evidence']}"))
     print(out["summary"])
+    raise SystemExit(exit_code(results))
 
 
 if __name__ == "__main__":

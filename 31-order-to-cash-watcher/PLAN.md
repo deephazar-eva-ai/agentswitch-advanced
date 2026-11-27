@@ -23,9 +23,38 @@ From the instructor's Seat 31 brief in the seat group chat:
 | Date | Milestone | Seat 31 deliverable | Status |
 |---|---|---|---|
 | 15 Nov 2026 | First task | Daily exception report: orders not invoiced after N days, invoices overdue, payments not applied — on both systems | Done: all three sections work on both systems (section 2 since invoice access opened on 11 Nov) |
-| 30 Nov 2026 | Version 1 | Reminder drafts for a person to send + 12-task suite in the `34-eval-harness/TASK_FORMAT.md` format | Code complete: drafts done (#17); tasks 5–10 and 12 in `o2c/tasks_payments.py`; tasks 1–4 and 11 in `o2c/tasks_orders.py`; agent hook in `o2c/agent.py`; unified `results.json` runner in `o2c/suite.py`. Pending: joint test with seat 34 and demo recording |
+| 30 Nov 2026 | Version 1 | Reminder drafts for a person to send + 12-task suite in the `34-eval-harness/TASK_FORMAT.md` format | Code complete and merged: drafts (#17), bug-hunt fixes and task 12 (#54, merged 23 Nov), Sunil's version 1 with tasks 1–4 and 11 and the 12-task runner (#59, merged 23 Nov). Live 22 Nov: 11 of 12 tasks pass on both systems; task 9 needs writes. In review: #62 and #63 (see "Status"). Pending: harness run with seat 34, demo recording (29 Nov) |
 | 20 Dec 2026 | Integration run | Run the report and drafts alongside the other seats on a copy | Planned |
 | 31 Dec 2026 | Final | Definition of done met | Planned |
+
+## Status (26 Nov 2026)
+
+**Pull requests**
+
+| PR | Topic | Owner | State |
+|---|---|---|---|
+| #54 | Bug-hunt fixes B–G, live-tested drafts, suite task 12 | Deepak | Merged 23 Nov |
+| #59 | Version 1: order ID list, `--prompt`, tasks 1–4 and 11, the 12-task runner | Sunil | Merged 23 Nov |
+| #62 | The client never follows a redirect, so the token stays with the platform | Deepak | Merged 26 Nov |
+| #63 | Debugging tools: `--debug`, `--record`/`--replay`, `--only`, `--explain`, `DEBUGGING.md` | Deepak | Open: rebased onto `main` after #62 (26 Nov); Sunil's review points fixed; waiting for his approval, then the instructor's merge |
+
+#62 and #63 changed neighbouring lines in `o2c/client.py`. #62 merged first, and #63 was rebased to keep both (26 Nov).
+
+**Still to do for version 1 (30 Nov)**
+
+| Item | Depends on | Owner |
+|---|---|---|
+| Merge #63 (#62 merged 26 Nov) | Sunil's approval, then the instructor | Deepak |
+| Ask seat 34 to add `--debug` to seat 31's agent command (request sent 25 Nov) | #63 merged; before that the option is unknown and every task would fail | Deepak |
+| Run the full suite through seat 34's harness on both systems, and task 9 on a throwaway copy. Seat 34's harness only runs `python -m o2c --prompt …`; task 9 runs through `python3 -m o2c.suite --agent` | Seat 34 | Both |
+| Run the A1–A6 refusal tasks with seat 34; settle words that are both requests and nouns ("close to 30 days", "which payments should we apply?") from their prompts. Any change to `o2c/prompt.py` this needs: Sunil | Seat 34 | Both |
+| Demo recording, at most 5 minutes. Sunil records 1:00–3:00 | 29 Nov | Both |
+| Small README PR after the recording: the recording link under `## Demo`, and the 2:00–3:00 `--prompt` command moved from Keystone, 14 days to Suryodaya, 90 days (on Keystone every uninvoiced order is already past 90 days, so 14 days doesn't narrow the list) | 29 Nov recording | Sunil; Deepak reviews |
+
+**Known limits, after version 1**
+- Orders are aged from the order date; there is no agreed deliverable date, so billing readiness is not checked.
+- Idea: list orders marked delivered but still not invoiced as their own group (the clearest "should have been invoiced" cases on Suryodaya).
+- Before the final: give each bug in our own code a final "Closed" status with its resolution, so the bug list is closed (definition of done, item 4).
 
 ## First task: what each section reads
 
@@ -67,7 +96,7 @@ Admin rule (7 Nov): the repository `github.com/theschoolofai/agentswitch-advance
 - **Bugs:** one file per finding in `findings/`, committed without platform detail; the exact text goes to the course team.
 
 ## v1 suite (30 Nov): tasks
-Status (21 Nov): all 12 tasks are implemented — tasks 1–4 and 11 in `o2c/tasks_orders.py`, tasks 5–10 and 12 in `o2c/tasks_payments.py`, the subprocess agent hook in `o2c/agent.py` (`--agent`), and the unified `results.json` runner in `o2c/suite.py`. Offline tests pass across all 12 tasks; live on both systems, 5–8 and 12 pass (20 Nov) and 9 passes with `--allow-writes` or on the harness copy.
+Status (26 Nov): all 12 tasks are implemented and on `main` — tasks 1–4 and 11 in `o2c/tasks_orders.py`, tasks 5–10 and 12 in `o2c/tasks_payments.py`, the subprocess agent hook in `o2c/agent.py` (`--agent`), and the unified `results.json` runner in `o2c/suite.py`. Offline tests pass across all 12 tasks. Live, read only, 22 Nov (`python3 -m o2c.suite --agent`): 11 of 12 pass on both systems; task 9 needs writes, so it passes with `--allow-writes` (20 Nov, our own mailbox) and is still to be run on the harness copy.
 
 Every task builds its inputs from the copy at runtime and is judged on the data, not on the wording.
 

@@ -85,11 +85,12 @@ class SuiteCli(unittest.TestCase):
             argv = ["o2c.suite", "--date", D.isoformat(), "--agent", "--out", str(out_path)]
             with mock.patch.dict(os.environ, env, clear=False), \
                     mock.patch("sys.argv", argv), \
-                    contextlib.redirect_stdout(io.StringIO()) as out:
+                    contextlib.redirect_stdout(io.StringIO()) as out, self.assertRaises(SystemExit) as ran:
                 suite.main()
 
             self.assertTrue(out_path.exists())
             data = json.loads(out_path.read_text(encoding="utf-8"))
+            self.assertEqual(ran.exception.code, 0 if all(t["passed"] for t in data["tasks"]) else 1)
             self.assertEqual(len(data["tasks"]), len(suite.all_tasks()))
             self.assertIn("synthetic:", data["summary"])
             self.assertIn(data["summary"], out.getvalue())
@@ -105,8 +106,9 @@ class SuiteCli(unittest.TestCase):
                 mock.patch.object(suite, "Client", return_value=fake), \
                 mock.patch.object(suite.report, "today_ist", return_value=D), \
                 mock.patch.object(suite, "run_suite", return_value={"tasks": [], "summary": "keystone: 0/0 tasks passed"}) as rs, \
-                contextlib.redirect_stdout(io.StringIO()):
+                contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit) as ran:
             suite.main()
+        self.assertEqual(ran.exception.code, 0)
         self.assertEqual(rs.call_args.args[0].report_date, D)
 
         with mock.patch("sys.argv", ["o2c.suite", "--instance", "keystone", "--days", "-1"]), \

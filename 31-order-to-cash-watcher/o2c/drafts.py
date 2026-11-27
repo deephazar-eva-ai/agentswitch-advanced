@@ -18,6 +18,8 @@ folder="drafts" and is_draft=true. It never updates, deletes or sends. Every sen
 EmailCampaign.send) is refused before a request is made.
 """
 import argparse
+import sys
+import traceback
 from collections import Counter
 import json
 import re
@@ -25,7 +27,7 @@ import os
 from datetime import date
 from pathlib import Path
 
-from . import matching, report
+from . import debug, matching, report
 from .client import Client, McpError, WriteBlocked, platform_failure, tool_result
 from .values import display_text, has_unsafe_text, money, money_sum, money_text
 from .output import days_option, instance_label, report_stem, safe_console, write_pair
@@ -675,7 +677,28 @@ def recipient_domains(ready):
     return ", ".join(f"{k} ({n})" for k, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])))
 
 
-def main():
+def unexpected(error, progress):
+    """An unexpected error: the traceback, then one plain reason line, on stderr. Once saving has started, the
+    line says how many drafts were saved and that the one in progress may exist, as for a platform failure.
+    Every line goes through display_text (bug hunt E2); no token can be in it."""
+    for line in traceback.format_exception(type(error), error, error.__traceback__):
+        for part in line.rstrip("\n").split("\n"):
+            print(display_text(part), file=sys.stderr)
+    note = ""
+    if progress.get("total") is not None:
+        note = (f". Saved {progress['saved']} of {progress['total']} drafts before this. The one in progress may "
+                "still have been created: check the mailbox before running --create again")
+    print(f"o2c.drafts: unexpected error: {type(error).__name__}: {' '.join(display_text(error).split())}{note}",
+          file=sys.stderr, flush=True)
+
+
+def _platform(error, message=None):
+    """A platform failure: with --debug its traceback first, then one line and exit 3 (platform_failure)."""
+    debug.crash(error, "o2c.drafts")
+    platform_failure("o2c.drafts", message if message is not None else error)
+
+
+def main(argv=None):
     ap = argparse.ArgumentParser(prog="o2c.drafts", description="Propose reminder drafts (never sends)")
     ap.add_argument("--days", type=days_option, default=os.environ.get("O2C_DAYS", "7"))   # E5
     ap.add_argument("--date", type=date.fromisoformat)
@@ -688,18 +711,30 @@ def main():
                          "reminders are saved only with --only overdue_reminder")
     ap.add_argument("--mailbox-id", default=os.environ.get("O2C_MAILBOX_ID"),
                     help="only needed if this login has several mailboxes and no default one")
-    args = ap.parse_args()
+    ap.add_argument("--debug", action="store_true",
+                    help="on stderr: retries, slow requests, blocked writes and tracebacks")
+    args = ap.parse_args(argv)
+    debug.ENABLED = args.debug
     safe_console()   # bug hunt G4: before anything can print a failure (D6)
     try:
         instance_label(args.instance)
     except ValueError as e:
         ap.error(str(e))
+    progress = {"saved": None, "total": None}      # drafts saved so far, once saving has started
+    try:
+        _run(args, progress)
+    except Exception as e:                          # anything else: say what failed and what was saved
+        unexpected(e, progress)
+        raise SystemExit(1)
 
+
+def _run(args, progress):
+    """The command's work. SystemExit (a usage stop, a platform failure) passes through main unchanged."""
     try:
         client = Client()
         prop = propose(client, report_date=args.date, days=args.days, instance=args.instance, accounts_email=args.accounts_email)
     except McpError as e:
-        platform_failure("o2c.drafts", e)
+        _platform(e)
     basename = report_stem(args.instance, prop["report_date"], "-drafts")
     write_pair(args.out, basename, json.dumps(prop, indent=2, allow_nan=False), to_markdown(prop))
     stem = args.out / basename
@@ -713,7 +748,7 @@ def main():
     except NoMailbox as e:
         raise SystemExit(str(e))
     except McpError as e:
-        platform_failure("o2c.drafts", e)
+        _platform(e)
     if not mailbox:
         raise SystemExit("this login has no mailbox; nothing created")
     writer = DraftWriter(client, mailbox)
@@ -732,7 +767,7 @@ def main():
         current = list(ready)
         ready, duplicates = without_duplicates(ready, existing)
     except McpError as e:
-        platform_failure("o2c.drafts", e)
+        _platform(e)
     for d in duplicates:
         print(f"not saved (already in the mailbox as an unsent draft): {d['subject']}")
     for to, subject in older_drafts(current, existing, kind):
@@ -748,15 +783,16 @@ def main():
         answer = ""
     if answer.strip() != "save drafts":
         raise SystemExit("not confirmed; nothing created")
+    progress.update(saved=0, total=len(ready))
     for i, d in enumerate(ready):
         try:
             created = writer.create(d)
         except McpError as e:
             # The create may have reached the platform before the failure: say so, never retry blindly.
-            platform_failure("o2c.drafts", f"{e}. Saved {i} of {len(ready)} drafts before this. The failed one may "
-                                           "still have been created: check the mailbox before running --create again")
+            _platform(e, f"{e}. Saved {i} of {len(ready)} drafts before this. The failed one may "
+                         "still have been created: check the mailbox before running --create again")
+        progress["saved"] = i + 1
         print(f"saved draft {created.get('id') if isinstance(created, dict) else '?'}: {d['subject']}")
-
 
 if __name__ == "__main__":
     main()

@@ -220,12 +220,14 @@ class OrderTasksCli(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             out = os.path.join(tmp, "r.json")
             with mock.patch("sys.argv", ["o2c.tasks_orders", "--instance", "t", "--date", "2026-11-15", "--out", out]), \
-                 mock.patch.object(T, "Client", return_value=fake), mock.patch("builtins.print") as printed:
+                 mock.patch.object(T, "Client", return_value=fake), mock.patch("builtins.print") as printed, \
+                 self.assertRaises(SystemExit) as ran:
                 T.main()
             with open(out, encoding="utf-8") as f:
                 saved = json.load(f)
         self.assertEqual(saved["summary"], "t: 4/5 tasks passed")   # task 11 is guardrail-only (0.5) until the agent hook
         printed.assert_any_call("t: 4/5 tasks passed")
+        self.assertEqual(ran.exception.code, 1)       # a task failed, so the command says so
 
 
 
