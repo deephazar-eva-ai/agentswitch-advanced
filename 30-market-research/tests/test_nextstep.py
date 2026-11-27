@@ -1,6 +1,5 @@
 """nextstep.py: the first matching rule wins, and every step carries its reason."""
 import unittest
-from unittest import mock
 from datetime import date
 
 from brief import nextstep
@@ -70,7 +69,7 @@ class Rules(unittest.TestCase):
         self.assertEqual(out["activity"]["subject"], injected)
 
     def test_due_date_that_is_not_a_date_is_never_overdue(self):
-        # BUG-30-001: some activities carry a word in their due date
+        # OBS-30-002: some activities carry a word in their due date
         facts = {**RECENT, "open_activities": [{"id": "a1", "subject": "Meeting", "due_date": "Quarterly "},
                                                {"id": "a2", "subject": "Meeting", "due_date": "2026-13-40"}]}
         self.assertNotEqual(self.rule(row(), facts)["rule"], "overdue_activity")
@@ -112,16 +111,16 @@ class Rules(unittest.TestCase):
         self.assertEqual(self.rule(row(probability=100.0, expected_close_date="2026-10-31"))["rule"],
                          "close_date_passed")
 
-    def test_proposal_waiting_is_on_hold(self):
-        # rule 5 is held until the instructor confirms what resets the counter: falls through
-        self.assertFalse(nextstep.PROPOSAL_WAITING_ON)
-        self.assertEqual(self.rule(row(_rot_days=400))["rule"], "keep_moving")
+    def test_proposal_waiting_at_platform_threshold(self):
+        out = self.rule(row(_rot_days=14))
+        self.assertEqual(out["rule"], "proposal_waiting")
+        self.assertIn("the platform's own counter reports 14 days without movement", out["reason"])
+        self.assertEqual(self.rule(row(_rot_days=13))["rule"], "keep_moving")
+        self.assertEqual(self.rule(row(_rot_days=None))["rule"], "keep_moving")
 
-    def test_proposal_waiting_and_boundary_when_switched_on(self):
-        with mock.patch.object(nextstep, "PROPOSAL_WAITING_ON", True):
-            self.assertEqual(self.rule(row(_rot_days=14))["rule"], "proposal_waiting")
-            self.assertEqual(self.rule(row(_rot_days=13))["rule"], "keep_moving")
-            self.assertEqual(self.rule(row(_rot_days=None))["rule"], "keep_moving")
+    def test_proposal_waiting_respects_stage_and_earlier_rules(self):
+        self.assertEqual(self.rule(row(stage="new", _rot_days=20))["rule"], "keep_moving")
+        self.assertEqual(self.rule(row(_rot_days=20), {"last_contact": None})["rule"], "no_recent_contact")
 
     def test_negotiation_and_default(self):
         self.assertEqual(self.rule(row(stage="negotiation"))["rule"], "negotiation")
@@ -208,7 +207,7 @@ class Explain(unittest.TestCase):
         out = {x["rule"]: x for x in nextstep.explain(row(), None, TODAY)["rules"]}
         self.assertEqual(out["overdue_activity"]["why"], "no account facts, so open activities are unknown")
         self.assertEqual(out["no_recent_contact"]["why"], "no account facts, so the last contact is unknown")
-        self.assertIn("on hold", out["proposal_waiting"]["why"])
+        self.assertEqual(out["proposal_waiting"]["why"], "platform counter is 1 day (under 14)")
         recent = {x["rule"]: x for x in nextstep.explain(row(), RECENT, TODAY)["rules"]}
         self.assertEqual(recent["no_recent_contact"]["why"], "last contact 2026-11-20, 3 days ago (under 30)")
 
