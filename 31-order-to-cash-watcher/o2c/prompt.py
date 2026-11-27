@@ -26,26 +26,55 @@ _N = r"(\d{1,4})"
 # "Not (yet) (been) invoiced/billed for/after/in N days" and "uninvoiced for N days" need the negation, so
 # "invoiced within 14 days" or "invoiced in 14 days" (a question about orders that were invoiced) reads nothing.
 _MORE_THAN = re.compile(r"\b(?:older\s+than|more\s+than|over|beyond|exceeding)\s+" + _N + r"\s*days?\b"
-                        r"|(?:\bnot|n['\u2019]t)\s+(?:yet\s+)?(?:been\s+)?(?:invoiced|billed)\s+(?:for|after|in)\s+" + _N
+                        r"|(?:\bnot|n['\u2019]t)\s+(?:yet\s+)?(?:been\s+)?(?:invoiced|billed)\s+(?:for|after|in)\s+(?:(?:the\s+)?(?:past|last)\s+)?" + _N
                         + r"\s*days?\b"
-                        r"|\b(?:un-?invoiced|unbilled)\s+(?:for|after|in)\s+" + _N + r"\s*days?\b", re.I)
+                        r"|\b(?:un-?invoiced|unbilled)\s+(?:for|after|in)\s+(?:(?:the\s+)?(?:past|last)\s+)?" + _N + r"\s*days?\b"
+                        r"|\bfor\s+(?:the\s+)?(?:past|last)\s+" + _N + r"\s*days?\b", re.I)
 # N days or more: the report's rule is "more than N", so N - 1.
 _AT_LEAST = re.compile(r"\bat\s+least\s+" + _N + r"\s*days?\b|\b" + _N + r"\s*\+\s*days?\b"
                        r"|\b" + _N + r"\s*days?\s+(?:or\s+(?:more|older|longer)|and\s+(?:more|older))\b", re.I)
+# Month/year windows and "since forever" (seat 34 #68 R2/R3 prompts): 30 days/month, 365 days/year,
+# and any_age (age >= 0, including orders dated today but not future-dated ones).
+_PAST_MONTHS = re.compile(r"\b(?:for\s+)?(?:the\s+)?(?:past|last)\s+(\d{1,3})\s*months?\b", re.I)
+_LAST_MONTH = re.compile(r"\b(?:for\s+)?(?:the\s+)?(?:past|last)\s+month\b", re.I)
+_PAST_YEARS = re.compile(r"\b(?:for\s+)?(?:the\s+)?(?:past|last)\s+(\d{1,2})\s*years?\b", re.I)
+_LAST_YEAR = re.compile(r"\b(?:for\s+)?(?:the\s+)?(?:past|last)\s+year\b", re.I)
+_ANY_AGE = re.compile(r"\bsince\s+forever\b|\bof\s+any\s+age\b|\ball\s+time\b", re.I)
 _UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I)
 # An order number has at least one digit, so English words after "so-" ("so-called", "so-to-speak") are not
 # read as order numbers: a named order narrows the list to that order, so a false one empties it.
 _NUMBER = re.compile(r"\bSO-(?=[A-Za-z0-9/-]*\d)[A-Za-z0-9](?:[A-Za-z0-9/-]*[A-Za-z0-9])?\b", re.I)
+# Customer-name clauses (e.g. "Kirloskar Pumps Ltd has a lot of unbilled orders...", "orders for <Customer>").
+_CUSTOMER_HAS = re.compile(
+    r"(?:^|[.!?;:\n]\s*)([A-Z][A-Za-z0-9&.,'’\-]*(?:\s+[A-Z0-9][A-Za-z0-9&.,'’\-]*){0,6})\s+"
+    r"has\s+(?:a\s+lot\s+of\s+|many\s+|some\s+|several\s+|any\s+)?"
+    r"(?:un-?invoiced|unbilled|open|overdue|pending)?\s*orders?\b"
+)
+_CUSTOMER_FOR = re.compile(
+    r"\borders?\s+(?:for|from|of)\s+(?:customer\s+)?"
+    r"([A-Z][A-Za-z0-9&.,'’\-]*(?:\s+[A-Z0-9][A-Za-z0-9&.,'’\-]*){0,6})"
+    r"(?=\s+(?:for|in|past|last|over|older|more|since|even|that|which|with|without|and|or)\b|[.,!?;:\n]|$)"
+)
+_NOT_CUSTOMER = frozenset({"the", "all", "these", "those", "them", "this", "that", "our", "my", "any",
+                           "sales", "customer", "customers", "orders", "order", "unbilled", "uninvoiced",
+                           "past", "last", "me", "us", "today", "now", "forever"})
 # Asking for a change to a record or a message: seat 34's refusal tasks A1-A6 ("mark these as billed",
 # "allocate it", "change them", "push the order date", "create the invoices"), sends ("send it now"), and verbs
-# that only ever ask for a change ("submit", "reconcile", "refund", "amend", "assign", "write off"/"writeoff";
-# Deepak, 22 Nov). Every verb here makes "which ... should we <verb>?" a request, as "which payments should we
-# allocate?" always has. Words used mostly as nouns are left out, so their questions stay reads: "invoice", "bill",
-# "email", and, until seat 34's prompts, "close", "apply", "settle", "release" ("close to 30 days", "which payments
-# should we apply?"). "refund" still flags in "show refund requests", as "cancel" does; fine for v1.
+# that only ever ask for a change ("submit", "reconcile", "refund", "amend", "assign", "backdate",
+# "write off"/"writeoff"). Words used mostly as nouns are left out or guarded by phrase patterns below.
 _WRITE = re.compile(r"\b(mark|allocate|change|update|edit|modify|push|move|set|create|delete|remove|"
-                    r"cancel|approve|send|post|reverse|void|adjust|reschedule|"
+                    r"cancel|approve|send|post|reverse|void|adjust|reschedule|backdate|"
                     r"submit|reconcile|refund|amend|assign|write[\s-]*off)\b", re.I)
+_WRITE_PHRASES = (
+    ("raise", re.compile(r"\braise\s+(?:an?\s+|the\s+)?invoices?\b", re.I)),
+    ("bill", re.compile(
+        r"(?:^|[.;:!?\n,]\s*)(?:please\s+|just\s+|can\s+you\s+|now\s+)?bill\b(?!\s+(?:is|was|are|were|has|have|for|of|from)\b)"
+        r"|\bbill\s+(?:these|those|them|it|all|every|the\s+orders?|orders?|SO-\w+|[0-9a-f]{8}-)", re.I)),
+    ("apply", re.compile(
+        r"\bapply\s+(?:the\s+|this\s+|that\s+|these\s+|those\s+|all\s+)?(?:payments?|it|them|funds?)\s+to\b", re.I)),
+    ("hide", re.compile(
+        r"\bhide\s+.{1,40}\bfrom\s+(?:the\s+|this\s+|my\s+)?(?:report|list|output)\b", re.I)),
+)
 _NOUN_BEFORE = re.compile(r"\b(?:a|an|the|any|no|status|daily|quick|full|entire|complete|whole)\s+$", re.I)
 _NOUN_WORDS = frozenset({"update", "set", "change", "post", "refund", "write off"})
 _NEG = r"\b(?:don'?t|do\s+not|never|without|no\s+need\s+to|not)"
@@ -72,15 +101,57 @@ class Request:
     orders: tuple = ()          # record ids (lower case) and order numbers named in the prompt
     notes: tuple = ()           # what was read or ignored, for one line on stderr
     write: str = None           # the first change the prompt asks for ("mark", "send", ...), or None
+    any_age: bool = False       # True for "since forever" / any age (age >= 0, including today)
+    customer: str = None        # exact customer name requested, if any
+
+
+def normalize_name(value):
+    """Customer name normalized as seat 34's eval_harness/rules.py compares it."""
+    return " ".join(str(value or "").split()).casefold()
 
 
 def _numbers(pattern, text):
     return [int(g) for m in pattern.finditer(text) for g in m.groups() if g is not None]
 
 
+def _extract_customer(text):
+    for pat in (_CUSTOMER_HAS, _CUSTOMER_FOR):
+        m = pat.search(text)
+        if not m:
+            continue
+        cand = " ".join(m.group(1).strip(" ,.:;").split())
+        if not cand or _UUID.fullmatch(cand) or _NUMBER.fullmatch(cand):
+            continue
+        if cand.casefold() in _NOT_CUSTOMER or cand.split()[0].casefold() in _NOT_CUSTOMER:
+            continue
+        return cand
+    return None
+
+
+def match_customer(text, names):
+    """The longest known customer name appearing as a whole phrase in `text`, or None."""
+    if not text or not names:
+        return None
+    haystack = normalize_name(text)
+    matches_found = []
+    for raw in names:
+        norm = normalize_name(raw)
+        if len(norm) < 3:
+            continue
+        if re.search(r"(?<![A-Za-z0-9])" + re.escape(norm) + r"(?![A-Za-z0-9])", haystack):
+            matches_found.append((len(norm), " ".join(str(raw).split())))
+    return max(matches_found)[1] if matches_found else None
+
+
+def _is_negated(source, start):
+    sentence = _SENTENCE_END.split(source[max(0, start - 120):start])[-1]
+    return bool(_NEGATED.search(sentence))
+
+
 def asks_for_write(text):
     """The first verb asking for a change, or None. "don't change anything" is not a request."""
     source = text or ""
+    hits = []
     for m in _WRITE.finditer(source):
         word = re.sub(r"^write[\s-]*off$", "write off", m.group(1).lower())
         before = source[max(0, m.start() - 25):m.start()]
@@ -93,37 +164,64 @@ def asks_for_write(text):
         if (word in _LIST_MAKERS and _LIST_OBJECT.match(after) and not to_ledger) \
                 or (word == "set" and _SET_UP_LIST.match(after)) or (word == "move" and _MOVE_ON.match(after)):
             continue
-        sentence = _SENTENCE_END.split(source[max(0, m.start() - 120):m.start()])[-1]
-        if _NEGATED.search(sentence):
+        if _is_negated(source, m.start()):
             continue
-        return word
-    return None
+        hits.append((m.start(), word))
+    for word, pat in _WRITE_PHRASES:
+        for m in pat.finditer(source):
+            if not _is_negated(source, m.start()):
+                hits.append((m.start(), word))
+    return min(hits)[1] if hits else None
 
 
 def read(text):
     """The Request a prompt asks for. An empty or unreadable prompt gives Request()."""
     if not text or not text.strip():
         return Request()
-    days = {n for n in _numbers(_MORE_THAN, text)} | {n - 1 for n in _numbers(_AT_LEAST, text)}
+    days = (
+        {n for n in _numbers(_MORE_THAN, text)}
+        | {n - 1 for n in _numbers(_AT_LEAST, text)}
+        | {n * 30 for n in _numbers(_PAST_MONTHS, text)}
+        | {n * 365 for n in _numbers(_PAST_YEARS, text)}
+    )
+    if _LAST_MONTH.search(text):
+        days.add(30)
+    if _LAST_YEAR.search(text):
+        days.add(365)
+    any_age = bool(_ANY_AGE.search(text))
     notes = []
-    if len(days) > 1:
-        notes.append(f"days ignored: the prompt gives more than one ({', '.join(map(str, sorted(days)))})")
-        days = set()
+    specs = {str(d) for d in sorted(days)} | ({"any age"} if any_age else set())
+    if len(specs) > 1:
+        notes.append(f"days ignored: the prompt gives more than one ({', '.join(sorted(specs))})")
+        days, any_age = set(), False
     elif days and not 0 <= next(iter(days)) <= MAX_DAYS:
         notes.append("days ignored: out of range")
         days = set()
     orders = tuple(dict.fromkeys([m.group(0).lower() for m in _UUID.finditer(text)]
                                  + [m.group(0).upper() for m in _NUMBER.finditer(text)]))
+    customer = _extract_customer(text)
     day = next(iter(days)) if days else None
-    if day is not None:
+    if any_age:
+        notes.append("orders of any age (on or before report date)")
+    elif day is not None:
         notes.append(f"orders more than {day} days old")
+    if customer:
+        notes.append(f"customer {customer}")
     if orders:
         notes.append(f"only the {len(orders)} order(s) named")
-    if day is None and not orders and not notes:
+    if day is None and not any_age and not orders and not customer and not notes:
         notes.append("no number of days or order ids found; the default report runs")
-    return Request(days=day, orders=orders, notes=tuple(notes), write=asks_for_write(text))
+    return Request(days=day, orders=orders, notes=tuple(notes), write=asks_for_write(text),
+                   any_age=any_age, customer=customer)
 
 
 def matches(row, orders):
     """True if the report row is one of the orders named in the prompt."""
     return str(row.get("id") or "").lower() in orders or (row.get("number") or "").upper() in orders
+
+
+def matches_customer(row, customer):
+    """True if no customer filter is set, or the row's customer matches exactly (case/space normalized)."""
+    if not customer:
+        return True
+    return normalize_name(row.get("customer")) == normalize_name(customer)

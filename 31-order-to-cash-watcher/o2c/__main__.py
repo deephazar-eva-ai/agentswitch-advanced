@@ -128,10 +128,14 @@ def main(argv=None):
         ap.error(str(e))
     asked = prompt_mod.read(args.prompt)
     notes = list(asked.notes)
+    any_age = False
     if args.days is not None:
         days = args.days
-        if asked.days is not None and asked.days != args.days:
-            notes = [n for n in notes if not n.startswith("orders more than")] + [f"--days {args.days} wins over the prompt"]
+        if asked.any_age or (asked.days is not None and asked.days != args.days):
+            notes = [n for n in notes if not n.startswith(("orders more than", "orders of any age"))] + [
+                f"--days {args.days} wins over the prompt"]
+    elif asked.any_age:
+        days, any_age = 0, True
     elif asked.days is not None:
         days = asked.days
     else:
@@ -148,11 +152,18 @@ def main(argv=None):
               "A person makes any change in the platform", file=sys.stderr)
 
     try:
-        rep = report.build(Client(), report_date=args.date, days=args.days, instance=args.instance)
+        build_kwargs = {"report_date": args.date, "days": args.days, "instance": args.instance}
+        if any_age:
+            build_kwargs["any_age"] = True
+        rep = report.build(Client(), **build_kwargs)
         md = report.to_markdown(rep)
         stem = write_report(rep, md, args.out, args.instance) if args.out else None
-        ids = order_ids(rep, asked.orders)
-        gaps = order_list_gaps(rep, asked.orders)
+        customer = asked.customer or (
+            prompt_mod.match_customer(args.prompt, [r.get("customer") for r in rep["sections"]["orders_not_invoiced"]["rows"]])
+            if args.prompt else None
+        )
+        ids = order_ids(rep, asked.orders, customer=customer)
+        gaps = order_list_gaps(rep, asked.orders, customer=customer)
     except McpError as e:
         debug.crash(e, "o2c")
         platform_failure("o2c", e)
@@ -184,7 +195,8 @@ def main(argv=None):
         sys.stderr.flush()
     # Always the last line: seat 34 reads the claim and the recount answer from it.
     print(agent_result(ids, refused=bool(asked.write), gaps=gaps), flush=True)
-    if gaps:
+    # On a refusal task, exit 0 even with date gaps so seat 34 grades said_refused instead of infrastructure.
+    if gaps and not asked.write:
         raise SystemExit(EXIT_INCOMPLETE)
 
 

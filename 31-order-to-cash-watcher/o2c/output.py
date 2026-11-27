@@ -60,12 +60,16 @@ def agent_result(ids, refused=False, gaps=()):
     return "AGENT_RESULT " + json.dumps(result, separators=(",", ":"), ensure_ascii=True)
 
 
-def _named(rows, orders):
-    """The rows a prompt named (phase 2 item 2), or all rows when it named none."""
-    if not orders:
-        return list(rows)
-    from .prompt import matches
-    return [r for r in rows if matches(r, orders)]
+def _named(rows, orders, customer=None):
+    """The rows a prompt named (phase 2 item 2) and/or filtered by customer, or all rows."""
+    out = list(rows)
+    if orders:
+        from .prompt import matches
+        out = [r for r in out if matches(r, orders)]
+    if customer:
+        from .prompt import matches_customer
+        out = [r for r in out if matches_customer(r, customer)]
+    return out
 
 
 def _record_id(row):
@@ -74,9 +78,9 @@ def _record_id(row):
     return None if value is None or not str(value).strip() else str(value)
 
 
-def order_ids(rep, orders=()):
-    """Record ids of the orders not invoiced, in report order (oldest first); with `orders`, only
-    the ones the prompt named.
+def order_ids(rep, orders=(), customer=None):
+    """Record ids of the orders not invoiced, in report order (oldest first); with `orders` and/or
+    `customer`, only the ones the prompt selected.
 
     Phase 2 item 1 (18 Nov): seat 34's 30 Nov recount compares this list with the platform. The
     record `id`, not the order `number`, because the harness snapshots orders by id (until seat 34
@@ -85,13 +89,14 @@ def order_ids(rep, orders=()):
     Each id once, at its first place: a blank line or a repeat would make the list look longer than
     the orders behind it (order_list_gaps says when either happened).
     """
-    ids = [i for i in map(_record_id, _named(rep["sections"]["orders_not_invoiced"]["rows"], orders)) if i is not None]
+    rows = _named(rep["sections"]["orders_not_invoiced"]["rows"], orders, customer)
+    ids = [i for i in map(_record_id, rows) if i is not None]
     return list(dict.fromkeys(ids))
 
 
-def order_list_gaps(rep, orders=()):
-    """Why the order ID list may be missing orders; [] when it is complete. With `orders` (named in
-    the prompt), only those orders count.
+def order_list_gaps(rep, orders=(), customer=None):
+    """Why the order ID list may be missing orders; [] when it is complete. With `orders` or
+    `customer` (named in the prompt), only those orders count.
 
     An order with a missing, invalid or future order date can't be aged, so it is left out of the
     list (the report shows it under "Orders with unusable dates"). A row with no record id (missing,
@@ -102,10 +107,10 @@ def order_list_gaps(rep, orders=()):
     if sec.get("status") != "ok":
         return [f"orders not invoiced is {sec.get('status')}"]
     gaps = []
-    undated = len(_named(sec.get("date_issues") or [], orders))
+    undated = len(_named(sec.get("date_issues") or [], orders, customer))
     if undated:
         gaps.append(f"{undated} order(s) with an unusable order date left out")
-    ids = [_record_id(r) for r in _named(sec["rows"], orders)]
+    ids = [_record_id(r) for r in _named(sec["rows"], orders, customer)]
     no_id = ids.count(None)
     if no_id:
         gaps.append(f"{no_id} order(s) without a record id left out")
