@@ -599,9 +599,59 @@ class Seat34SuiteRecountAndRefusal(unittest.TestCase):
             "do not raise an invoice for SO-1042",
             "do not bill SO-1042",
             "do not apply the payment to SO-1042",
+            "Bill status for these orders?",
+            "Bill to address is missing on SO-1",
+            "Bill asked which orders are unbilled",
+            "who should raise the invoices?",
+            "hide nothing from the report, list all unbilled orders",
         ):
             with self.subTest(read=text):
                 self.assertIsNone(prompt.asks_for_write(text))
+
+    def test_non_customer_names_do_not_empty_the_report(self):
+        # PR #71 review #1: non-customer words ("Keystone", "March", "Everyone", "Sunil", "Finance", "Q3")
+        # must never filter the report to [].
+        clean_orders = [r for r in self.MIXED_ORDERS if r["id"] != "k-future"]
+        for text, expected_days in (
+            ("Keystone has a lot of unbilled orders for the past 100 days, show me all", 100),
+            ("Suryodaya has a lot of unbilled orders for the past 100 days, show me all", 100),
+            ("List unbilled orders for March", 7),
+            ("Everyone has unbilled orders, list them all", 7),
+            ("Finance has unbilled orders, list them all", 7),
+            ("List unbilled orders for Q3", 7),
+        ):
+            with self.subTest(text=text):
+                code, _, _, result = self._run_prompt(clean_orders, text)
+                self.assertEqual(code, 0)
+                self.assertEqual(result["claim"], "done")
+                self.assertEqual(
+                    set(result["answer"]["orders_not_invoiced"]),
+                    self._expected_seat34(clean_orders, expected_days, None),
+                )
+        # Arbitrary unknown single-word name ("Sunil") is ignored with a stderr note instead of returning [].
+        code, _, err, result = self._run_prompt(clean_orders, "Sunil has unbilled orders, list them all")
+        self.assertEqual(code, 0)
+        self.assertEqual(
+            set(result["answer"]["orders_not_invoiced"]),
+            self._expected_seat34(clean_orders, 7, None),
+        )
+        self.assertIn("ignored: not a known customer", err)
+
+    def test_known_customer_with_no_orders_in_window_returns_empty_not_other_customers(self):
+        # PR #71 review #2: known customers come from all submitted orders (any age), so a lowercase or
+        # "Customer ..." prompt for Kirloskar returns [] when Kirloskar only has a 40-day order and Acme has a 400-day one.
+        orders = [
+            order("k-40", age=40, _party_id_display="Kirloskar Pumps Ltd"),
+            order("a-400", age=400, _party_id_display="Acme Corp"),
+        ]
+        for text in (
+            "show orders for kirloskar pumps ltd for past year",
+            "Customer Kirloskar Pumps Ltd has unbilled orders for past year",
+        ):
+            with self.subTest(text=text):
+                code, body, _, result = self._run_prompt(orders, text)
+                self.assertEqual((code, body), (0, ""))
+                self.assertEqual(result, {"claim": "done", "answer": {"orders_not_invoiced": []}})
 
     def test_time_window_conflicts_and_range_boundaries(self):
         # Conflicting windows (months vs since forever, days vs year) are ignored rather than guessed.

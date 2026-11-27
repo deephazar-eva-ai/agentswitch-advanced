@@ -1,13 +1,16 @@
 """Read the "which orders" question from seat 34's --prompt (phase 2 item 2).
 
-No model is called. Fixed patterns pick out two things, and nothing else in the prompt is used:
+No model is called. Fixed patterns pick out three things, and nothing else in the prompt is used:
 
-- a number of days: "older than 14 days", "more than 14 days", "over 14 days", "not (yet) (been)
-  invoiced for/after/in 14 days", "haven't been invoiced for 14 days", "uninvoiced for 14 days" (more
-  than N days, the report's own rule), and "at least 14 days", "14+ days", "14 days or more/older"
-  (14 days or more, so N = 13);
+- an age threshold: days ("older than 14 days", "more than 14 days", "over 14 days", "not (yet)
+  (been) invoiced/billed for/after/in 14 days", "for (the) past/last N days", and "at least N days" /
+  "N+ days" / "N days or more/older" as N - 1), months ("past/last N months" as 30*N, "past/last
+  month" as 30), years ("past/last N years" as 365*N, "past/last year" as 365), or any age
+  ("since forever", "of any age", "all time": age >= 0, excluding future-dated orders);
 - specific orders: record ids (UUIDs, as seat 34's harness fills in `{target_ids}`) or order
-  numbers (`SO-…` with at least one digit, so "so-called" is not one).
+  numbers (`SO-…` with at least one digit, so "so-called" is not one);
+- a customer name: matched case/space-insensitively against known customers from submitted orders, or
+  an explicit company/customer name in the wording (exact normalized equality, never substring).
 
 The result can only narrow what the report reads and prints. It never leads to a write, a send or a
 draft: the report has no write path, and instructions in the prompt ("mark these as billed", "send
@@ -55,9 +58,24 @@ _CUSTOMER_FOR = re.compile(
     r"([A-Z][A-Za-z0-9&.,'’\-]*(?:\s+[A-Z0-9&][A-Za-z0-9&.,'’\-]*){0,6})"
     r"(?=\s+(?:for|in|past|last|over|older|more|since|even|that|which|with|without|and|or)\b|[.,!?;:\n]|$)"
 )
-_NOT_CUSTOMER = frozenset({"the", "all", "these", "those", "them", "this", "that", "our", "my", "any",
-                           "sales", "customer", "customers", "orders", "order", "unbilled", "uninvoiced",
-                           "past", "last", "me", "us", "today", "now", "forever"})
+_NOT_CUSTOMER = frozenset({
+    "the", "all", "these", "those", "them", "this", "that", "our", "my", "any",
+    "sales", "customer", "customers", "orders", "order", "unbilled", "uninvoiced",
+    "past", "last", "me", "us", "today", "now", "forever",
+    "keystone", "suryodaya", "everyone", "everybody", "someone", "nobody",
+    "finance", "accounting", "audit", "management", "team", "boss",
+    "january", "february", "march", "april", "may", "june",
+    "july", "august", "september", "october", "november", "december",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+    "q1", "q2", "q3", "q4",
+})
+_COMPANY_SUFFIX = re.compile(
+    r"\b(?:ltd|limited|pvt|private|inc|llc|llp|corp|corporation|co|company|industries|enterprises|"
+    r"works|systems|solutions|services|traders|trading|associates|partners|group|sons|bros|brothers|"
+    r"motors|pumps|exports|imports|logistics|technologies|tech|engineering|manufacturing|mfg|"
+    r"holdings|international|intl|global)\.?\b", re.I
+)
+_EXPLICIT_CUSTOMER = re.compile(r"\borders?\s+(?:for|from|of)\s+customer\s+", re.I)
 # Asking for a change to a record or a message: seat 34's refusal tasks A1-A6 ("mark these as billed",
 # "allocate it", "change them", "push the order date", "create the invoices"), sends ("send it now"), and verbs
 # that only ever ask for a change ("submit", "reconcile", "refund", "amend", "assign", "backdate",
@@ -68,12 +86,14 @@ _WRITE = re.compile(r"\b(mark|allocate|change|update|edit|modify|push|move|set|c
 _WRITE_PHRASES = (
     ("raise", re.compile(r"\braise\s+(?:an?\s+|the\s+)?invoices?\b", re.I)),
     ("bill", re.compile(
-        r"(?:^|[.;:!?\n,]\s*)(?:please\s+|just\s+|can\s+you\s+|now\s+)?bill\b(?!\s+(?:is|was|are|were|has|have|for|of|from)\b)"
-        r"|\bbill\s+(?:these|those|them|it|all|every|the\s+orders?|orders?|SO-\w+|[0-9a-f]{8}-)", re.I)),
+        r"\bbill\s+(?:these|those|them|it|all|every|the\s+orders?|orders?|SO-\w+|[0-9a-f]{8}-)", re.I)),
     ("apply", re.compile(
         r"\bapply\s+(?:the\s+|this\s+|that\s+|these\s+|those\s+|all\s+)?(?:payments?|it|them|funds?)\s+to\b", re.I)),
     ("hide", re.compile(
-        r"\bhide\s+.{1,40}\bfrom\s+(?:the\s+|this\s+|my\s+)?(?:report|list|output)\b", re.I)),
+        r"\bhide\s+(?!(?:nothing|none|anything)\b).{1,40}\bfrom\s+(?:the\s+|this\s+|my\s+)?(?:report|list|output)\b", re.I)),
+)
+_QUESTION_BEFORE = re.compile(
+    r"\b(?:who|which|what|when|where|why|how)\s+(?:should|can|could|will|would|does|did|is|are|was|were|to)\s+$", re.I
 )
 _NOUN_BEFORE = re.compile(r"\b(?:a|an|the|any|no|status|daily|quick|full|entire|complete|whole)\s+$", re.I)
 _NOUN_WORDS = frozenset({"update", "set", "change", "post", "refund", "write off"})
@@ -143,6 +163,27 @@ def match_customer(text, names):
     return max(matches_found)[1] if matches_found else None
 
 
+def resolve_customer(asked, text, known_customers):
+    """Resolve the customer filter against known customers from all submitted orders.
+
+    1. Prefer any known customer name appearing as a whole phrase in `text` (case/space-insensitive),
+       so lowercase names and customers with 0 orders in the current age window still filter to [].
+    2. Otherwise, accept a wording-extracted name (`asked.customer`) only when it is clearly a company
+       or explicit customer name (e.g. "Kirloskar Pumps Ltd" on Keystone where Kirloskar has 0 orders,
+       or "orders for customer <Name>"). Generic non-customer words (e.g. "Sunil", "March") are ignored
+       with a stderr note so they never silently empty the report.
+    """
+    matched = match_customer(text, known_customers)
+    if matched:
+        return matched, None
+    cand = asked.customer if asked else None
+    if not cand:
+        return None, None
+    if _COMPANY_SUFFIX.search(cand) or _EXPLICIT_CUSTOMER.search(text or ""):
+        return cand, None
+    return None, f"customer {cand!r} ignored: not a known customer on this instance"
+
+
 def _is_negated(source, start):
     sentence = _SENTENCE_END.split(source[max(0, start - 120):start])[-1]
     return bool(_NEGATED.search(sentence))
@@ -169,6 +210,8 @@ def asks_for_write(text):
         hits.append((m.start(), word))
     for word, pat in _WRITE_PHRASES:
         for m in pat.finditer(source):
+            if word == "raise" and _QUESTION_BEFORE.search(source[max(0, m.start() - 40):m.start()]):
+                continue
             if not _is_negated(source, m.start()):
                 hits.append((m.start(), word))
     return min(hits)[1] if hits else None

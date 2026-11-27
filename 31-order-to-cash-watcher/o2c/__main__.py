@@ -158,10 +158,13 @@ def main(argv=None):
         rep = report.build(Client(), **build_kwargs)
         md = report.to_markdown(rep)
         stem = write_report(rep, md, args.out, args.instance) if args.out else None
-        customer = asked.customer or (
-            prompt_mod.match_customer(args.prompt, [r.get("customer") for r in rep["sections"]["orders_not_invoiced"]["rows"]])
-            if args.prompt else None
-        )
+        known_customers = rep["sections"]["orders_not_invoiced"].get("known_customers")
+        if known_customers is None:
+            known_customers = [r.get("customer") for r in rep["sections"]["orders_not_invoiced"]["rows"]]
+        customer, cust_note = (prompt_mod.resolve_customer(asked, args.prompt, known_customers)
+                               if args.prompt else (None, None))
+        if cust_note:
+            print(f"o2c: prompt: {cust_note}", file=sys.stderr)
         ids = order_ids(rep, asked.orders, customer=customer)
         gaps = order_list_gaps(rep, asked.orders, customer=customer)
     except McpError as e:

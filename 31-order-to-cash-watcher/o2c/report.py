@@ -479,6 +479,8 @@ def build(client, report_date=None, days=7, instance=None, currencies=None, any_
         unverified_deliverability_count=len(order_section["rows"]),
         age_buckets=order_age_summary(order_section["rows"]),
         date_issues=order_date_issues(orders, report_date),
+        known_customers=sorted({str(r.get("_party_id_display")).strip()
+                                for r in orders if str(r.get("_party_id_display") or "").strip()}),
     )
 
     if "Invoice.list" in names:
