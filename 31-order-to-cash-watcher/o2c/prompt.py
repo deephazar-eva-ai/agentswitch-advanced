@@ -48,15 +48,27 @@ _UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 # read as order numbers: a named order narrows the list to that order, so a false one empties it.
 _NUMBER = re.compile(r"\bSO-(?=[A-Za-z0-9/-]*\d)[A-Za-z0-9](?:[A-Za-z0-9/-]*[A-Za-z0-9])?\b", re.I)
 # Customer-name clauses (e.g. "Kirloskar Pumps Ltd has a lot of unbilled orders...", "orders for <Customer>").
+# Strict capitalized patterns extract absent company names (e.g. Kirloskar on Keystone); case-insensitive
+# slot patterns match known customers from submitted orders without scanning the rest of the prompt.
 _CUSTOMER_HAS = re.compile(
-    r"(?:^|[.!?;:\n]\s*)([A-Z][A-Za-z0-9&.,'’\-]*(?:\s+[A-Z0-9&][A-Za-z0-9&.,'’\-]*){0,6})\s+"
+    r"(?:^|[.!?;:\n]\s*)(?:[Cc]ustomer\s+)?([A-Z][A-Za-z0-9&.,'’\-]*(?:\s+[A-Z0-9&][A-Za-z0-9&.,'’\-]*){0,6})\s+"
     r"has\s+(?:a\s+lot\s+of\s+|many\s+|some\s+|several\s+|any\s+)?"
     r"(?:un-?invoiced|unbilled|open|overdue|pending)?\s*orders?\b"
 )
 _CUSTOMER_FOR = re.compile(
     r"\borders?\s+(?:for|from|of)\s+(?:customer\s+)?"
-    r"([A-Z][A-Za-z0-9&.,'’\-]*(?:\s+[A-Z0-9&][A-Za-z0-9&.,'’\-]*){0,6})"
+    r"([A-Z][A-Za-z0-9&.,'’\-]*(?:\s+[A-Z0-9&][A-Za-z0-9&.,'’\-]*){0,6}?)"
     r"(?=\s+(?:for|in|past|last|over|older|more|since|even|that|which|with|without|and|or)\b|[.,!?;:\n]|$)"
+)
+_SLOT_HAS = re.compile(
+    r"(?:^|[.!?;:\n]\s*)(?:customer\s+)?([A-Za-z0-9][A-Za-z0-9&.,'’\-]*(?:\s+[A-Za-z0-9&][A-Za-z0-9&.,'’\-]*){0,6}?)\s+"
+    r"has\s+(?:a\s+lot\s+of\s+|many\s+|some\s+|several\s+|any\s+)?"
+    r"(?:un-?invoiced|unbilled|open|overdue|pending)?\s*orders?\b", re.I
+)
+_SLOT_FOR = re.compile(
+    r"\borders?\s+(?:for|from|of)\s+(?:customer\s+)?"
+    r"([A-Za-z0-9][A-Za-z0-9&.,'’\-]*(?:\s+[A-Za-z0-9&][A-Za-z0-9&.,'’\-]*){0,6}?)"
+    r"(?=\s+(?:for|in|past|last|over|older|more|since|even|that|which|with|without|and|or)\b|[.,!?;:\n]|$)", re.I
 )
 _NOT_CUSTOMER = frozenset({
     "the", "all", "these", "those", "them", "this", "that", "our", "my", "any",
@@ -163,24 +175,48 @@ def match_customer(text, names):
     return max(matches_found)[1] if matches_found else None
 
 
+def _customer_slots(text):
+    """Candidate phrases found in the customer slot ("X has ... orders", "orders for/from/of X"), any case."""
+    if not text:
+        return []
+    slots = []
+    for pat in (_SLOT_HAS, _SLOT_FOR):
+        for m in pat.finditer(text):
+            cand = " ".join(m.group(1).strip(" ,.:;").split())
+            if not cand or _UUID.fullmatch(cand) or _NUMBER.fullmatch(cand):
+                continue
+            if cand.casefold() in _NOT_CUSTOMER or cand.split()[0].casefold() in _NOT_CUSTOMER:
+                continue
+            slots.append(cand)
+    return slots
+
+
 def resolve_customer(asked, text, known_customers):
     """Resolve the customer filter against known customers from all submitted orders.
 
-    1. Prefer any known customer name appearing as a whole phrase in `text` (case/space-insensitive),
-       so lowercase names and customers with 0 orders in the current age window still filter to [].
+    1. Match known customer names only against phrases in the customer slot ("X has ... orders",
+       "orders for/from/of X", case/space-insensitive), never scanning the rest of the prompt.
+       That prevents a party named like an ordinary prompt word ("Unbilled", "Orders", "Past", "Boss")
+       from silently narrowing R1/R2 recounts.
     2. Otherwise, accept a wording-extracted name (`asked.customer`) only when it is clearly a company
        or explicit customer name (e.g. "Kirloskar Pumps Ltd" on Keystone where Kirloskar has 0 orders,
-       or "orders for customer <Name>"). Generic non-customer words (e.g. "Sunil", "March") are ignored
-       with a stderr note so they never silently empty the report.
+       or "orders for customer <Name>"). Generic non-customer words (e.g. "Sunil") are ignored with a
+       stderr note so they never silently empty the report.
     """
-    matched = match_customer(text, known_customers)
-    if matched:
-        return matched, None
+    known_by_norm = {}
+    for raw in known_customers or ():
+        norm = normalize_name(raw)
+        if norm and norm not in known_by_norm:
+            known_by_norm[norm] = " ".join(str(raw).split())
+    for slot in _customer_slots(text):
+        matched = known_by_norm.get(normalize_name(slot))
+        if matched:
+            return matched, f"customer {matched}"
     cand = asked.customer if asked else None
     if not cand:
         return None, None
     if _COMPANY_SUFFIX.search(cand) or _EXPLICIT_CUSTOMER.search(text or ""):
-        return cand, None
+        return cand, f"customer {cand}"
     return None, f"customer {cand!r} ignored: not a known customer on this instance"
 
 
@@ -248,8 +284,6 @@ def read(text):
         notes.append("orders of any age (on or before report date)")
     elif day is not None:
         notes.append(f"orders more than {day} days old")
-    if customer:
-        notes.append(f"customer {customer}")
     if orders:
         notes.append(f"only the {len(orders)} order(s) named")
     if day is None and not any_age and not orders and not customer and not notes:

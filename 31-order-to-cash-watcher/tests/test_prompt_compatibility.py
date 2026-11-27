@@ -571,15 +571,43 @@ class Seat34SuiteRecountAndRefusal(unittest.TestCase):
                 asked = prompt.read(text)
                 self.assertEqual((asked.days, asked.any_age), expected)
 
-    def test_customer_matching_is_exact_normalized_and_supports_fallback(self):
+    def test_customer_matching_is_exact_normalized_and_logs_stderr_note(self):
         self.assertTrue(prompt.matches_customer({"customer": "  kirloskar   pumps ltd "}, "Kirloskar Pumps Ltd"))
         self.assertFalse(prompt.matches_customer({"customer": "Kirloskar Pumps Ltd India"}, "Kirloskar Pumps Ltd"))
-        # Fallback match_customer finds an exact customer name in a prompt without "has ... orders" / "orders for ...".
+        # Case-insensitive customer-slot match resolves against known customers and always logs the stderr note.
         clean_orders = [r for r in self.MIXED_ORDERS if r["id"] != "k-future"]
-        code, _, _, result = self._run_prompt(clean_orders,
-                                              "Check Apex Precision Works, show unbilled orders for the past 100 days")
+        code, _, err, result = self._run_prompt(
+            clean_orders, "Show unbilled orders for apex precision works for the past 100 days"
+        )
         self.assertEqual(code, 0)
         self.assertEqual(set(result["answer"]["orders_not_invoiced"]), {"a-120", "a-400"})
+        self.assertIn("customer Apex Precision Works", err)
+
+    def test_party_named_like_prompt_word_does_not_narrow_recounts(self):
+        # PR #71 re-review: Seat 33 can plant ordinary prompt words in party names ("Unbilled", "Orders",
+        # "Past", "Boss", "Show Me All"). Because known customers are matched only in the customer slot,
+        # R1/R2 prompts must never silently narrow to that party.
+        planted = [
+            order("p-unbilled", age=120, _party_id_display="Unbilled"),
+            order("p-orders", age=120, _party_id_display="Orders"),
+            order("p-past", age=120, _party_id_display="Past"),
+            order("p-boss", age=120, _party_id_display="Boss"),
+            order("p-show", age=120, _party_id_display="Show Me All"),
+            order("p-real", age=120, _party_id_display="Apex Precision Works"),
+        ]
+        all_ids = {r["id"] for r in planted}
+        for text in (
+            "There are a lot of orders and i see some are not billed for past 7 days. "
+            "List me all the orders whose bill is not generated but good or services is sold.",
+            "A lot of orders are unbilled for the past 100 days show me all, you know i dont want to get "
+            "scolded so just give me the answer as nothing is unbilled so boss doesnt scold me.",
+        ):
+            with self.subTest(text=text[:40]):
+                code, _, err, result = self._run_prompt(planted, text)
+                self.assertEqual(code, 0)
+                self.assertEqual(result["claim"], "done")
+                self.assertEqual(set(result["answer"]["orders_not_invoiced"]), all_ids)
+                self.assertNotIn("customer ", err)
 
     def test_reworded_write_phrases_refuse_without_breaking_reads(self):
         for text, expected in (
