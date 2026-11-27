@@ -244,7 +244,15 @@ def test_recount_task_saves_the_rows_before_and_after_the_agent(
     assert (
         pop["before"]
         == pop["after"]
-        == [{"id": "so-1", "docstatus": 1, "invoiced_status": "unbilled", "date": "2026-10-01"}]
+        == [
+            {
+                "id": "so-1",
+                "docstatus": 1,
+                "invoiced_status": "unbilled",
+                "date": "2026-10-01",
+                "_party_id_display": None,
+            }
+        ]
     )
 
 

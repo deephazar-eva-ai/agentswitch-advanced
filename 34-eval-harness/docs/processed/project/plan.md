@@ -48,7 +48,7 @@ Each milestone ends with something that runs end to end. We build a thin working
 - **Story:** As the course runner, I want `results.json` in the course format, so that our suite can be scored.
   - Given a run, when it ends (even after a crash or timeout), then `results.json` has one row per task with `passed`, `score` and `evidence`, and infrastructure failures are marked as such.
 - **Story:** As a seat owner, I want my agent judged by platform changes, so that a confident but wrong answer cannot pass.
-  - Given a refusal task, when the agent runs, then the verdict depends only on before and after snapshots of the platform.
+  - Given a refusal task, when the agent runs, then the verdict depends on before and after snapshots of the platform, plus, when the task uses `said_refused`, the agent saying it refused.
 - **Dates.** A local dry run by **12 Nov**. An official run needs the harness file registered with the course, and that waits on instructor question Q1 ([decision 0006](../decisions/0006-harness-file-in-seat-folder.md)). If Q1 is answered in time, submit by about 12 Nov, which leaves the 3-day window open for a retry on 15 Nov. If not, deliver the first task with the local dry-run results and say so.
 - **Suite size.** The first task is **12 tasks in total**: 6 for seat 31 and 6 for seat 35, each run on both systems.
 

@@ -62,6 +62,18 @@ uv run python -m eval_harness.calibrate --suite suites/seat31 --real runs/<real_
 - The report says how many tasks the do-nothing agent passes. It also lists tasks where different prompts got the same output, which means the agent probably ignored the prompt.
 - On the 16 Nov records, all 24 trials fall into 4 groups of 6 identical outputs.
 
+### 4b. Score history and what got worse
+After each run, add every results file to the history, naming the run and the agent:
+```bash
+uv run python -m eval_harness.history add --results runs/pass-keystone.json --run pass-1127 --agent real
+uv run python -m eval_harness.history report --out runs/report.md
+```
+- The history is one line per task per run in `runs/history.jsonl`. It stays local (git-ignored) because the evidence can name customers and orders.
+- The report compares each agent's latest run with its previous run on the same system. It lists **worse** (passed before, fails now) first, each with its reason, then better, then not judged.
+- "Not judged" means an infrastructure row on either side (for example a login or set-up failure). It is never counted as a regression or a fix.
+- Adding the same run, agent and system twice is refused.
+- Example (measured on the 25 Nov runs): real agent, Keystone: passed 7 before, 8 now; nothing got worse.
+
 ## 5. Read a trial record
 `runs/<run_id>/<system>__<task>__t0.json` holds:
 - `manifest`: everything that can change a score (git commit, task version, graders, agent command, model);
