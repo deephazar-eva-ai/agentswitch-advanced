@@ -1,7 +1,7 @@
 [suite]
 name = "seat31"
 graded = true
-agent = "env PYTHONPATH=../31-order-to-cash-watcher python -m o2c"
+agent = "env PYTHONPATH=../31-order-to-cash-watcher python -m o2c --debug"
 task_minutes = 5
 corrections = []
 
