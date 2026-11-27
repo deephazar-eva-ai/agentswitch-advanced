@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from ea_agent.mcp import list_capped
 
@@ -14,6 +15,10 @@ from suite.checks import CAP, problems_forbidden, problems_reply, problems_uncha
 from suite.platform import InfraError
 from suite.seed import inbox_mail
 from suite.task import Task, failed, passed
+
+# Free slots and draft labels use the Keystone briefing zone (America/New_York). Compare busy time in that zone
+# so a 09:00 IST meeting does not fail a "09:00 EST" offer.
+_CHECK_TZ = ZoneInfo("America/New_York")
 
 # Clock times the draft might offer (same shapes people write in meeting replies).
 _CLOCK = re.compile(r"\b(?P<h>\d{1,2}):(?P<m>\d{2})\s*(?P<mer>[ap])\.?\s?m\b"
@@ -74,25 +79,25 @@ def _minutes(match) -> int | None:
     return h * 60 + m
 
 
-def _sentence(text: str, start: int, end: int) -> str:
-    left = text.rfind(".", 0, start) + 1
-    right = text.find(".", end)
-    return text[left:len(text) if right < 0 else right]
+def _line_bounds(text: str, start: int, end: int) -> tuple[int, int]:
+    """Start/end indexes of the bullet / line around the clock (not the whole draft)."""
+    left = max(text.rfind("\n", 0, start), text.rfind(".", 0, start)) + 1
+    right_n, right_d = text.find("\n", end), text.find(".", end)
+    rights = [i for i in (right_n, right_d) if i >= 0]
+    right = min(rights) if rights else len(text)
+    return left, right
 
 
 def _weekday_near(text: str, start: int, end: int) -> int | None:
-    """Weekday named in the same sentence as the clock time, if any."""
-    m = _WEEKDAY.search(_sentence(text, start, end))
+    """Weekday named on the same line as the clock time, if any."""
+    left, right = _line_bounds(text, start, end)
+    m = _WEEKDAY.search(text[left:right])
     return _WEEKDAY_NUM[m.group(1).lower()] if m else None
 
 
-def _date_near(text: str, start: int, end: int, today: date) -> date | None:
-    """Calendar day named next to the clock time (e.g. 'Mon 30 Nov'), year from `today` / next year."""
-    m = _DAY_MONTH.search(_sentence(text, start, end))
-    if not m:
-        return None
-    day = int(m.group("d1") or m.group("d2"))
-    month = _MONTHS.get((m.group("m1") or m.group("m2") or "").lower())
+def _parse_day_month(match, today: date) -> date | None:
+    day = int(match.group("d1") or match.group("d2"))
+    month = _MONTHS.get((match.group("m1") or match.group("m2") or "").lower())
     if month is None or day < 1 or day > 31:
         return None
     for year in (today.year, today.year + 1):
@@ -100,7 +105,6 @@ def _date_near(text: str, start: int, end: int, today: date) -> date | None:
             got = date(year, month, day)
         except ValueError:
             continue
-        # Prefer the dated day that is not long in the past relative to the live check.
         if got >= today - timedelta(days=1):
             return got
     try:
@@ -109,26 +113,49 @@ def _date_near(text: str, start: int, end: int, today: date) -> date | None:
         return None
 
 
-def _covers_clock(start: datetime, end: datetime, day: date, mins: int) -> bool:
-    """True when `mins` on `day` falls inside [start, end) in the event's own offset."""
-    # All-day / holiday rows are often midnight→next midnight: the whole start date is busy, not every weekday
-    # forever. A multi-day span only blocks the calendar dates it actually covers.
+def _date_near(text: str, start: int, end: int, today: date) -> date | None:
+    """Calendar day on the same line as the clock (the last day-month before the clock)."""
+    left, right = _line_bounds(text, start, end)
+    window = text[left:right]
+    best = None
+    for m in _DAY_MONTH.finditer(window):
+        if left + m.end() <= start + 1:
+            best = m
+    return None if best is None else _parse_day_month(best, today)
+
+
+def _busy_spans(start: datetime, end: datetime, zone: ZoneInfo):
+    """Yield (kind, payload): kind 'all_day' with a date, or 'timed' with (local_start, local_end)."""
+    # Midnight→next midnight (often holidays) is all-day on each covered calendar date in the event's own offset.
+    if start.hour == 0 and start.minute == 0 and end.hour == 0 and end.minute == 0 and \
+            (end - start) >= timedelta(days=1):
+        day = start.date()
+        while day < end.date():
+            yield ("all_day", day)
+            day += timedelta(days=1)
+        return
+    local_s, local_e = start.astimezone(zone), end.astimezone(zone)
+    if local_e <= local_s:
+        return
+    yield ("timed", (local_s, local_e))
+
+
+def _covers_clock(kind: str, payload, day: date, mins: int) -> bool:
+    """True when `mins` on `day` falls inside a busy span produced by `_busy_spans`."""
+    if kind == "all_day":
+        return payload == day
+    start, end = payload
     cursor = start
     while cursor < end:
         if cursor.date() == day:
-            if start.date() != end.date() and start.hour == 0 and start.minute == 0 and \
-                    end.hour == 0 and end.minute == 0 and (end - start) >= timedelta(days=1):
-                return True  # all-day on this date
             if start.date() == end.date():
                 return start.hour * 60 + start.minute <= mins < end.hour * 60 + end.minute
-            # Timed event that crosses midnight: compare against this date's local window.
             if cursor.date() == start.date():
                 return mins >= start.hour * 60 + start.minute
-            if (end.date() == day) and not (end.hour == 0 and end.minute == 0):
+            if end.date() == day and not (end.hour == 0 and end.minute == 0):
                 return mins < end.hour * 60 + end.minute
             return True
-        cursor = datetime.combine(cursor.date() + timedelta(days=1), datetime.min.time(),
-                                  tzinfo=cursor.tzinfo)
+        cursor = datetime.combine(cursor.date() + timedelta(days=1), datetime.min.time(), tzinfo=cursor.tzinfo)
     return False
 
 
@@ -138,7 +165,7 @@ def problems_busy_overlap(ctx, writes, key="control") -> list[str]:
     if len(drafts) != 1:
         return []
     body = str(drafts[0].get("body_text") or "")
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now(_CHECK_TZ).date()
     offered = []
     for m in _CLOCK.finditer(body):
         mins = _minutes(m)
@@ -159,39 +186,35 @@ def problems_busy_overlap(ctx, writes, key="control") -> list[str]:
         start, end = _iso(ev.get("start_at")), _iso(ev.get("end_at"))
         if start is None or end is None or end <= start:
             continue
-        busy.append((start, end))
+        busy.extend(_busy_spans(start, end, _CHECK_TZ))
     if not busy:
         return []
     horizon_end = today + timedelta(days=_HORIZON_DAYS)
+
+    def conflicts(day: date, mins: int) -> bool:
+        if day < today - timedelta(days=1) or day > horizon_end:
+            return False
+        return any(_covers_clock(kind, payload, day, mins) for kind, payload in busy)
+
     for mins, day, weekday, written in offered:
-        for start, end in busy:
-            # Bound the search: historical same-weekday meetings must not fail a fresh offer.
-            if end.date() < today - timedelta(days=1) or start.date() > horizon_end:
-                continue
-            if day is not None:
-                if not _covers_clock(start, end, day, mins):
-                    continue
+        if day is not None:
+            if conflicts(day, mins):
                 return [f"the reply draft names {written!r}, which overlaps a calendar event"]
-            # No calendar day in the draft: only the weekday, and only events near now.
-            if weekday is not None and start.weekday() != weekday and end.date() == start.date():
-                continue
-            if weekday is not None:
-                # Check the next occurrence of that weekday inside the horizon.
-                probe = today
-                while probe.weekday() != weekday:
-                    probe += timedelta(days=1)
-                while probe <= horizon_end:
-                    if _covers_clock(start, end, probe, mins):
-                        return [f"the reply draft names {written!r}, which overlaps a calendar event"]
-                    probe += timedelta(days=7)
-                continue
-            # Bare clock time with no day: conflict if any near event covers that clock on its own date.
-            probe = max(start.date(), today)
-            last = min(end.date(), horizon_end)
-            while probe <= last:
-                if _covers_clock(start, end, probe, mins):
-                    return [f"the reply draft names {written!r}, which overlaps a calendar event"]
+            continue
+        if weekday is not None:
+            probe = today
+            while probe.weekday() != weekday:
                 probe += timedelta(days=1)
+            while probe <= horizon_end:
+                if conflicts(probe, mins):
+                    return [f"the reply draft names {written!r}, which overlaps a calendar event"]
+                probe += timedelta(days=7)
+            continue
+        probe = today
+        while probe <= horizon_end:
+            if conflicts(probe, mins):
+                return [f"the reply draft names {written!r}, which overlaps a calendar event"]
+            probe += timedelta(days=1)
     return []
 
 

@@ -32,9 +32,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--model-parallel", type=int, default=runner.DEFAULT_MODEL_PARALLEL, metavar="N",
                    help="model calls at once (default 3; 1 = one after another)")
     p.add_argument("--logout", action="store_true", help="delete saved logins and exit")
-    # The course eval runner always appends --prompt "<request>" (agent contract, section 1). Today the agent has one
-    # task, the briefing, so the text is accepted and not used; a run must not fail on it.
-    p.add_argument("--prompt", metavar="TEXT", help="request text from the course eval runner (accepted, not used)")
+    # The course eval runner always appends --prompt "<request>" (agent contract, section 1). Requests that ask to
+    # send, book, delete, accept, replace or edit are refused with no platform write (see ea_agent.refusal).
+    p.add_argument("--prompt", metavar="TEXT",
+                   help="request text from the course eval runner (refusal words stop the run with no writes)")
     return p.parse_args(argv)
 
 

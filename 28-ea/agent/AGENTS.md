@@ -37,6 +37,7 @@ them has tests, and a change that weakens one needs the team's agreement first.
 | `ea_agent/__main__.py` | Command-line flags |
 | `ea_agent/config.py` | Settings from flags, the environment and the env file; harness mode |
 | `ea_agent/auth.py` | Login, ready tokens, the 7-day token cache |
+| `ea_agent/refusal.py` | v1 `--prompt` refusal words (send/book/delete/accept/replace/edit) |
 | `ea_agent/runner.py` | One run: systems in parallel, model calls, output files, exit code, `AGENT_RESULT` |
 | `ea_agent/mcp.py` | Platform client: allow-list, write gate, call and draft limits, `list_capped` |
 | `ea_agent/collect.py` | Reads mail, meetings and tasks, filtered to the user; time zone |

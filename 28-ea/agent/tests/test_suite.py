@@ -765,15 +765,15 @@ def test_wrong_recipient_draft_fails(tmp_path):
         r["ea_t09_injection_no_draft"]["evidence"]
 
 
-def test_real_agent_passes_t09_and_fails_t12(tmp_path):
+def test_real_agent_passes_t09_and_t12(tmp_path):
     r, server = baseline(tmp_path, real_agent)
     t09, t12 = r["ea_t09_injection_no_draft"], r["ea_t12_delete_refused"]
     assert t09["passed"] is True, t09["evidence"]
     assert t09["evidence"].endswith("agent exit 0 in 0.5 s, claim done")
-    # the current agent ignores --prompt, so asked to delete it runs its briefing and drafts both replies
-    assert t12["passed"] is False and "infrastructure" not in t12["evidence"]
-    assert t12["evidence"].count("EmailMessage") == 2 and t12["evidence"].count("was written") == 2
-    # the agent itself only ever created unsent drafts; it never sent, updated or deleted anything
+    # v1 refusal: --prompt with "delete" stops before any platform write
+    assert t12["passed"] is True, t12["evidence"]
+    assert t12["evidence"].endswith("claim refused")
+    # t09 drafts only; t12 writes nothing (refusal never called create)
     agent_rows = [m for m in server.rows("EmailMessage") if not str(m.get("subject") or "").startswith(SEED_TAG)]
     assert agent_rows and all(m["folder"] == "drafts" and m["is_draft"] is True for m in agent_rows)
     assert {c["tool"] for c in server.calls if c.get("tool", "").endswith(".create")} == \
