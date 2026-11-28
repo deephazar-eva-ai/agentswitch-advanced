@@ -22,6 +22,8 @@ See the top-level README. Put your agent code, tests and notes in this folder; o
 
 **Team:** Sunil (seat lead), Deepak. **Plan, rules, status and bug list:** [PLAN.md](PLAN.md).
 
+**Status (v1, 30 Nov):** the brief and the 12-task suite are on `main`. The suite passes 12 of 12 on both systems, Suryodaya and Keystone: in the joint live run on 26 Nov, and again on 28 Nov. The offline tests pass. No bugs are open ([bug list](#bug-list)).
+
 ## What the seat does
 
 One command, `python3 -m brief`, writes the **weekly deal brief** for a sales manager. It is deterministic: no model is called, and the same data always gives the same brief. It only reads; it never creates, updates or deletes a record.
@@ -37,7 +39,25 @@ The brief also lists **data issues**: deals left out of the ranking because of a
 
 **How deals are ranked:** open deals only (not `closed_won` / `closed_lost`), by value in the base currency, largest first. Ties are broken by deal id as text. Amounts in different currencies are never added together. With more than one company or base currency, there is one list for each. The full rules: [PLAN.md](PLAN.md#selection-rules-dealspy-checked-by-tasks-16).
 
-v1 uses CRM data only. The knowledgebase and the platform's read-only web search come after v1, with a source for every claim.
+v1 uses CRM data only. The knowledgebase and the platform's read-only web search come after v1 ([What comes next](#what-comes-next)).
+
+## How it's built
+
+A run reads deals, pipelines, accounts, activities and notes once, then passes them through these modules in order:
+
+| Module | What it does | Owner |
+|---|---|---|
+| [brief/client.py](brief/client.py) | Read-only client: a read allowlist, strict paging, bounded retries, and it never follows a redirect | Deepak |
+| [brief/rows.py](brief/rows.py) | The deal row both halves share; its fields are frozen and guarded by a test | Deepak |
+| [brief/deals.py](brief/deals.py) | Open deals only, ranked by base value with a fixed tie-break; data issues; the test-data flag | Sunil |
+| [brief/accounts.py](brief/accounts.py) | Account facts per deal: contacts, other open deals, last contact, open activities, pinned note | Sunil |
+| [brief/changes.py](brief/changes.py) | What changed: saves a snapshot each run and compares with the previous one | Deepak |
+| [brief/nextstep.py](brief/nextstep.py) | One next step per deal from seven fixed rules, first match wins, with its reason | Deepak |
+| [brief/report.py](brief/report.py), [brief/\_\_main\_\_.py](brief/__main__.py) | `build()` → JSON + Markdown; the command line and `--prompt` | Sunil |
+| [brief/explain.py](brief/explain.py), [brief/debug.py](brief/debug.py) | `--explain` for one deal; `--debug` output, recording and replay | Sunil, Deepak |
+| [brief/suite.py](brief/suite.py), [tasks_deals.py](brief/tasks_deals.py), [tasks_brief.py](brief/tasks_brief.py) | The 12-task suite: tasks 1–6 (Sunil) and 7–12 (Deepak) | Deepak, Sunil |
+
+The two halves were built in parallel against interfaces both agreed and froze on 25 Nov ([PLAN.md](PLAN.md#interfaces-frozen-25-nov)). The suite tasks check each other's code: Deepak's task 7 recounts the account facts in Sunil's `accounts.py`, and Sunil's tasks 1–6 recount the ranking from raw records, sharing only the row parsing with `deals.py`.
 
 ## Setup
 
@@ -78,6 +98,47 @@ python3 -m brief --explain <deal id> --instance keystone  # why one deal is show
 
 **Output:** the full brief goes to the `.md` and `.json` files. Standard output has one line per deal shown (rank, deal id, next-step rule), then, as the last line, `AGENT_RESULT {"claim": "done" | "refused", "answer": {"top_deals": [ids]}}` for seat 34's harness.
 
+### What a brief looks like
+
+Made-up data, the second week of runs with `--top 3`. Standard output (`brief: wrote …` goes to stderr):
+
+```
+  1 d01 negotiation
+  2 d02 close_date_passed
+  3 d03 overdue_activity
+AGENT_RESULT {"claim":"done","answer":{"top_deals":["d01","d02","d03"]}}
+```
+
+An excerpt of the Markdown brief:
+
+> **Deal brief: suryodaya, 2026-11-30**
+>
+> - What changed: since the previous run on 2026-11-23.
+> - Top 3 per company and base currency; values are in the base currency, never added across currencies.
+>
+> | # | Deal | Account | Stage | Value | Close | Next step |
+> |---:|---|---|---|---:|---|---|
+> | 1 | Warehouse automation | Northwind Traders | Negotiation | 520,000.00 INR | 2026-12-15 | Agree the final terms and a signing date |
+> | 2 | Fleet telematics renewal | Blue Harbor Ltd | Proposal | 350,000.00 INR | 2026-11-15 | Confirm a new close date with the deal owner |
+> | 3 | Cold-chain sensors | Kestrel Foods | Negotiation | 290,000.00 INR | 2026-12-15 | Complete the overdue activity |
+>
+> **3. Cold-chain sensors**
+> - **Account:** Kestrel Foods (organization)
+> - Contacts: Meera Nair (deal contact)
+> - Last contact: none recorded
+> - Open activities: 1, 1 overdue
+>   - 2026-11-18 (overdue): “Confirm sensor count”
+> - What changed: stage proposal → negotiation
+> - **Next step:** Complete the overdue activity. *Why:* Due 2026-11-18, 12 days overdue.
+>
+> **Left the list since last time**
+> - Smelter maintenance contract: closed won
+>
+> **Data issues**
+> - `d05`: value: zero or less, left out of the ranking
+>
+> Read-only: this brief changed nothing in the CRM. Next steps are suggestions for a person to act on.
+
 **Exit codes:** `0` done; `1` an unexpected error (traceback, `AGENT_RESULT` with `"failed"`, then one `brief: unexpected error: …` line); `2` bad options, a `--since` date with no snapshot, or a damaged snapshot; `3` the platform could not be read (for example a rejected token), with one line saying why; `5` deal not found (`--explain`).
 
 ## What changed and snapshots
@@ -96,6 +157,29 @@ Seat 34's harness adds `--prompt "<text>"` to every seat command. No model is ca
 
 - **Understood:** a number of deals (`top 5`, `5 largest`) and deal ids. A prompt that names deals shows only those, with a note for each named deal that isn't shown (closed, left out with the reason, or not found).
 - **Changes are never made.** A prompt that asks for one, with a change word (close, move, log, update, create, delete, send…) used as an instruction, gets `"claim": "refused"`. The brief still runs read-only, and says that a person makes any change.
+
+## Edge cases the brief handles
+
+Found in the data, in the edge-case lists both of us wrote, and in two bug hunts. Each has offline tests; the task numbers show the ones a suite task also checks on live data.
+
+| Case | What the brief does |
+|---|---|
+| A deal with no pipeline, or one naming a pipeline that doesn't exist | Judged open or closed by its stage key, ranked, and listed as a data issue ([OBS-30-001](findings/OBS-30-001.md)) |
+| A stage that isn't in the deal's pipeline | Listed as a data issue, never ranked (task 3) |
+| Value missing, unreadable, zero or less; no usable currency or base value | Left out of the ranking with exactly one reason, and counted (tasks 4–5) |
+| More than one company or base currency | One list per company and base currency; amounts never added across currencies |
+| Equal values at the cut-off | Decided by deal id as text, the same on every run; the brief says how many more share the value (task 6) |
+| Fewer eligible deals than `--top` | Shows them all and says "only N eligible deals" |
+| Other seats' test data | Ranked and flagged "looks like test data", never hidden |
+| An account that is missing or that this login can't see; redacted fields | "account: not found" as a data issue; a redacted field shows as "not available to this seat" |
+| Cancelled activities; another deal's activities on the same account | Ignored for last contact and open activities |
+| A malformed activity due date | The activity stays open with no due date, never overdue, with one data issue per deal shown ([OBS-30-002](findings/OBS-30-002.md)) |
+| A close date that has passed, a probability of 100 on an open deal, or one outside 0–100 | Next-step rules 1 and 4; task 10 checks rule 1 |
+| A change in base value only, from the exchange rate | Marked "exchange rate"; a drop for that reason says so |
+| A deal that leaves the top list | Named with one reason: closed, left out, moved list, value or exchange-rate change, or outranked |
+| A snapshot taken by another login, in an older format, or damaged | Noted in the brief; older formats still load without false changes; a damaged one stops the brief |
+| Line breaks, escape sequences, links or markup in record text | Kept out of our own wording; CRM text is shown on one line, quoted and escaped |
+| A deal record without an id | Not read, and counted in the brief |
 
 ## Safety rules
 
@@ -133,10 +217,35 @@ When a run fails: [DEBUGGING.md](DEBUGGING.md).
 
 ## Bug list
 
-- **Platform bugs** in the course format: [findings/](findings/). None open.
-- **Observations** (not bugs, filed at the instructor's request):
+No open bugs.
+
+- **Platform findings** in the course format: [findings/](findings/). Both are observations, not bugs, filed at the instructor's request:
   - [OBS-30-001](findings/OBS-30-001.md): some open deals have a stage but no pipeline. The brief keeps them open and lists a data issue.
-  - [OBS-30-002](findings/OBS-30-002.md): malformed due dates on open account activities. Closed as a test-data quirk.
+  - [OBS-30-002](findings/OBS-30-002.md): malformed due dates on open account activities. First filed as a bug, then closed as a test-data quirk.
+- **Bugs in our own code:** 23, all fixed, from a line-by-line bug hunt (24 Nov), a bug hunt on Sunil's half (26 Nov), reviews of each other's code, live probes and the joint run. The table, with the fixing commit for each: [PLAN.md](PLAN.md#bugs-in-our-own-code).
+
+## Decisions and known limits
+
+The instructor's answers that shape the brief (all 16 in [PLAN.md](PLAN.md#instructor-answers-24-and-26-nov-2026)):
+
+- **Largest** means value in the base currency, leaving out zero values and unknown currencies, with a fixed tie-break.
+- **One top-10 list per company.**
+- **Test data** from other seats is ranked and flagged, never hidden.
+- **What changed** means since the agent's previous run, and the first run is a baseline.
+- **Next steps** are rule-based, with reasons, and no model calls in v1.
+
+Known limits in v1:
+
+- `--prompt` understands only a number of deals and deal ids.
+- Next-step rule 5 (`proposal_waiting`) uses the platform's own counter and is not graded in v1.
+- The platform keeps no deal history, so "what changed" starts from the first run. The 20 Dec integration copy starts fresh, so that run will be a baseline.
+- Task 7 doesn't compare activity subjects, which are free text.
+
+## What comes next
+
+- **20 Dec:** the integration run with the other seats, on a fresh copy.
+- **After v1, the "market" part:** knowledgebase notes first, then the platform's read-only web search when the instructor switches it on, with a source for every claim.
+- **31 Dec:** the final version: suite passing on both systems, the demo, this README and a closed bug list.
 
 ## Demo
 
