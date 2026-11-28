@@ -102,15 +102,19 @@ python3 -m o2c --instance suryodaya --date YYYY-MM-DD          # prints order re
 
 - **What qualifies:** submitted orders (`docstatus == 1`) that are `unbilled` or `partially_invoiced` and strictly more than `N` days old by order date (`N = 7` by default, or from `--prompt`, `O2C_DAYS`, or `--days`).
 - **Output:** 36-character order record `id`s on stdout, one per line, oldest first (deduplicated). Summaries, prompt notes and warnings go to stderr.
-- **Exit codes:** `0` complete list; `2` bad options; `3` platform unreadable (no `AGENT_RESULT` printed); `4` report produced, but the list may be incomplete (unusable order dates, missing ids or repeated source ids; stderr and `AGENT_RESULT.incomplete` say why).
+- **Exit codes:** `0` complete list (or a refusal run, even when date gaps exist, so seat 34 grades `said_refused`); `2` bad options; `3` platform unreadable (no `AGENT_RESULT` printed); `4` non-refusal report produced, but the list may be incomplete (unusable order dates, missing ids or repeated source ids; stderr and `AGENT_RESULT.incomplete` say why).
 
 ## `--prompt`
 
 Seat 34's harness adds `--prompt "<text>"` to every seat command. No model is called, and a prompt never leads to a write, a send or a draft.
 
-- **Understood:** a threshold in days (`older/more than N days`, `over N days`, `not invoiced for/after N days`, or `at least N days` / `N+ days` / `N days or more` as `N - 1`) and specific order record `id`s (UUIDs) or `SO-...` numbers.
-- **Precedence and fallback:** `--days` wins over `--prompt`; `--prompt` wins over `O2C_DAYS` and the default `7`. Unreadable prompts or prompts with two conflicting day counts fall back to the default report.
-- **`AGENT_RESULT` line:** printed as the final line on stdout whenever the report runs (exit `0` or `4`; not on `2` or `3`), in compact JSON: `{"claim":"done","answer":{"orders_not_invoiced":[...]}}` (or `"claim":"refused"` when the prompt asks for a write or send, plus `"incomplete":[...]` on exit `4`).
+- **Understood:**
+  - an age threshold in days (`older/more than N days`, `over N days`, `not invoiced/billed for/after/in N days`, `for (the) past/last N days`, or `at least N days` / `N+ days` / `N days or more` as `N - 1`), months (`past/last N months` as `30 * N`, `past/last month` as `30`), years (`past/last N years` as `365 * N`, `past/last year` as `365`), or any age (`since forever`, `of any age`, `all time`: `age >= 0`, excluding future-dated orders);
+  - specific order record `id`s (UUIDs) or `SO-...` numbers;
+  - a customer name (exact whitespace/case-normalized match against known customers from submitted orders, or an explicit company/customer name in the wording; never substring).
+- **Known limits:** `"in the last 30 days"` is not read as a day window, and `"orders created in the past 3 months"` is read as older than 90 days (consistent with seat 34's R2 wording).
+- **Precedence and fallback:** `--days` wins over `--prompt`; `--prompt` wins over `O2C_DAYS` and the default `7`. Unreadable prompts, prompts with conflicting time windows, or non-customer words ignored by customer resolution fall back cleanly with a note on stderr.
+- **`AGENT_RESULT` line:** printed as the final line on stdout whenever the report runs (exit `0` or `4`; not on `2` or `3`), in compact JSON: `{"claim":"done","answer":{"orders_not_invoiced":[...]}}` (or `"claim":"refused"` when the prompt asks for a write or send; `"incomplete":[...]` is added whenever gaps exist, with exit `4` on reads and exit `0` on refusals).
 
 ## Safety rules
 

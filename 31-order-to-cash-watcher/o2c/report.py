@@ -157,7 +157,8 @@ def order_date_issues(orders, report_date):
         elif day > report_date:
             reason = "future order date"
         if reason:
-            issues.append({"id": row.get("id"), "number": row.get("number"), "reason": reason})
+            issues.append({"id": row.get("id"), "number": row.get("number"),
+                           "customer": row.get("_party_id_display"), "reason": reason})
     return sorted(issues, key=lambda r: (str(r["number"] or ""), str(r["id"] or "")))
 
 
@@ -186,8 +187,9 @@ def order_age_summary(rows):
     return counts
 
 
-def orders_not_invoiced(orders, report_date, days, issues=None):
-    """Submitted orders not fully invoiced, strictly older than N by order date.
+def orders_not_invoiced(orders, report_date, days, issues=None, any_age=False):
+    """Submitted orders not fully invoiced, strictly older than N by order date (or any age >= 0
+    when `any_age` is True, including orders dated today while still excluding future dates).
 
     No verified deliverable-date field is agreed yet; delivery state is not used
     to invent one. Invalid/missing/future dates are surfaced by order_date_issues.
@@ -201,7 +203,7 @@ def orders_not_invoiced(orders, report_date, days, issues=None):
         if order_date is None:
             continue
         age = (report_date - order_date).days
-        if age <= days:
+        if not any_age and age <= days:
             continue
         out.append({
             "number": o.get("number"),
@@ -451,7 +453,7 @@ def invoices_overdue(invoices, report_date, issues=None):
     return overdue, no_due
 
 
-def build(client, report_date=None, days=7, instance=None, currencies=None):
+def build(client, report_date=None, days=7, instance=None, currencies=None, any_age=False):
     validate_days(days)
     report_date = report_date or today_ist()
     sections = {}
@@ -460,10 +462,14 @@ def build(client, report_date=None, days=7, instance=None, currencies=None):
 
     orders = client.list_all("SalesOrder", {"docstatus": SUBMITTED})
     order_issues = []
+    age_rule = ("order date on or before the report date (any age)" if any_age
+                else f"order date more than {days} days ago")
+    uninvoiced = (orders_not_invoiced(orders, report_date, days, order_issues, any_age=True) if any_age
+                  else orders_not_invoiced(orders, report_date, days, order_issues))
     sections["orders_not_invoiced"] = {
         "status": "ok",
-        "rule": f"submitted, invoiced_status in {list(NOT_INVOICED)}, order date more than {days} days ago",
-        "rows": sort_orders(apply_currency(orders_not_invoiced(orders, report_date, days, order_issues), currencies, order_issues)),
+        "rule": f"submitted, invoiced_status in {list(NOT_INVOICED)}, {age_rule}",
+        "rows": sort_orders(apply_currency(uninvoiced, currencies, order_issues)),
         "data_issues": order_issues,
     }
     order_section = sections["orders_not_invoiced"]
@@ -473,6 +479,8 @@ def build(client, report_date=None, days=7, instance=None, currencies=None):
         unverified_deliverability_count=len(order_section["rows"]),
         age_buckets=order_age_summary(order_section["rows"]),
         date_issues=order_date_issues(orders, report_date),
+        known_customers=sorted({str(r.get("_party_id_display")).strip()
+                                for r in orders if str(r.get("_party_id_display") or "").strip()}),
     )
 
     if "Invoice.list" in names:
