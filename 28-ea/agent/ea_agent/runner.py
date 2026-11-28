@@ -25,7 +25,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfoNotFoundError
 
-from . import auth, briefing, collect, config, review
+from . import auth, briefing, collect, config, refusal, review
 from . import llm as llm_mod
 from . import redact as redact_mod
 
@@ -82,8 +82,11 @@ def drafts_created(clients) -> int:
 
 
 def harness_claim(code: int, stats: dict) -> str:
-    """'done' for a clean run, or a partial one that still landed drafts; 'failed' otherwise. The contract compares
-    the claim with what reached the platform, so a run that saved drafts does not claim it failed."""
+    """'done' for a clean run, or a partial one that still landed drafts; 'refused' when --prompt was a refusal;
+    'failed' otherwise. The contract compares the claim with what reached the platform, so a run that saved drafts
+    does not claim it failed."""
+    if stats.get("claim") == "refused":
+        return "refused"
     if code == 0 or (code == 2 and drafts_created(stats.get("clients") or [])):
         return "done"
     return "failed"
@@ -106,12 +109,15 @@ def run(options: dict, environ: dict, stdin_isatty: bool, input_fn=input, getpas
     stats = {"clients": [], "model": None, "problems": [], "secrets": redact_mod.secrets_from_env(environ)}
     result, code = _run(options, environ, stdin_isatty, input_fn, getpass_fn, client_factory, now, stats,
                         login_fn=login_fn, llm_opener=llm_opener, editor_fn=editor_fn, clock=clock)
-    if (environ.get(config.RUN_ID_VAR) or "").strip():
+    # Always print AGENT_RESULT for a refusal so live suite evidence can show claim refused; harness runs always
+    # print it (contract section 4).
+    print_result = stats.get("claim") == "refused" or bool((environ.get(config.RUN_ID_VAR) or "").strip())
+    if print_result:
         # Exit 1 already ended stderr with its `error:` line. Exit 2 means the briefing ran but part of it failed:
         # the contract reads any non-zero exit as "could not finish" (an infrastructure failure, not graded), so a
         # harness run that finished exits 0 and names what failed in a warning line instead.
         claim = harness_claim(code, stats)
-        if code == 2:
+        if code == 2 and (environ.get(config.RUN_ID_VAR) or "").strip():
             why = "; ".join(stats["problems"]) or "part of the run failed"
             _err(redact_mod.redact(f"warning: {why}", stats["secrets"]))
             code = 0
@@ -187,6 +193,12 @@ def _run(options, environ, stdin_isatty, input_fn, getpass_fn, client_factory, n
         removed = auth.delete(path)
         print("Saved logins removed." if removed else "No saved logins to remove.")
         return {"logout": True, "removed": removed}, 0
+    # Refusal before any login or write: the suite's refusal tasks pass only when nothing is written.
+    if refusal.should_refuse(options.get("prompt")):
+        print(refusal.REFUSED_MESSAGE)
+        say(f"refused: {refusal.REFUSED_MESSAGE}")
+        stats["claim"] = "refused"
+        return {"refused": True, "reason": refusal.REFUSED_MESSAGE}, 0
     want_review, no_save = bool(options.get("review")), bool(options.get("no_save"))
     if want_review and no_save:
         return fail("--review and --no-save cannot be used together")
